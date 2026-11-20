@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 import { containerOf, shellQuote } from "../../core/src/shared/model";
 import { controlOptions } from "../../core/src/agents/claudeCode/sshControl";
 import type { Place } from "../../core/src/terminal";
+import type { TerminalHandle, TerminalPort } from "../../core/src/ports";
 
 // The same connection sharing as remote.py, without batch mode: ssh may ask
 // for a password or a host key in the terminal. Like remote.py, it leaves out
@@ -72,7 +73,7 @@ export function terminalLinkOf(uri: { path: string; query: string }): TerminalLi
   return host ? { pid, host } : { pid };
 }
 
-export class Terminals implements vscode.Disposable {
+export class Terminals implements vscode.Disposable, TerminalPort {
   private local = new WeakSet<vscode.Terminal>(); // the ones made here on this computer
   private byKey = new Map<string, vscode.Terminal>();
   private startedAt = new WeakMap<vscode.Terminal, number>();
@@ -101,7 +102,7 @@ export class Terminals implements vscode.Disposable {
 
   // The terminal of this window that the process runs in (one of its ancestors
   // is the terminal's shell); ancestors are this computer's or the window host's.
-  async find(ancestors: Set<number>, onWindowHost: boolean): Promise<vscode.Terminal | undefined> {
+  async find(ancestors: Set<number>, onWindowHost: boolean): Promise<TerminalHandle | undefined> {
     if (!ancestors.size) return undefined;
     for (const t of vscode.window.terminals) {
       if (t.exitStatus) continue;
@@ -129,7 +130,7 @@ export class Terminals implements vscode.Disposable {
   // counts as running it until that host's next check has answered (until
   // then the chat's row doesn't say it runs, nor finds this terminal: a
   // second click would start it again next to the first)
-  async run(key: string, name: string, command: string, place: Place, opts: { private?: boolean; chatOn?: string } = {}): Promise<vscode.Terminal> {
+  async run(key: string, name: string, command: string, place: Place, opts: { private?: boolean; chatOn?: string } = {}): Promise<TerminalHandle> {
     const existing = this.byKey.get(key);
     if (existing && !existing.exitStatus) {
       // just opened (its command may not have started yet, and a host's can't

@@ -59,6 +59,8 @@ export interface HostServices {
   setContext(key: string, value: unknown): void; // VS Code: "setContext"
   workspaceFolders(): readonly { name: string; path: string }[];
   readonly onDidChangeWorkspaceFolders: Event<void>;
-  readonly environment: { readonly remoteName?: string; readonly web: boolean };
+  // remoteAuthority: the remote the window has open ("ssh-remote+lab", "dev-container+…"), as it is at
+  // each read (dashboard: which host or container the window is on)
+  readonly environment: { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean };
   readonly log: { info(m: string): void; warn(m: string): void; error(m: string): void };
 }

@@ -63,6 +63,8 @@ export const workspace = {
   // the folders a test opens (setWorkspaceFolders)
   workspaceFolders: undefined as { name: string; uri: Uri }[] | undefined,
   workspaceFile: undefined,
+  // the documents open in editors (a test's)
+  textDocuments: [] as { uri: Uri; isDirty: boolean; save(): Promise<boolean> }[],
   onDidChangeConfiguration: configChanges.on,
   onDidChangeWorkspaceFolders: folderChanges.on,
   registerTextDocumentContentProvider: disposable,
@@ -236,7 +238,12 @@ export const commands = {
   getCommands: async () => [] as string[],
 };
 
-export const extensions = { onDidChange: disposable };
+// Extensions installed, removed or enabled: changeExtensions tells the listeners
+const extensionChanges = listeners<void>();
+export const extensions = { onDidChange: extensionChanges.on };
+export function changeExtensions(): void {
+  extensionChanges.fire(undefined);
+}
 
 export const comments = {
   createCommentController: (id: string, label: string) => ({ id, label, options: undefined, commentingRangeProvider: undefined, dispose: () => undefined }),

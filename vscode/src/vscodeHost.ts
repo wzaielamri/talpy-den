@@ -3,6 +3,7 @@ import { Emitter } from "../../core/src/events";
 import type {
   ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions,
 } from "../../core/src/host";
+import { currentRemoteAuthority } from "./remoteHost";
 
 // HostServices over the VS Code API: the one place paths and vscode.Uri turn into each other
 export class VsCodeHost implements HostServices {
@@ -149,8 +150,13 @@ export class VsCodeHost implements HostServices {
 
   readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
 
-  get environment(): { readonly remoteName?: string; readonly web: boolean } {
-    return { remoteName: vscode.env.remoteName, web: vscode.env.uiKind === vscode.UIKind.Web };
+  get environment(): { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean } {
+    return {
+      remoteName: vscode.env.remoteName,
+      web: vscode.env.uiKind === vscode.UIKind.Web,
+      // (looked up only when asked: it walks the open folders and editors)
+      get remoteAuthority() { return currentRemoteAuthority(vscode); },
+    };
   }
 
   readonly log = {

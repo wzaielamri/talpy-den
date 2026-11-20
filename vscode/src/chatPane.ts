@@ -28,6 +28,7 @@ import { isDecision } from "../../core/src/shared/types";
 import { chatFont } from "./doc";
 import type { Terminals } from "./terminals";
 import { asPaste, localAncestors } from "../../core/src/terminal";
+import type { ChatPanesPort, TerminalHandle } from "../../core/src/ports";
 
 // Talpy Chat's keys (keys.mjs): each a command (package.json binds its key while a chat tab has
 // the focus), and what it tells the tab in front to do
@@ -114,7 +115,7 @@ export function paneGroup(state: Pick<ViewState, "status" | "hosts">, host: stri
   return found && host ? { ...found, host } : found;
 }
 
-export class ChatPanes implements vscode.Disposable {
+export class ChatPanes implements vscode.Disposable, ChatPanesPort {
   private panes = new Map<string, Pane>(); // "<host>|<chat id>" -> its tab
   private answers = 0; // (answers given: each one's id, for its tab)
   private newChats = 0;
@@ -425,7 +426,7 @@ export class ChatPanes implements vscode.Disposable {
 
   // The terminal of this window a chat of this computer (or of the host this
   // window is on) runs in, if one does
-  private async windowTerminal(session: Session | undefined, host: string): Promise<vscode.Terminal | undefined> {
+  private async windowTerminal(session: Session | undefined, host: string): Promise<TerminalHandle | undefined> {
     if (!session?.pid || session.entrypoint === "claude-vscode" || session.kind === "bg" || session.tmux) return undefined;
     if (host) return undefined; // (an SSH host's: only its pid is known, not its ancestors here)
     return this.terminals.find(localAncestors(session.pid), false);

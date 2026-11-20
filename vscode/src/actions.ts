@@ -56,6 +56,7 @@ import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, M
 import { remoteControlPage } from "../../core/src/shared/pane";
 import type { Terminals } from "./terminals";
 import { asPaste, attachClients, localAncestors, type Place } from "../../core/src/terminal";
+import type { TerminalHandle } from "../../core/src/ports";
 import type { PlanReview } from "./planReview";
 import type { ChatPanes } from "./chatPane";
 import { windowFolders } from "./chatSurface";
@@ -375,7 +376,7 @@ export class Actions {
     const chatProcess = canEndChat(chat);
     const busy = chat.state !== "idle";
     const inTab = chat.entrypoint === "claude-vscode";
-    let terminal: vscode.Terminal | undefined;
+    let terminal: TerminalHandle | undefined;
     if (chatProcess && hasTurn(chat) && !inTab && chat.pid) {
       const onWindowHost = !!chat.host && chat.host === this.dash.currentHost;
       const ancestors = chat.host

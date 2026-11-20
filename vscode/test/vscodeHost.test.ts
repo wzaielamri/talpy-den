@@ -194,6 +194,27 @@ test("environment mirrors remoteName and web", () => {
   assert.equal(host.environment.web, true);
 });
 
+test("environment's remoteAuthority is the remote the window has open, read anew each time", () => {
+  const host = make();
+  const remoteFolder = (authority: string) => [{ name: "app", uri: vscode.Uri.from({ scheme: "vscode-remote", authority, path: "/home/me/app" }) }];
+  assert.equal(host.environment.remoteAuthority, undefined);
+  stub.env.remoteName = "ssh-remote";
+  stub.setWorkspaceFolders(remoteFolder("ssh-remote+lab"));
+  assert.equal(host.environment.remoteAuthority, "ssh-remote+lab");
+  stub.setWorkspaceFolders(remoteFolder("ssh-remote+other"));
+  assert.equal(host.environment.remoteAuthority, "ssh-remote+other");
+  // (a Dev Containers window: its container's)
+  stub.env.remoteName = "dev-container";
+  stub.setWorkspaceFolders(remoteFolder("dev-container+6170"));
+  assert.equal(host.environment.remoteAuthority, "dev-container+6170");
+  // a remote window with nothing of the remote open, and a remote it doesn't know (WSL)
+  stub.setWorkspaceFolders([{ name: "here", uri: vscode.Uri.file("/home/me/here") }]);
+  assert.equal(host.environment.remoteAuthority, undefined);
+  stub.env.remoteName = "wsl";
+  stub.setWorkspaceFolders(remoteFolder("wsl+Ubuntu"));
+  assert.equal(host.environment.remoteAuthority, undefined);
+});
+
 test("openFile, revealFile, openSettings, showView and setContext run their VS Code commands", async () => {
   const host = make();
   await host.openFile("/home/me/a.md");

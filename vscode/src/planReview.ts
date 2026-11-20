@@ -6,6 +6,7 @@
 // Actions.sendPlanFeedback). The comments are kept until they're sent.
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { PlanComment } from "../../core/src/ports";
 
 export const CONTROLLER_ID = "talpyDen.planFeedback";
 const SLUG = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/; // talpy_den.py: PLAN_SLUG
@@ -16,13 +17,6 @@ class Note implements vscode.Comment {
   author = { name: "You" };
   contextValue = "planNote";
   constructor(public body: string) {}
-}
-
-export interface PlanComment {
-  from: number; // its lines, from 1
-  to: number;
-  quote: string;
-  text: string;
 }
 
 // {slug, file} of a plan of this computer, <config>/plans/<slug>.md (a Claude
