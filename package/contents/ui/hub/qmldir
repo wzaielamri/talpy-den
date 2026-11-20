@@ -1,2 +1,4 @@
 singleton Hub 1.0 Hub.qml
+singleton Beat 1.0 Beat.qml
 Exec 1.0 Exec.qml
+OnBeat 1.0 OnBeat.qml

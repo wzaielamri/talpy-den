@@ -1,4 +1,5 @@
 import QtQuick
+import "hub"
 import "talpy/glyph.mjs" as G
 
 // The panel icon: Talpy peeking up through the panel's edge (talpy/glyph.mjs),
@@ -16,12 +17,20 @@ Canvas {
     onModeChanged: requestPaint()
     onWidthChanged: requestPaint()
 
-    // A few frames a second are enough for a panel icon that may move for hours
-    Timer {
-        interval: 80
-        repeat: true
-        running: icon.moving && icon.visible && G.glyphMoves(icon.mode)
-        onTriggered: icon.requestPaint()
+    // A few frames a second are enough for a panel icon that may move for
+    // hours: every other beat (hub/Beat.qml, 80 ms), with every other glyph
+    // and blinking dot, so a window with several is drawn once for all of them
+    OnBeat {
+        id: moves
+        active: icon.moving && icon.visible && G.glyphMoves(icon.mode)
+    }
+    Connections {
+        target: Beat
+        enabled: moves.active
+        function onCountChanged() {
+            if (Beat.count % 2 === 0)
+                icon.requestPaint()
+        }
     }
 
     onPaint: {

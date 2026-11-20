@@ -5,8 +5,11 @@
 ### Highlights
 
 - **SSH hosts and containers answer faster on a slow connection:** the code Talpy Den sends with every check now goes compressed, a quarter of its size, so a chat on a host opens in Talpy Chat in about 1.4 s instead of 3.6 s over a home uplink.
+- **Talpy Chat no longer redraws its whole window 60 times a second while a tool runs:** its blinking dot and every Talpy glyph now move on one shared beat.
 
 ### Every change
+
+- **Lighter while Claude works: one beat for what keeps moving.** The ● before a tool call that's still going faded on an animation of its own, at the screen's rate, and Qt draws a whole window again for any change in it: a Talpy Chat window of a working chat was drawn 58–60 times a second (1920×1036 on a laptop screen), and with three such windows open plasmashell used about two thirds of a core. Each Talpy glyph (the panel's, the popup's, each Talpy Chat window's) had a timer of its own, so two in one window drew it twice as often. Now they all follow one beat shared by every window and copy of the widget: the dot fades along the same curve, 25 steps a second, and the glyphs move together every other beat (80 ms, as before), so a window is drawn once a beat for all of them. The beat ticks only while something moves, and a minimized Talpy Chat window's dot holds still. Plasma and Talpy Chat.
 
 - **Faster on SSH hosts and containers over a slow connection.** Nothing is installed on a host, so Talpy Den sends its code with every check: about 920 KB to read a chat in Talpy Chat, 630 KB for each check of a host, every 2 s while a chat there that a window shows is working. Through a jump host over home Wi-Fi, sending it took most of the time: a chat on a host took 3–6 s to open (its host's own part, 0.3 s), and one connection sent over 100 MB in 12 minutes. Now it goes compressed (zlib, a quarter of its size: about 250 KB to read a chat) and the host's `python3` unpacks it from its stdin; still nothing is installed or kept there. Opening a chat over an uplink of 300 KB/s now takes 1.4 s, down from 3.6 s; on a fast network it's as quick as before (it costs about 20 ms here). Plasma, Talpy Chat, GNOME and VS Code; SSH hosts and containers.
 

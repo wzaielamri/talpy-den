@@ -352,16 +352,26 @@ Window {
         }
     }
 
-    // ● before a reply or a tool call, on its first line (blinking: still going)
+    // ● before a reply or a tool call, on its first line (blinking: still
+    // going). It fades on the beat (hub/Beat.qml: 25 steps a second, with the
+    // window's glyph and other dots), not at the screen's rate: an animation
+    // of its own had the whole window drawn 60 times a second while a tool ran.
     component Dot: Item {
         id: dotItem
         property color color
         property bool blinking: false
         property real gutter: 0
         property real lineHeight: 0
+        property real since: 0             // when its blinking began (Beat.fade)
         Layout.preferredWidth: gutter
         Layout.preferredHeight: lineHeight
         Layout.alignment: Qt.AlignTop
+
+        onBlinkingChanged: if (blinking) since = Date.now()
+        Component.onCompleted: if (blinking) since = Date.now()
+        OnBeat {
+            active: dotItem.blinking
+        }
 
         Rectangle {
             id: dot
@@ -371,14 +381,7 @@ Window {
             x: Math.round((dotItem.gutter - width) * 0.4)
             anchors.verticalCenter: parent.verticalCenter
             color: dotItem.color
-
-            SequentialAnimation on opacity {
-                running: dotItem.blinking
-                loops: Animation.Infinite
-                onRunningChanged: if (!running) dot.opacity = 1
-                NumberAnimation { to: 0.25; duration: 600; easing.type: Easing.InOutSine }
-                NumberAnimation { to: 1; duration: 600; easing.type: Easing.InOutSine }
-            }
+            opacity: dotItem.blinking ? Beat.fade(dotItem.since) : 1
         }
     }
 
@@ -4311,7 +4314,7 @@ Window {
                                             color: entry.status === "ok" ? Kirigami.Theme.positiveTextColor
                                                  : entry.status === "error" ? Kirigami.Theme.negativeTextColor
                                                  : toolBox.asking ? Kirigami.Theme.neutralTextColor : pane.mutedColor
-                                            blinking: toolBox.going && pane.visible
+                                            blinking: toolBox.going && pane.shown
                                             gutter: pane.gutter
                                             lineHeight: fm.height
                                         }
