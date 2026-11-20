@@ -28,3 +28,6 @@ CLAUDE.local.md
 
 # GNOME extension build output (gnome/build.sh)
 gnome/build/
+
+# Plan execution scratch (superpowers subagent-driven development: ledger, briefs, reviews)
+.superpowers/
