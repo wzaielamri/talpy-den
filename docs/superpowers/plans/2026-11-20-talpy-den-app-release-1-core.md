@@ -10,6 +10,33 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-20-talpy-den-app-design.md` (sections "The core", "Agent adapters", "Releases, in order" item 1). Releases 2–5 get plans of their own, written once this one has landed.
 
+## Progress and handoff
+
+Kept current after every task (the owner's rule: "always save and update the
+plan so new chats can follow up"). A new chat resumes from here: read this
+section, then the next open task.
+
+- **Execution:** subagent-driven (owner, 2026-11-20). A fresh agent implements each task, a fresh reviewer checks it before the next one, and the whole branch is reviewed at the end.
+- **Branch:** set when execution starts (from `main`, after the VS Code UI animation work is merged).
+- **Before Task 1:** the VS Code webview animation fix (a separate branch, worked on by an agent on 2026-11-20) must be reviewed and merged into `main`. Status: running.
+
+| Task | Status | Commits | Review | Notes |
+|---|---|---|---|---|
+| 1 Core folder, build, tests | not started | | | |
+| 2 HostServices, FakeHost, VsCodeHost | not started | | | |
+| 3 Shared types, agent-neutral | not started | | | |
+| 4 Settings through the host | not started | | | |
+| 5 VS Code-free modules | not started | | | |
+| 6 Ports | not started | | | |
+| 7 Notify and away | not started | | | |
+| 8 Dashboard | not started | | | |
+| 9 Actions | not started | | | |
+| 10 Accounts, relay, dictation, agent runs | not started | | | |
+| 11 Talpy Chat's logic | not started | | | |
+| 12 Wiring, VS Code check, docs | not started | | | |
+
+Decisions taken during execution: (none yet)
+
 ## Global Constraints
 
 - Release 1 changes nothing VS Code users see: no setting, command, message, view or behaviour changes; every existing test keeps passing, with at least as many tests as before (Task 1 records the count).
