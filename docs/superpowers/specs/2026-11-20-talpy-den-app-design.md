@@ -126,6 +126,32 @@ C costs a second runtime and a weaker engine on Linux, the main platform, for a
 smaller download; Qt keeps two UIs. Flutter was ruled out (a rewrite of
 everything).
 
+**Measured (2026-11-20, a throwaway test on the owner's laptop, Fedora KDE on
+Wayland).** The UI's demo pages (`vscode/dev/harness.html` for the dashboard,
+`vscode/dev/chat.html` for Talpy Chat), the same timeline in Electron 45.4.1
+(Chromium 156) and in WebKitGTK 2.54.2, the engine Tauri uses on Linux (in a
+small GTK window; Tauri's own shell would add little). Memory is PSS summed
+over each app's processes:
+
+| | Electron 45 | WebKitGTK (Tauri on Linux) |
+|---|---|---|
+| Dashboard, click to visible (first window) | 400 ms | 939 ms |
+| A Talpy Chat window, click to visible | **~90–150 ms** | ~520–565 ms |
+| Memory: the dashboard alone | 337 MB | **~190 MB** |
+| Memory: each further chat window | **~20 MB** | ~55 MB |
+| Memory: dashboard + 10 chat windows | **588 MB** | ~750 MB |
+| CPU: dashboard (demo data, pets moving) | 50% of a core | 37% |
+| CPU: dashboard + 10 chat windows | 110% | 95% |
+
+What it means: WebKitGTK is lighter only for a single window; with many
+chats open, which is how the owner works ("many agents in parallel, many chats
+loaded at the same time… I click and I get directly the answer"), Electron
+opens a chat about five times faster and needs less memory. Both engines draw
+the UI the same way. And in both, **the UI's own animations cost the CPU**
+(half a core for the dashboard's demo, ~5–6% for each idle chat window), so
+the shared UI needs the treatment the Plasma widget got on 2026-11-20 (see
+"Performance budgets"); VS Code's users gain from it too.
+
 The owner's condition: **the shell stays replaceable.** The UI and the core
 talk only through Talpy Den's own connection, never through Electron APIs, so
 the shell could become Tauri later without touching either.
@@ -388,6 +414,16 @@ a KWin script counting each window's repaints):
 - The app: nothing drawn while its windows are hidden or minimized; a Talpy
   Chat window while a tool runs no worse than today's 32 repaints a second
   (Chromium repaints only the changed area).
+- **The shared UI's animations** (measured above: half a core for the
+  dashboard's demo, ~5–6% for each idle chat window, in both engines) follow
+  the rules the Plasma widget got on 2026-11-20: one clock for what moves in a
+  page, CSS animations the compositor runs instead of drawing each frame in
+  JavaScript where the look allows, and nothing moving in a page nobody sees
+  (hidden, minimized, covered, the screen locked). Targets: an idle chat window
+  under 1% of a core, the dashboard with the pets moving under 10%. This is
+  part of release 3 and lands in VS Code at the same time.
+- **Opening a chat**: visible within ~150 ms of the click (Electron measured
+  ~90–150 ms), with ten or more chat windows open.
 - The panel icon: at most today's ~14 repaints a second while chats work.
 - The desktop widget: holds still covered, under windows or locked.
 - Memory: the core under ~150 MB; the app with the dashboard and one Talpy Chat
