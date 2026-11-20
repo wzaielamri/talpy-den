@@ -68,9 +68,13 @@ ColumnLayout {
         Item {
             Layout.fillWidth: true
         }
+        // (turning only where it can be seen: a host is checked every few
+        // seconds, seen or not, and a spinner turning in a closed popup, under
+        // windows or behind the locked screen kept Qt's animations ticking)
         PlasmaComponents3.BusyIndicator {
+            id: hostSpinner
             visible: hostSection.info.loading
-            running: visible
+            running: visible && root.dashboardShown && !root.coveredByWindow && !root.underWindows(hostSpinner)
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Kirigami.Units.iconSizes.small
         }

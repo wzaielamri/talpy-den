@@ -178,6 +178,18 @@ Item {
         self.assertEqual(seen[9], [False, True], seen)    # unlocked: it ticks
         self.assertEqual(seen[15], [True, False], seen)   # locked again: it stops
 
+
+class NothingMovesForNobodyTests(unittest.TestCase):
+    def test_a_hosts_spinner_turns_only_where_it_can_be_seen(self):
+        # An SSH host is checked every few seconds whether anyone looks or
+        # not; its spinner turning in a closed popup, under windows or behind
+        # the locked screen kept Qt's animations ticking 60 times a second
+        host = (UI / "HostSection.qml").read_text()
+        spinner = host[host.index("PlasmaComponents3.BusyIndicator {"):]
+        running = spinner[spinner.index("running:"):].split("\n")[0]
+        for seen in ("root.dashboardShown", "!root.coveredByWindow", "!root.underWindows("):
+            self.assertIn(seen, running)
+
     def test_a_locked_screen_covers_every_copy(self):
         # main.qml: what stops for a copy under windows (the pets, the ticker,
         # a desktop's dashboard holding its answers) stops for a locked screen
@@ -185,8 +197,6 @@ Item {
         covered = main[main.index("readonly property bool coveredByWindow:"):]
         self.assertIn("Beat.locked", covered[:covered.index("\n    //")])
 
-
-class NothingMovesForeverTests(unittest.TestCase):
     def test_no_animation_runs_forever_on_its_own_clock(self):
         # One that does has its whole window drawn at the screen's rate for as
         # long as it runs (Talpy Chat's dot: 60 frames a second while a tool
