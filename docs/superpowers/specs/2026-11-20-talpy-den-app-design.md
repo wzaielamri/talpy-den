@@ -37,11 +37,12 @@ windows spread over several screens.
 
 ## Goals
 
-1. **One app** (the "Talpy Den app") with everything the VS Code version does
-   today: the dashboard (chats, accounts, plan usage, SSH hosts and containers,
-   pets, games), Talpy Chat, Projects, Permissions, Recap, queued tasks, finding
-   chats, notifications. The owner: "everything should be identical in both";
-   the first release is that feature set.
+1. **One app** (the "Talpy Den app") with everything Talpy Den does today on
+   Plasma and in VS Code: the dashboard (chats, accounts, plan usage, SSH hosts
+   and containers, pets, games), Talpy Chat, Projects, Permissions, Recap,
+   queued tasks, finding chats, notifications. The owner: "everything should be
+   identical in both"; the first release is the **union** of the two (see
+   "Parity on release day").
 2. **One UI**: the app's screens are the VS Code extension's React UI
    (`vscode/webview`), so VS Code and the app show the same thing and a feature
    is written once.
@@ -84,9 +85,13 @@ It would be a failure, even if it works, if:
 
 ## Constraints
 
-- **Targets**: Linux first: Fedora and Ubuntu (24.04 LTS and 26.04 LTS), KDE
-  Plasma 6 and GNOME (49/50; 43/44 kept as today if cheap). Later macOS,
-  Windows, the phone.
+- **Targets**: Linux first. Full desktop integration on current Fedora (KDE
+  Plasma 6, GNOME 51) and Ubuntu 26.04 LTS (GNOME 50); the GNOME extension
+  supports 49, 50 and 51 (its 43/44 version kept as today if cheap). On Ubuntu
+  24.04 LTS (GNOME 46) and Kubuntu 24.04 (Plasma 5): **the app and its tray
+  icon only** (owner, 2026-11-20): no top-bar list, and on GNOME a chat's
+  terminal can't be brought to the front there. Later macOS, Windows, the
+  phone.
 - **Privacy** (`docs/privacy.md`): nothing is sent anywhere; Talpy Den calls
   no Anthropic API itself; it reads Claude Code's files and runs `claude`,
   `ssh` and container tools as the user does; its files stay where they are and
@@ -139,7 +144,8 @@ the shell could become Tauri later without touching either.
    │  platform layer: Linux                       │
    │  Python worker (talpy_den.py, week.py, …)    │
    └──────────────┬───────────────────────────────┘
-                  │ one connection: a Unix socket only the user can open
+                  │ one set of messages: a Unix socket only the user can open
+                  │ (app, VS Code), and the session D-Bus (Linux desktop parts)
    ┌──────────┬───┴──────────┬──────────────┬───────────────┬──────────────┐
    app        VS Code         Plasma panel   Plasma desktop  GNOME          jobs.json
    (windows,  (same UI;       icon (glyph,   widget (the     extension      (Talpy Den
@@ -200,17 +206,64 @@ says so to the core the same way. Checks and notifications go on.
 
 ### The connection
 
-- A Unix socket, newline-delimited JSON messages. The messages start from the
-  ones the VS Code UI and host exchange today (`WebviewMessage`, 62 kinds, and
-  `HostMessage` in `vscode/src/shared/types.ts`), plus what thin clients need:
-  a small "summary" (the badge count and colour, usage %, the glyph's mode, the
-  short list) and "open this" requests (open the app, a chat, settings).
+One set of messages, reached two ways, both only by the user's own processes:
+
+- **The socket** (the app, VS Code; every platform later): a Unix socket,
+  newline-delimited JSON. The messages start from the ones the VS Code UI and
+  host exchange today (`WebviewMessage`, 62 kinds, and `HostMessage` in
+  `vscode/src/shared/types.ts`), plus what thin clients need: a small
+  "summary" (the badge count and colour, usage %, the glyph's mode, the short
+  list) and "open this" requests (open the app, a chat, settings).
+- **The session D-Bus** (Linux's desktop parts: the Plasma widgets and the
+  GNOME extension): a small interface of the core with the summary (a property
+  and a change signal), the "open this" methods, and a relay that carries the
+  same messages for the desktop widget's page. Plasma's QML reaches it with
+  `org.kde.plasma.workspace.dbus` (its `SignalWatcher` and `asyncCall`, used by
+  the widget's lock watch since 2026-11-20) and passes messages to and from the
+  page with QtWebChannel's `WebChannel`; GNOME uses Gio. So the Plasma parts
+  stay plain QML: **no compiled code**, nothing to rebuild for each distro or Qt
+  version, and the packages still come from one `electron-builder` setup.
 - A hello first: protocol version, client kind, what it subscribes to. A client
   gets the full state, then changes.
-- Only the user can open the socket (the folder's mode); there is no TCP port,
-  not even on localhost. Nothing else can reach the core.
+- There is no TCP port, not even on localhost. The socket's folder is mode
+  0700; the session bus is the user's own.
 - Talpy Den Display's `$XDG_RUNTIME_DIR/talpy-den/jobs.json` is written by the
   core, as today.
+
+### Parity on release day
+
+The owner switches at once, so the app carries what each front end has today
+(the reviewer counted 54 Plasma settings, `package/contents/config/main.xml`,
+and 43 VS Code ones):
+
+- **From Plasma, into the core and the app**: phone notifications through KDE
+  Connect (`phoneWhileAway`, `phoneFinished`, `phoneDevice`), the shortcuts
+  (the chat that needs you, Talpy Chat: global shortcuts through the platform
+  layer, KDE's KGlobalAccel and GNOME's as the extension does today), the app
+  that shows Markdown (`markdownApp`: Okular or the browser), the side
+  questions' model, Talpy Chat's terminal font, the Accounts and Hosts settings
+  pages. The icon's blink stays with the panel icon.
+- **The app's own, where VS Code gives its own today**: a **settings page** in
+  the shared UI (`vscode/webview` has none: its gear opens VS Code's Settings)
+  with the union of the settings; **pickers, inputs and confirmations** in the
+  UI where VS Code uses quick picks and input boxes (35 calls); a **command
+  menu** for the commands VS Code puts in its palette (about 35: Live Mode,
+  Dictation Models, Old Chats, Show Hidden…).
+- **Handed off, as Plasma does today**: a chat's changes open in VS Code's
+  changes view through Talpy Den's `vscode://` links when VS Code is installed,
+  else a diff per file (`code --diff`, `jump.py`); plans in Okular or the
+  browser; plan line comments stay VS Code's. The app's own diff and review
+  views come later (Monaco), with agentic coding.
+
+### Notifications and questions
+
+One place decides: the core. When a client window has focus (an app window or
+a VS Code window connected to the core), the notification and its question
+(Allow, Deny, Reply, an answer) show there, in the window, as VS Code shows them
+today; otherwise as a desktop notification (KDE, GNOME), with actions where the
+desktop has them. Clients tell the core when they gain and lose focus. A
+notification shows once, where you're looking. The Monday Recap and the "while
+you were away" summary follow the same rule.
 
 ### The app (Electron)
 
@@ -230,10 +283,20 @@ says so to the core the same way. Checks and notifications go on.
 
 ### VS Code
 
-On start it looks for the socket. If it's there and speaks a compatible
-protocol version, VS Code is a client (its view and Talpy Chat tabs show the
-app's core); otherwise it runs the core inside itself, as today. Its settings
-editor stays its settings page.
+On start it looks for the socket. If it's there, VS Code is a client, and its
+view and Talpy Chat tabs **load the app's installed UI files** instead of its
+own, so the UI always matches the core it talks to, whichever was updated last
+(the Marketplace updates the extension on its own; the app comes with the
+system's updates). The extension then keeps only what only VS Code can do (its
+terminals and editor tabs, the changes view, plan comments, its settings
+editor, mirrored to the core's settings), which the core asks for through the
+connection. If the app is older than the extension needs (a minimum app
+version in the extension), VS Code runs its own core, as when the app isn't
+installed. The backend's `--instance` election stays for good, as a guard
+against two cores notifying.
+
+Without the app, nothing changes: VS Code runs the core inside itself and uses
+its own UI files. Its settings editor stays its settings page.
 
 ### Plasma
 
@@ -246,10 +309,9 @@ editor stays its settings page.
   the installed app. It keeps the cover watch (`CoverWatch.qml`) and tells the
   page when it's covered or the screen is locked (the `visible` message exists
   already), so the pets hold still for nobody.
-- Both reach the core through a small compiled QML module shipped in the
-  packages (a Unix socket client; for the web view, a bridge into the page in
-  place of `acquireVsCodeApi`). QML alone can't open a Unix socket, and a
-  localhost port would break the no-port rule.
+- Both reach the core through its D-Bus interface, in plain QML (see "The
+  connection"): the panel icon reads the summary; the desktop widget's page
+  gets a bridge object through `WebChannel` in place of `acquireVsCodeApi`.
 - The old popup and desktop dashboard (`package/contents/ui`) are removed on
   release day (owner's choice: switch at once).
 
@@ -258,8 +320,8 @@ editor stays its settings page.
 The extension keeps the top-bar icon, the badge and a short list (the chats
 that need you, a line per working chat), opens the app on a click, and keeps
 the window raiser that only the shell may do (bringing a chat's terminal to
-the front). It reaches the core through the socket (Gio). Its popup's other
-parts are removed.
+the front). It reaches the core through its D-Bus interface (Gio). Its popup's
+other parts are removed.
 
 ### Settings
 
@@ -276,7 +338,8 @@ the app does them on first start, after asking, as `install.sh` asks.
 
 ### Privacy and security rules
 
-- No network port; the socket only the user can open.
+- No network port; the socket only the user can open, and the user's own
+  session bus.
 - No telemetry, no crash reports, no analytics. Electron's crash reporter off.
 - No remote content in the UI; a content security policy of local files.
 - Updates: rpm and deb come from the repositories, through the system's
@@ -309,9 +372,10 @@ a KWin script counting each window's repaints):
   repository (or a PPA), with an AppArmor profile so Electron's sandbox works
   on 24.04 and later (as Chrome and VS Code ship one). The AppImage is a
   fallback (on Ubuntu it would have to run without that sandbox).
-- The packages carry the app, the core's systemd user units, the Plasma
-  widgets and their QML module, the GNOME extension, the desktop file and the
-  icons. The release workflow builds them with the VS Code extension.
+- The packages carry the app, the core's systemd user units and its D-Bus
+  service file, the Plasma widgets (plain QML), the GNOME extension, the
+  desktop file and the icons. The release workflow builds them with the VS
+  Code extension; nothing in them is compiled per distro.
 
 ### Rust: what and when
 
@@ -350,11 +414,13 @@ Each one is a working Talpy Den.
 2. **Core process and connection**: the socket, the protocol, the systemd user
    units, the Python worker; VS Code connects when the socket is there.
 3. **The app**: Electron with the dashboard and Talpy Chat windows, the tray,
-   notifications, the settings page and the one-time import, the first-start
-   setup (status line, hooks); rpm for the owner's daily use, next to the old
-   widget while it's being built.
-4. **The switch (2.0)**: the thin Plasma panel icon and desktop widget (with
-   the QML module), the thin GNOME extension, the deb with its AppArmor
+   notifications, the settings page, pickers and command menu, the Plasma-only
+   features (phone, shortcuts, Markdown app…), the one-time import, the
+   first-start setup (status line, hooks); rpm for the owner's daily use, next
+   to the old widget while it's being built.
+4. **The switch (2.0)**: the core's D-Bus interface, the thin Plasma panel
+   icon and desktop widget, the thin GNOME extension, VS Code loading the app's
+   UI files when connected, the deb with its AppArmor
    profile, the COPR and apt repositories, the AppImage; the old QML popup,
    desktop dashboard and GNOME popup removed; docs and `docs/privacy.md` for the
    app.
@@ -371,7 +437,9 @@ Each one is a working Talpy Den.
   data VS Code's harness already has (`vscode/dev/harness.html`).
 - The thin parts: an offscreen render of the Plasma widgets
   (`tools/render_popup.sh`'s way) and the headless GNOME Shell run
-  (`tools/gnome/shell.sh`).
+  (`tools/gnome/shell.sh`, GNOME 50 and 51).
+- The app on each target: current Fedora (KDE, GNOME), Ubuntu 26.04, and
+  Ubuntu 24.04 (the app and its tray icon, the deb's AppArmor profile).
 - The performance budgets, measured on the owner's laptop before the switch.
 
 ## Decided by the owner (2026-11-20)
@@ -385,6 +453,8 @@ Each one is a working Talpy Den.
 - Parity: everything identical to today's VS Code version.
 - Secure and private, as promised; updates when a new version is released.
 - Linux first (Fedora and Ubuntu, KDE and GNOME); macOS, Windows, phone later.
+- Ubuntu 24.04 and Kubuntu 24.04: the app and its tray icon only, no port of
+  the GNOME extension to 46–48.
 - Electron, the React UI and a TypeScript core; the shell kept replaceable;
   Rust later, piece by piece; nothing to Rust now.
 - Harness and other agents later; the agent adapter now.
@@ -395,7 +465,18 @@ Each one is a working Talpy Den.
 - The core started by a systemd user socket unit; VS Code alone runs its own.
 - The connection: a Unix socket, newline-delimited JSON, a version in the
   hello; no TCP port at all.
-- A compiled QML module for the Plasma widgets (socket and web view bridge).
+- The Plasma widgets and the GNOME extension reach the core through a small
+  D-Bus interface, in plain QML and Gio: no compiled code to rebuild per
+  distro (the reviewer's point: a compiled QML module is tied to the Qt it was
+  built with).
+- VS Code, connected, loads the app's installed UI files, so UI and core
+  always match; an app older than the extension's minimum means VS Code runs
+  its own core; the `--instance` election stays as a guard.
+- Release-day parity is the union of Plasma's and VS Code's features and
+  settings; what VS Code itself provides (changes view, plan comments) is
+  handed off to VS Code as Plasma does today.
+- Notifications show once: in the focused window (app or VS Code), else on the
+  desktop.
 - A long-running Python worker instead of rewriting the backend.
 - One settings file owned by the core; a one-time import.
 - rpm first (the owner's Fedora), then the deb with an AppArmor profile; the
@@ -406,17 +487,21 @@ Each one is a working Talpy Den.
 
 ## Left to the builder
 
-Names (packages, the QML module, the app's id and desktop file), the
+Names (packages, the D-Bus interface, the app's id and desktop file), the
 protocol's exact message shapes beyond today's, the repository layout for
 `core/` and `app/`, how the UI's saved state is kept per window, icons, the
+app's colours (the UI uses VS Code's `--vscode-*` colour variables: the app
+supplies its own, light and dark), whether KDE also gets the app's tray icon
+next to the panel icon, how release 2 is shipped before the app exists, the
 COPR and apt repository setup, and how VS Code's settings mirror to the core's
 file.
 
 ## Risks
 
 - **Two cores at once** while VS Code runs its own and the app is installed
-  later: VS Code must notice the socket and switch, or both notify (the
-  backend's `--instance` election stays as a guard until release 4).
+  later, or the app is older than VS Code needs: VS Code must notice the
+  socket and switch, or both notify (the backend's `--instance` election stays
+  as a guard).
 - **A web view inside plasmashell** (the desktop widget): its memory, and
   repaints of the desktop window while the pets move; the budgets must hold.
 - **Ubuntu's sandbox rule** for Electron: the deb's AppArmor profile must be
