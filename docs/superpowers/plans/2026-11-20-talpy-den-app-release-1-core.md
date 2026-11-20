@@ -51,6 +51,14 @@ Decisions taken during execution (details in the ledger):
 - Task 12: pass `VsCodeEditor` its `planReview` when wiring, the same one `actions` gets. Left unset, plan feedback goes out without the comments.
 - The animation fix and the task-strip split are in `main` and merged here.
 
+**After Task 12 and the final review (owner, 2026-11-20): remove the tests that are no longer needed or useful.**
+- Release 1's rule that the test count never drops covers the moves only. This cleanup comes after them, as its own reviewed step.
+- Candidates:
+  - tests that duplicate another test's coverage, e.g. a VS Code test and a core test of the same scenario;
+  - text assertions that pin code shapes the moves made obsolete;
+  - tests of code that no longer exists.
+- Each removal gets a one-line reason, and the owner gets the list.
+
 ## Global Constraints
 
 - Release 1 changes nothing VS Code users see: no setting, command, message, view or behaviour changes; every existing test keeps passing, with at least as many tests as before (Task 1 records the count).
