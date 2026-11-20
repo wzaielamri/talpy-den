@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import "./useHost";
 import { findJobRef, jobIdOk, JOB_ID, openDir, OpenWatch, pendingOpens, takeOpen } from "../src/openRequests";
 import { demoState } from "../../core/src/shared/demo";
 

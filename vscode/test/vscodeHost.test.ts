@@ -2,11 +2,14 @@ import { test, beforeEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
+import * as fs from "node:fs";
+import { settingNames } from "../src/legacySettings";
 import { VsCodeHost } from "../src/vscodeHost";
 
 const logLines: string[] = [];
 const channel = { info: (m: string) => logLines.push(`info ${m}`), warn: (m: string) => logLines.push(`warn ${m}`), error: (m: string) => logLines.push(`error ${m}`) };
-const make = () => new VsCodeHost(channel as unknown as vscode.LogOutputChannel);
+const keys = settingNames(JSON.parse(fs.readFileSync("package.json", "utf8")));
+const make = () => new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys);
 const last = () => stub.calls[stub.calls.length - 1];
 
 beforeEach(() => {

@@ -18,6 +18,7 @@ import {
   toLocalClock,
 } from "../../core/src/shared/model";
 import type { Group, Session, Status, Stop } from "../../core/src/shared/types";
+import "./useHost";
 import { mergeChanges, TransitionTracker } from "../src/transitions";
 
 const NOW = 1_800_000_000_000;

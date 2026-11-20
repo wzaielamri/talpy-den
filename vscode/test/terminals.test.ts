@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import type { Backend } from "../src/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";

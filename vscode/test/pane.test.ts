@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import { ChatPanes } from "../src/chatPane";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";

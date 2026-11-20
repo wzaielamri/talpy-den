@@ -11,7 +11,7 @@ import * as vscode from "vscode";
 import { AwayWatch } from "./away";
 import type { Backend, HostContainers, SshHost } from "./backend";
 import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
-import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "./config";
+import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "../../core/src/settings";
 import { HostWatch, watchName, type WatchAnswer } from "./hostWatch";
 import { LiveWatch } from "./live";
 import type { Notifier } from "./notify";

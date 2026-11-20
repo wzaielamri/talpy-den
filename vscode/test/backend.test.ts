@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
+import "./useHost";
 import { Backend, runProcess } from "../src/backend";
 
 const children: ChildProcess[] = [];

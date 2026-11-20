@@ -12,7 +12,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import { localPanelProfileKey, panelConfigDir, profileKey } from "./claudePanel";
 import type { Backend } from "./backend";
-import { configDirArgs } from "./config";
+import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { hostLabel, machineStatus } from "../../core/src/shared/model";

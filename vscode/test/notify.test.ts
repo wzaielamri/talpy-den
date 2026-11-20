@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./useHost";
 import { demoState } from "../../core/src/shared/demo";
 import type { PermissionAsk, Session } from "../../core/src/shared/types";
 

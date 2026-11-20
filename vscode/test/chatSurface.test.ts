@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import { ChatPanes } from "../src/chatPane";
 import { emptyHtml, emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
 import { demoState } from "../../core/src/shared/demo";

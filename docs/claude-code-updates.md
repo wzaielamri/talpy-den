@@ -2210,7 +2210,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Test: ChatPickTests.test_what_it_uses_now (test_pane.py).
 - [ ] **VS Code's panel runs no status line.** So its chats don't refresh plan usage, and Talpy Den has Claude
   fetch it instead (`--usage-refresh`, "as /usage does: no tokens, no chat saved").
-  - Used in: vscode/src/config.ts statusArgs; vscode/package.json; configUsage.qml;
+  - Used in: core/src/settings.ts statusArgs; vscode/package.json; configUsage.qml;
     package/contents/config/main.xml; gnome/extension/prefs.js; talpy_den.py (--fetch-usage).
   - Check: on a profile with the snippet, send a message in a panel chat. `$SNAP/` should get no file named
     after that chat's `sessionId`.

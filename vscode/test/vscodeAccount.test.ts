@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import "./useHost";
 import { configDirFor, withConfigDir } from "../src/vscodeAccount";
 
 function home(withLink: boolean): string {

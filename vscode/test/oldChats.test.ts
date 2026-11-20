@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
+import "./useHost";
 import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, overridesNote, riskText, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
 
 const when = (ms: number) => `t${ms}`;

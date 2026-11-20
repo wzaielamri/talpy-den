@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { expandHome } from "./config";
+import { expandHome } from "../../core/src/settings";
 
 const NEW_CHAT_TAB = "claude-vscode.editor.open"; // "Claude Code: Open in New Tab"
 

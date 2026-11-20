@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { demoProjects, demoState } from "../../core/src/shared/demo";
 import { badgeOf, chatRefOf, findProjectChat, recentRef } from "../../core/src/shared/model";
 import type { ProjectsData, RecentChat, ViewState } from "../../core/src/shared/types";
+import "./useHost";
 import { ViewHost } from "../src/view";
 import { recorded } from "./vscode-stub";
 

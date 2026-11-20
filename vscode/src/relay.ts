@@ -7,7 +7,7 @@
 
 import * as vscode from "vscode";
 import type { Backend } from "./backend";
-import { configDirArgs } from "./config";
+import { configDirArgs } from "../../core/src/settings";
 import { hostLabel } from "../../core/src/shared/model";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";

@@ -14,7 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { runProcess } from "./backend";
-import { expandHome, extraConfigDirs } from "./config";
+import { expandHome, extraConfigDirs } from "../../core/src/settings";
 import { noLinks } from "./notify";
 import { shellQuote } from "../../core/src/shared/model";
 

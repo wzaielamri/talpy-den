@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import "./useHost";
 import { Dashboard } from "../src/dashboard";
 import { LiveWatch, sessionDirs, type LiveChange } from "../src/live";
 import { demoState } from "../../core/src/shared/demo";

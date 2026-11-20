@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { cacheDir } from "./config";
+import { cacheDir } from "../../core/src/settings";
 import { duration, hostLabel } from "../../core/src/shared/model";
 import type { Group, Session } from "../../core/src/shared/types";
 import type { Changes, PetEvent } from "./transitions";

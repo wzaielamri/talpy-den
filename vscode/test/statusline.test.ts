@@ -4,6 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
+import "./useHost";
 import { apply, MARK_START, patchScript, plan, unpatchScript, unwrapCommand, wrapperPath } from "../src/statusline";
 
 const SNIPPET = fs.readFileSync(path.resolve("vendor/statusline-snippet.sh"), "utf8");

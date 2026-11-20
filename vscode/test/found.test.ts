@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./useHost";
 import type { FindAnswer } from "../src/backend";
 import { allShown, foundLines, showAll, type FoundLine } from "../src/found";
 

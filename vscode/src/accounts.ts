@@ -8,7 +8,7 @@
 import * as vscode from "vscode";
 import type { AccountSwitch } from "./accountSwitch";
 import type { Backend } from "./backend";
-import { configDirArgs } from "./config";
+import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { accountNameProblem, containerOf, hostLabel, machineStatus } from "../../core/src/shared/model";

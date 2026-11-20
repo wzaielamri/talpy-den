@@ -11,7 +11,7 @@
 
 import * as vscode from "vscode";
 import type { AccountShown } from "./accountSwitch";
-import { settings } from "./config";
+import { settings } from "../../core/src/settings";
 import { allGroups, claudeCodeGroup, countStates, overallState, panelWindow, tooltipLines } from "../../core/src/shared/model";
 import type { ViewState } from "../../core/src/shared/types";
 

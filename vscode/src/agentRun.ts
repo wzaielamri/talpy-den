@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { inside } from "./changes";
-import { cacheDir } from "./config";
+import { cacheDir } from "../../core/src/settings";
 import { showDoc } from "./doc";
 import type { ChatRef } from "../../core/src/shared/types";
 

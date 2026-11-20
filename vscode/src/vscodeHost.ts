@@ -3,14 +3,6 @@ import { Emitter } from "../../core/src/events";
 import type {
   ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions,
 } from "../../core/src/host";
-import manifest from "../package.json";
-
-// The talpyDen.* settings the extension declares: VS Code says only whether a section changed, so these are
-// asked one by one which of them did
-const SETTING_KEYS = (manifest.contributes.configuration as { properties: Record<string, unknown> }[])
-  .flatMap((group) => Object.keys(group.properties))
-  .filter((id) => id.startsWith("talpyDen."))
-  .map((id) => id.slice("talpyDen.".length));
 
 // HostServices over the VS Code API: the one place paths and vscode.Uri turn into each other
 export class VsCodeHost implements HostServices {
@@ -19,10 +11,12 @@ export class VsCodeHost implements HostServices {
   private foldersChanged = new Emitter<void>();
   private subscriptions: vscode.Disposable[];
 
-  constructor(private readonly output: vscode.LogOutputChannel) {
+  // settingKeys: the talpyDen.* settings the extension declares (without the prefix). VS Code says only whether
+  // a section changed, so these are asked one by one which of them did
+  constructor(private readonly output: vscode.LogOutputChannel, private readonly settingKeys: readonly string[]) {
     this.subscriptions = [
       vscode.workspace.onDidChangeConfiguration((e) => {
-        const keys = SETTING_KEYS.filter((k) => e.affectsConfiguration(`talpyDen.${k}`));
+        const keys = this.settingKeys.filter((k) => e.affectsConfiguration(`talpyDen.${k}`));
         if (keys.length) this.settingsChanged.fire(keys);
       }),
       vscode.window.onDidChangeWindowState((s) => this.focusChanged.fire(s.focused)),

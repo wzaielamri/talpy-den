@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./useHost";
 import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../src/remoteHost";
 
 const hex = (o: object) => Buffer.from(JSON.stringify(o)).toString("hex");

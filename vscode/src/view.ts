@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
 import type { ChatPanes } from "./chatPane";
-import { setReopenIn, settings } from "./config";
+import { setReopenIn, settings } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "../../core/src/shared/model";
 import { answersOf, askShownOf } from "../../core/src/shared/pane";

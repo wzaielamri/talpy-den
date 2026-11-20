@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./useHost";
 import { AwayTracker } from "../src/away";
 import { demoState } from "../../core/src/shared/demo";
 import type { Group, Session } from "../../core/src/shared/types";

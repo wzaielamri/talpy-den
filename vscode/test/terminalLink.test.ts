@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import { terminalLinkOf, Terminals } from "../src/terminals";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");

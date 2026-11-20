@@ -9,12 +9,12 @@ import { Accounts } from "./accounts";
 import { AccountSwitch } from "./accountSwitch";
 import { Actions } from "./actions";
 import { Backend } from "./backend";
-import { configDirArgs } from "./config";
 import { openChangesLink } from "./changes";
 import { CHAT_KEYS, ChatPanes } from "./chatPane";
 import { dictationModels } from "./dictation";
 import { answerPermissionsHere, liveModeHere } from "./relay";
-import { extraConfigDirs, settings } from "./config";
+import { configDirArgs, extraConfigDirs, settings, useSettingsHost } from "../../core/src/settings";
+import { VsCodeHost } from "./vscodeHost";
 import { markdownLinkFile, openAgentRunFile } from "./agentRun";
 import { initDocs } from "./doc";
 import { Dashboard } from "./dashboard";
@@ -49,6 +49,9 @@ async function carryOverOldSettings(context: vscode.ExtensionContext, log: vscod
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("Talpy Den", { log: true });
+  const host = new VsCodeHost(log, settingNames(context.extension.packageJSON));
+  context.subscriptions.push(host);
+  useSettingsHost(host); // (before anything reads a setting)
   void carryOverOldSettings(context, log);
   const backend = new Backend(context.extensionPath, settings.python);
   initDocs(context.extensionUri); // (plans, runs and memories open in Talpy Den's own tab)

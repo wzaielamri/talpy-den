@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as vscode from "vscode";
 import type { AccountSwitch } from "./accountSwitch";
 import type { Answer, Backend, FindAnswer } from "./backend";
-import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "./config";
+import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "../../core/src/settings";
 import { agentRunArgs } from "./agentRun";
 import { openComparison } from "./changes";
 import { claudePanelAvailable, filedUnder, localPanelConfigDir, localPanelProfileKey, openPanelChat } from "./claudePanel";

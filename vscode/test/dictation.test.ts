@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import { dictationModels } from "../src/dictation";
 import { recorded } from "./vscode-stub";
 

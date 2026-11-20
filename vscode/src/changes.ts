@@ -7,7 +7,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { cacheDir } from "./config";
+import { cacheDir } from "../../core/src/settings";
 import { noLinks } from "./notify";
 
 const ONE_BY_ONE = 25; // diffs opened one by one where the changes view is missing

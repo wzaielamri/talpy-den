@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import type * as vscode from "vscode";
+import "./useHost";
 import type { Backend } from "../src/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
@@ -314,7 +315,7 @@ test("a host that isn't shown is checked while something of it keeps going or is
 
 test("a host listed twice in the settings is one host", async () => {
   const { overrides } = await import("./vscode-stub");
-  const { settings } = await import("../src/config");
+  const { settings } = await import("../../core/src/settings");
   overrides.set("sshHosts", ["a", " b ", "a", ""]);
   try {
     assert.deepEqual(settings.sshHosts(), ["a", "b"]);

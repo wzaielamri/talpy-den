@@ -18,7 +18,7 @@ import { AGENT_ID } from "./agentRun";
 import type { Backend } from "./backend";
 import { openComparison } from "./changes";
 import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface, windowFolders } from "./chatSurface";
-import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "./config";
+import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { chatRefOf, defaultGroup, doingText, hostLabel, liveOf, machineStatus, petKeyOf, recentRef, stateText } from "../../core/src/shared/model";

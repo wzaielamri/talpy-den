@@ -3,12 +3,21 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import * as vscode from "vscode";
-import type { ReopenIn, SshUsage, ViewSettings } from "../../core/src/shared/types";
+import type { HostServices, HostSettings, SettingScope } from "./host";
+import type { ReopenIn, SshUsage, ViewSettings } from "./shared/types";
 
-function cfg() {
-  return vscode.workspace.getConfiguration("talpyDen");
+// Whoever hosts the core (VS Code's activate, a test's setup) says where the settings are read from
+let host: HostServices | undefined;
+export function useSettingsHost(h: HostServices): void {
+  host = h;
 }
+
+// (no host yet is a bug, not a reason to answer with the defaults)
+function hostSettings(): HostSettings {
+  if (!host) throw new Error("no settings host: call useSettingsHost first");
+  return host.settings;
+}
+const cfg = hostSettings;
 
 // A whole number in [min, max]: the scripts take counts like --recent 2.5 as an error
 function num(key: string, fallback: number, min: number, max: number): number {
@@ -82,19 +91,15 @@ export function chatOptionArgs(): string[] {
 // (application settings: only your user settings hold them, never a
 // workspace's or a remote's, which could start chats with prompts off)
 export async function setChatOptions(model: string, effort: string, mode: string): Promise<void> {
-  await cfg().update("newChatModel", model, vscode.ConfigurationTarget.Global);
-  await cfg().update("newChatEffort", effort, vscode.ConfigurationTarget.Global);
-  await cfg().update("newChatMode", mode, vscode.ConfigurationTarget.Global);
+  await hostSettings().update("newChatModel", model);
+  await hostSettings().update("newChatEffort", effort);
+  await hostSettings().update("newChatMode", mode);
 }
 
 // Where a setting's value comes from: its folder's, its workspace's, else the user's
-function whereSet(key: string): vscode.ConfigurationTarget {
-  const set = cfg().inspect<unknown>(key);
-  return set?.workspaceFolderValue !== undefined
-    ? vscode.ConfigurationTarget.WorkspaceFolder
-    : set?.workspaceValue !== undefined
-      ? vscode.ConfigurationTarget.Workspace
-      : vscode.ConfigurationTarget.Global;
+function whereSet(key: string): SettingScope {
+  const set = hostSettings().inspect(key);
+  return set?.workspaceFolder !== undefined ? "workspaceFolder" : set?.workspace !== undefined ? "workspace" : "global";
 }
 
 export function viewSettings(): ViewSettings {
@@ -140,12 +145,12 @@ export function statusArgs(): string[] {
 
 // (an "application" setting: only your user settings hold it)
 export async function setSshHosts(hosts: string[]): Promise<void> {
-  await cfg().update("sshHosts", hosts, vscode.ConfigurationTarget.Global);
+  await hostSettings().update("sshHosts", hosts);
 }
 
 // Written where it's set: a workspace's own value would win over the user's
 export async function setReopenIn(where: ReopenIn): Promise<void> {
-  await cfg().update("reopenIn", where, whereSet("reopenIn"));
+  await hostSettings().update("reopenIn", where, whereSet("reopenIn"));
 }
 
 export function cacheDir(): string {

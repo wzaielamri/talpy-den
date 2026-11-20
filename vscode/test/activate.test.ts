@@ -9,6 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import * as vscode from "vscode";
+import "./useHost";
 import { activate } from "../src/extension";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
@@ -33,7 +34,11 @@ test("activates, registers everything, and shows the first poll", { skip: proces
     const commands = stub.commands as unknown as Record<string, unknown>;
     const execute = commands.executeCommand;
     commands.executeCommand = async (id: string, key: string, value: unknown) => void (id === "setContext" && contexts.push([key, value]));
-    activate({ subscriptions, extensionPath: path.resolve("."), extensionUri: vscode.Uri.file(path.resolve(".")) } as unknown as vscode.ExtensionContext);
+    // (globalState says the old settings were carried over already: that step has its own tests)
+    const globalState = { get: () => true, update: async () => {} };
+    activate({
+      subscriptions, extensionPath: path.resolve("."), extensionUri: vscode.Uri.file(path.resolve(".")), globalState, extension: { packageJSON: manifest },
+    } as unknown as vscode.ExtensionContext);
 
     for (const c of manifest.contributes.commands) assert.ok(stub.recorded.commands.has(c.command), `command ${c.command} registered`);
     assert.ok(stub.recorded.viewProviders.has("talpyDen.view"));

@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import "./useHost";
 import { HostWatch, watchName, type WatchAnswer } from "../src/hostWatch";
 import { hookedAtWork } from "../../core/src/shared/model";
 

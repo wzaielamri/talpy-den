@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Backend } from "./backend";
 import type { ChatPanes } from "./chatPane";
-import { cacheDir, settings } from "./config";
+import { cacheDir, settings } from "../../core/src/settings";
 import { gnomeSoundTheme } from "./desktop";
 import type { Digest } from "./away";
 import { oneChoice, questionsOf, shownAsk } from "../../core/src/shared/pane";

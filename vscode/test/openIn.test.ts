@@ -27,6 +27,7 @@ import {
 } from "../../core/src/shared/model";
 import type { Group, PlanItem } from "../../core/src/shared/types";
 import * as vscode from "vscode";
+import "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions, typedFolder } from "../src/actions";
 import type { Backend } from "../src/backend";

@@ -18,6 +18,7 @@ import {
   planUseText, planUseTip, planWeeksShown, weekShareShort, weekShareTip,
   daysBack, laneHoverText, laneTicks, mixLabel, mixTip, mixValue, modelRowText, tipChatAct, tipChatFigure, tipsShown, tipShareShown, tipWas,
 } from "../../core/src/shared/week";
+import "./useHost";
 import { ViewHost } from "../src/view";
 
 const MIN = 60000;

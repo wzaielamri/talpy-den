@@ -9,6 +9,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { demoState } from "../../core/src/shared/demo";
 import type { Group, Overall, SessionState, ViewState } from "../../core/src/shared/types";
+import "./useHost";
 import { StatusBar } from "../src/statusBar";
 import { recorded } from "./vscode-stub";
 

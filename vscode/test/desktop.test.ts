@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import type * as vscode from "vscode";
+import "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
 import type { Backend } from "../src/backend";
