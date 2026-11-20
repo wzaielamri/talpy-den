@@ -397,6 +397,12 @@ a KWin script counting each window's repaints):
 
 - `electron-builder` from one configuration: rpm, deb and AppImage now; later
   exe and dmg. One version for the app, VS Code and the thin widgets.
+- **Electron stays supported.** A new Electron major comes every 8 weeks and
+  only the newest three get fixes (about 6 months each; 45 is the newest on
+  2026-11-20, Chromium 156, supported until 2027-04-27). Each Talpy Den
+  release moves to the newest stable Electron, and a security fix in a
+  supported one is a release of its own. The app never ships an Electron past
+  its end of life.
 - Fedora: an rpm in a COPR repository. Ubuntu: a deb in Talpy Den's own apt
   repository (or a PPA), with an AppArmor profile so Electron's sandbox works
   on 24.04 and later (as Chrome and VS Code ship one). The AppImage is a
