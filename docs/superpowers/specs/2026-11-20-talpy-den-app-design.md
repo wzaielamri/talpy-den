@@ -430,12 +430,33 @@ a KWin script counting each window's repaints):
   (Chromium repaints only the changed area).
 - **The shared UI's animations** (measured above: half a core for the
   dashboard's demo, ~5–6% for each idle chat window, in both engines) follow
-  the rules the Plasma widget got on 2026-11-20: one clock for what moves in a
-  page, CSS animations the compositor runs instead of drawing each frame in
-  JavaScript where the look allows, and nothing moving in a page nobody sees
-  (hidden, minimized, covered, the screen locked). Targets: an idle chat window
-  under 1% of a core, the dashboard with the pets moving under 10%. This is
-  part of release 3 and lands in VS Code at the same time.
+  the rules the Plasma widget got on 2026-11-20:
+  - One clock, a beat at 30 a second in step with the screen, for everything
+    that moves in a page. Effects that move together share its frames.
+  - Effects move in steps, not smoothly at the screen's rate.
+  - Nothing moves in a page nobody sees: hidden, minimized, covered, or with
+    the screen locked.
+
+  Targets: an idle chat window under 1% of a core, the dashboard with the pets
+  moving under 10%.
+
+  Measured on 2026-11-20 with GPU compositing on (Electron 45, ANGLE on
+  OpenGL ES, radeonsi; VS Code reports the same):
+  - A smooth CSS or Web Animation still costs about 15% of a core per effect,
+    because the compositor draws every frame. So "let the compositor run it"
+    is not cheap here.
+  - Stepped CSS costs about the same as the beat for one effect alone. The
+    beat wins once several effects move together, because they share frames.
+
+  This landed in the VS Code webview first, merged into `main` on 2026-11-20:
+  - the dashboard with its pets went from 51% to 31–36% of a core;
+  - a working chat's Steps tab from 21% to 6.3%;
+  - an idle chat is at 0.1%, so the idle target is met.
+
+  The dashboard's 10% target isn't met at 30 beats a second; reaching it would
+  take about 15 a second for the pets, a visible slowdown. That is the owner's
+  call, and it is one constant, `BEAT_MS`. The app's UI is the same code, so it
+  gets the same result in release 3.
 - **Opening a chat**: visible within ~150 ms of the click (Electron measured
   ~90–150 ms), with ten or more chat windows open.
 - The panel icon: at most today's ~14 repaints a second while chats work.

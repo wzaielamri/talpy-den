@@ -29,7 +29,7 @@ section, then the next open task.
 | 3 Shared types, agent-neutral | done | 469194c1, cf7e0df1 | clean after 1 fix round | 430 → 433 tests; Python 1669 OK. The Python tests, `docs/claude-code-updates.md` and the comments that named `vscode/src/shared` now name `core/src/shared`. The row-key test needs the webview, so it stays in `vscode/test/rowKey.test.ts`. The tests build clears `out/test` first, so stale bundles don't run. Open for later: `core/src/shared/pane.ts` imports `vscode/vendor/*.mjs`. |
 | 4 Settings through the host | done | 59ecc5f8, 55b50e25 | clean after 1 fix round | 433 → 439 tests; Python 1669 OK. `useSettingsHost` runs first in `activate`; reading a setting before it throws "no settings host". `setReopenIn` writes in the scope where the setting is set. `VsCodeHost(log, settingKeys)` gets its keys from `settingNames(context.extension.packageJSON)`, so no manifest is bundled. VS Code tests set the host through `vscode/test/useHost.ts`, except `activate.test`, which must not. |
 | 5 VS Code-free modules | done | ea3e834d | clean | Still 439 tests; Python 1669 OK. 8 tests moved to `core/test` on `FakeHost`; `live.test` stays until Task 8. `remoteHost.ts` is split: `currentRemoteAuthority` and `windowHostFile` use VS Code, so they stay in `vscode/src/remoteHost.ts` for Task 6's ports. |
-| 6 Ports | not started | | | |
+| 6 Ports | done | 669e20c7, 603f76ef | clean after 1 fix round | 439 → 446 tests. `TerminalPort` (`find`, `run`; handle `show`/`sendText`), `ChatPanesPort` (`open`, `openNew`, `answer`, `reply`, `draft`), and `EditorPort` (12 members, each traced to a call site, including `claudeCodeInstalled`). `HostServices.environment.remoteAuthority`. Plan and memory files of the window's host open through `EditorPort.showDoc`/`editFile` with `onWindowHost`. Then `main` (with the animation fix) merged in: 462 tests. |
 | 7 Notify and away | not started | | | |
 | 8 Dashboard | not started | | | |
 | 9 Actions | not started | | | |
@@ -42,6 +42,14 @@ Decisions taken during execution (details in the ledger):
 - R6: test bundles. The extension's tests stay in `vscode/out/test/<name>.test.js`, because six of them find files through `__dirname/../..`. Core's tests go to `out/test/core/`. A test that moves to `core/test` and reads files through `__dirname` switches to paths from `process.cwd()`; `npm test` runs in `vscode/`.
 - R7: `node --test` prints `ℹ tests N / ℹ pass N / ℹ fail N`, not `# tests N`. The baseline was 401.
 - Task 1: `Emitter.fire` reports a throwing listener with `console.error` and goes on to the others, as `vscode.EventEmitter` does. This keeps later swaps free of any behaviour change.
+- R8, for Tasks 7–11: `HostServices` doesn't yet cover everything the modules still to move use. Each task adds the smallest member it needs, with `VsCodeHost`, `FakeHost` and a test, as Task 2's fix round did. Found so far:
+  - Task 7: `notify` uses `MessageItem`s.
+  - Task 8: `dashboard` uses `env.sessionId`.
+  - Task 9: `actions` uses `createQuickPick` with buttons; its window folders need their scheme.
+  - Task 10: `accountSwitch` uses `getExtension` (now `EditorPort.claudeCodeInstalled`), a reload and its own commands.
+  - Task 11: `chatPanes` uses the chat font and a `Memento`.
+- Task 12: pass `VsCodeEditor` its `planReview` when wiring, the same one `actions` gets. Left unset, plan feedback goes out without the comments.
+- The animation fix and the task-strip split are in `main` and merged here.
 
 ## Global Constraints
 
