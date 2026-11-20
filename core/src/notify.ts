@@ -53,7 +53,7 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-type Shower = (text: string, ...actions: string[]) => Promise<string | undefined>;
+type Shower = <A extends string | { title: string }>(text: string, ...actions: A[]) => Promise<A | undefined>;
 
 export class Notifier implements Disposable {
   private leaderFile = path.join(cacheDir(), "vscode-notify.json");
@@ -176,9 +176,8 @@ export class Notifier implements Disposable {
         : { title: "Answer…", run: () => this.pickAnswers(s, questionsOf(s.permission)) },
       { title: "Open", run: async () => "open" as const },
     ];
-    void show(text, ...items.map((i) => i.title)).then(async (title) => {
+    void show(text, ...items).then(async (item) => {
       const panes = this.panes;
-      const item = items.find((i) => i.title === title);
       const answer = item ? await item.run() : null;
       if (!panes || !answer) return;
       if (answer === "open") {

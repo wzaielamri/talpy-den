@@ -188,6 +188,15 @@ test("inUse is the window's `active` when VS Code says it, else its focus, and f
   assert.deepEqual(got, [true]);
 });
 
+test("message gives back the very item clicked, or the string clicked", async () => {
+  const host = make();
+  const same = [{ title: "Open", n: 1 }, { title: "Draft", n: 2 }, { title: "Open", n: 3 }];
+  stub.answers.set("showWarningMessage", (_t: string, _o: unknown, ...items: unknown[]) => items[2]);
+  assert.equal(await host.message("warning", "Which?", undefined, ...same), same[2], "the last Open, not the first");
+  stub.answers.set("showInformationMessage", (_t: string, _o: unknown, ...items: unknown[]) => items[1]);
+  assert.equal(await host.message("info", "Which?", undefined, "A", "B"), "B");
+});
+
 test("workspaceFolders lists names and paths and tells of changes", () => {
   const host = make();
   assert.deepEqual(host.workspaceFolders(), []);

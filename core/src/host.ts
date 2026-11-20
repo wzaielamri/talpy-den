@@ -39,8 +39,9 @@ export interface HostSettings {
 }
 
 export interface HostServices {
-  // Resolves to the action clicked, or undefined when dismissed
-  message<A extends string>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined>;
+  // Resolves to the action clicked, or undefined when dismissed; an action is its text or an item with a
+  // title, and the caller's own one comes back (the same object), so buttons of one title stay apart
+  message<A extends string | { title: string }>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined>;
   // The caller's own item comes back (the same object), or undefined on Escape
   pick<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T | undefined>;
   pickMany<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T[] | undefined>;

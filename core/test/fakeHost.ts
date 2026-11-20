@@ -24,7 +24,8 @@ export class FakeHost implements HostServices {
   };
 
   answer: {
-    message?: (text: string, actions: string[]) => string | undefined;
+    // the action to click: its index among the buttons, or its title (the first of that title)
+    message?: (text: string, actions: string[]) => string | number | undefined;
     pick?: (items: readonly PickItem[]) => PickItem | undefined;
     pickMany?: (items: readonly PickItem[]) => PickItem[] | undefined;
     input?: (o: InputOptions) => string | undefined;
@@ -78,9 +79,11 @@ export class FakeHost implements HostServices {
     this.foldersChanged.fire(undefined);
   }
 
-  async message<A extends string>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined> {
-    this.recorded.messages.push({ level, text, options, actions });
-    return this.answer.message?.(text, actions) as A | undefined;
+  async message<A extends string | { title: string }>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined> {
+    const titles = actions.map((a) => (typeof a === "string" ? a : a.title));
+    this.recorded.messages.push({ level, text, options, actions: titles });
+    const chosen = this.answer.message?.(text, titles);
+    return (typeof chosen === "number" ? actions[chosen] : actions.find((_, i) => titles[i] === chosen)) as A | undefined;
   }
 
   async pick<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T | undefined> {

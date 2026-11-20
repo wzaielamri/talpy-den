@@ -42,12 +42,12 @@ export class VsCodeHost implements HostServices {
     this.foldersChanged.dispose();
   }
 
-  async message<A extends string>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined> {
+  async message<A extends string | { title: string }>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined> {
     const show = level === "error" ? vscode.window.showErrorMessage : level === "warning" ? vscode.window.showWarningMessage : vscode.window.showInformationMessage;
     const opts: vscode.MessageOptions = {};
     if (options?.modal !== undefined) opts.modal = options.modal;
     if (options?.detail !== undefined) opts.detail = options.detail;
-    return (await show(text, opts, ...actions)) as A | undefined;
+    return (await show(text, opts, ...(actions as vscode.MessageItem[]))) as A | undefined; // (strings and items both)
   }
 
   async pick<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T | undefined> {

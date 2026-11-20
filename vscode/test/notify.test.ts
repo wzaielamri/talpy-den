@@ -146,7 +146,7 @@ test("a question's notification: its options, Other…; several questions: Answe
   const typed: (string | undefined)[] = [];
   const picks: string[][] = [];
   const pickers: { title: string; canPickMany: boolean; items: string[] }[] = [];
-  window.showWarningMessage = async (_m: string, _o: unknown, ...items: string[]) => (shown.push(items), items.find((i) => i === pick));
+  window.showWarningMessage = async (_m: string, _o: unknown, ...items: { title: string }[]) => (shown.push(items.map((i) => i.title)), items.find((i) => i.title === pick));
   window.showInputBox = async () => typed.shift();
   window.showQuickPick = async (items: { label: string }[], o: { title: string; canPickMany?: boolean }) => {
     pickers.push({ title: o.title, canPickMany: !!o.canPickMany, items: items.map((i) => i.label) });
