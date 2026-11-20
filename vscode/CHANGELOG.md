@@ -4,6 +4,14 @@
 
 ### Better
 
+- **The tasks and the subagents open on their own in Talpy Chat.** The line
+  under a chat's header ("0/3 · what it's on") unfolded the tasks and the
+  subagents together, so the subagents looked like part of the task list. Now
+  it opens and folds only the tasks (a chat without a task list: its
+  subagents, as its line says), the header's Agents tag only the subagents,
+  and with both shown a small "Subagents" heading sits over the subagents.
+  The shortcut does what the line does.
+
 - **Faster on SSH hosts and containers over a slow connection.** Nothing is
   installed on a host, so Talpy Den sends its code with every check (about
   920 KB to read a chat, 630 KB for each check of a host). Through a jump

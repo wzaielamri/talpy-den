@@ -66,8 +66,8 @@ Window {
     // and Review; its screen is in its window (Open its window)
     property string tab: "chat"
     // its task list (when it has one, the row's) and its subagents: a strip under the header,
-    // folded; unfolded, its tasks (tasksOpen) and its subagents (agentsOpen: the header's
-    // Agents tag unfolds only them, as a row's Agents tag in the popup)
+    // folded; unfolded, its tasks (tasksOpen: the strip's line) and its subagents (agentsOpen:
+    // the header's Agents tag, as a row's Agents tag in the popup; the line too, without tasks)
     readonly property var tasks: row && row.tasks && row.tasks.total > 0 ? row.tasks : null
     readonly property var agents: row && row.agents && row.agents.total > 0 ? row.agents : null
     property bool tasksOpen: false
@@ -107,11 +107,14 @@ Window {
     readonly property string agentsWhat: agentsNow.what
     readonly property string agentsDoing: agentsNow.doing
 
-    // the strip's line: all of it unfolds, or folds
+    // the strip's line: unfolds or folds its tasks only; without a task list the line is
+    // about the subagents, and it's they it unfolds or folds
+    readonly property bool stripOpen: tasks ? tasksOpen : agentsOpen
     function toggleStrip() {
-        const open = !tasksOpen && !agentsOpen
-        tasksOpen = open && tasks !== null
-        agentsOpen = open && agents !== null
+        if (tasks)
+            tasksOpen = !tasksOpen
+        else
+            agentsOpen = !agentsOpen
     }
     readonly property bool conversationTab: tab === "chat" || tab === "steps"
     // Where it runs (the tag under its name): "new" (not started yet: fresh),
@@ -3534,7 +3537,8 @@ Window {
             // one, its subagents: "Agents 1/3 · what the running one does"); unfolded, the tasks (✓ done,
             // ▸ the one it's on, ○ to do) and its subagents as under its row in the popup (AgentTree.qml:
             // what each does now, the running ones first; click one for more), made only then (the
-            // window opens as quickly). The header's Agents tag unfolds only its subagents.
+            // window opens as quickly). The line unfolds only the tasks (without a task list, the subagents);
+            // the header's Agents tag unfolds only its subagents. With both shown, a heading parts them.
             ColumnLayout {
                 visible: pane.tasks !== null || pane.agents !== null
                 Layout.fillWidth: true
@@ -3561,7 +3565,7 @@ Window {
                         spacing: Kirigami.Units.smallSpacing
 
                         Kirigami.Icon {
-                            source: pane.tasksOpen || pane.agentsOpen ? Icons.plasma.unfolded : Icons.plasma.folded
+                            source: pane.stripOpen ? Icons.plasma.unfolded : Icons.plasma.folded
                             Layout.preferredWidth: Kirigami.Units.iconSizes.small
                             Layout.preferredHeight: Layout.preferredWidth
                             opacity: 0.7
@@ -3643,7 +3647,17 @@ Window {
                                     font.bold: task.status === "in_progress"
                                 }
                             }
-                            // its subagents, as under its row in the popup
+                            // its subagents, as under its row in the popup, under a heading
+                            // when the tasks are shown above them
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                Layout.topMargin: Kirigami.Units.smallSpacing
+                                visible: pane.tasksOpen && pane.tasks !== null && pane.agentsOpen && pane.agents !== null
+                                text: i18n("Subagents")
+                                textFormat: Text.PlainText
+                                color: pane.mutedColor
+                                font.pointSize: pane.pt * 0.85
+                            }
                             AgentTree {
                                 Layout.fillWidth: true
                                 Layout.topMargin: pane.tasksOpen && pane.tasks ? Kirigami.Units.smallSpacing : 0
