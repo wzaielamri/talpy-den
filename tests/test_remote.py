@@ -205,6 +205,16 @@ class HostListTests(unittest.TestCase):
         for line in lines:
             self.assertTrue(line.isascii(), line[:80])
 
+    def test_the_code_goes_compressed(self):
+        # (2026-11-19) a chat's read on a host sent ~920 KB of code every time: through a jump host, most of its 4 s
+        script = remote.host_script("pane.py", ("replies.py", "made.py"))
+        self.assertLess(len(remote.packed(script)), len(script.encode()) // 3)
+        # and runs there as `python3 -I -` ran it
+        r = subprocess.run([sys.executable, *shlex.split(remote.python_there(["--remote", "it's"]))[1:]],
+                           input=remote.packed("import sys\nprint(__name__, sys.argv[1:])\n1/0\n"), capture_output=True)
+        self.assertEqual(r.stdout.decode(), "__main__ ['--remote', \"it's\"]\n")
+        self.assertIn('File "<stdin>", line 3', r.stderr.decode())
+
     def test_host_names_checked(self):
         for bad in ("-oProxyCommand=evil", "a b", "", "x;rm", "$(id)"):
             with self.assertRaises(ValueError):
@@ -291,7 +301,7 @@ class LoginShellTests(FakeSSH):
                                                  "--profile", ".claude"],
                                         name="pane.py")
             self.assertTrue(answer["ok"], answer)
-            self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --send abc12345 --how auto --after-turn --profile .claude")
+            self.assertEqual(self.calls()[-1][1], remote.PYTHON + " --remote --send abc12345 --how auto --after-turn --profile .claude")
             (queued,) = td.load_queue(self.fake_home / ".cache/talpy-den")
             self.assertEqual(queued["prompt"], text)  # (queued there, for when its turn ends)
 
@@ -307,12 +317,12 @@ class StatusTests(FakeSSH):
         self.assertEqual((row["name"], row["state"]), ("remote job", "done"))
         self.assertIn("claude attach abc12345", row["openCommand"])
         ((host, command),) = self.calls()
-        self.assertEqual((host, command), ("lab", "python3 -I - --remote --recent 3 --no-tokens"))
+        self.assertEqual((host, command), ("lab", remote.PYTHON + " --remote --recent 3 --no-tokens"))
         # nothing was written on the remote except the widget's cache
         self.assertEqual(sorted(p.name for p in (self.fake_home / ".cache").iterdir()), ["talpy-den"])
         # how old the host's plan usage may get before Claude Code fetches it there
         self.assertTrue(remote.status("lab", tokens=False, usage_refresh=15)["ok"])
-        self.assertEqual(self.calls()[-1][1], "python3 -I - --remote --no-tokens --usage-refresh 15")
+        self.assertEqual(self.calls()[-1][1], remote.PYTHON + " --remote --no-tokens --usage-refresh 15")
 
     def test_its_chats_go_in_the_jobs_file(self):
         path = Path(os.environ["XDG_RUNTIME_DIR"]) / "talpy-den/jobs.json"
@@ -475,7 +485,7 @@ class ActionTests(FakeSSH):
         self.assertIsNone(proc.poll())
         self.assertEqual(remote.end("lab", "idle-there", ".claude"), (True, "Stopped; the chat is kept"))
         self.assertEqual(proc.wait(timeout=5), -15)
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --end idle-there --profile .claude"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --end idle-there --profile .claude"])
 
     def test_stop_a_working_chat_or_interrupt_it_on_the_host(self):
         proc = subprocess.Popen([sys.executable, "-c", "print('ready', flush=True); import time; time.sleep(60)"],
@@ -487,14 +497,14 @@ class ActionTests(FakeSSH):
             {"pid": proc.pid, "procStart": td.proc_start_time(proc.pid), "sessionId": "busy-there",
              "cwd": "/srv/x", "kind": "interactive", "status": "busy"}))
         self.assertIn("doesn't run in tmux", remote.interrupt("lab", "busy-there")[1])
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --interrupt busy-there"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --interrupt busy-there"])
         self.assertFalse(remote.end("lab", "busy-there")[0])   # working: only when you were told
         self.assertIsNone(proc.poll())
         out = subprocess.run([sys.executable, "-I", str(CODE / "remote.py"), "--end", "lab", "busy-there", ".claude", "--busy"],
                              capture_output=True, text=True, env=os.environ).stdout
         self.assertEqual(json.loads(out), {"ok": True, "message": "Stopped; the chat is kept"})
         self.assertEqual(proc.wait(timeout=5), -15)
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --end busy-there --profile .claude --busy"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --end busy-there --profile .claude --busy"])
 
     def test_host_says_whether_claude_is_there(self):
         self.assertEqual(remote.status("lab", tokens=False)["result"]["cli"], {"installed": False, "hooks": True})
@@ -539,10 +549,10 @@ class ActionTests(FakeSSH):
         jump.open_markdown = lambda path, home=None: opened.append(path) or (True, "")
         try:
             ok, message, path = remote.agent_run("lab", "abc12345", "ag1")
-            self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --agent-run ag1 --chat abc12345"])
+            self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --agent-run ag1 --chat abc12345"])
             self.assertEqual(remote.agent_run("lab", "abc12345", "nope", ".claude", open_it=False),
                              (False, "lab: Can't find that subagent's transcript", None))
-            self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --agent-run nope --chat abc12345 --profile .claude"])
+            self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --agent-run nope --chat abc12345 --profile .claude"])
         finally:
             jump.open_markdown = old
         self.assertEqual((ok, message), (True, "The run of “Check the host” on lab"))
@@ -639,14 +649,14 @@ class SharingTests(TwoAccountHost):
 
     def test_share_then_keep_only_on_one_account(self):
         self.assertEqual(remote.share("lab", self.CHAT), (True, "Chat shared: it's now on main, work."))
-        self.assertEqual(self.calls()[-1], ["lab", f"python3 -I - --remote --share {self.CHAT}"])
+        self.assertEqual(self.calls()[-1], ["lab", f"{remote.PYTHON} --remote --share {self.CHAT}"])
         self.assertTrue(os.path.samefile(self.there, self.chat))
         self.assertTrue(os.path.samefile(self.store / f"{self.CHAT}.jsonl", self.chat))
         shared = [c for g in remote.status("lab", tokens=False)["result"]["groups"] for c in g["recent"]]
         self.assertTrue(shared and all(c["shared"] for c in shared))
         self.assertEqual(remote.unshare("lab", self.CHAT, ".claude"),
                          (True, "This chat is now a normal chat of main again. Removed from work."))
-        self.assertEqual(self.calls()[-1], ["lab", f"python3 -I - --remote --unshare {self.CHAT} --profile .claude"])
+        self.assertEqual(self.calls()[-1], ["lab", f"{remote.PYTHON} --remote --unshare {self.CHAT} --profile .claude"])
         self.assertFalse(os.path.lexists(self.there))
         self.assertFalse(self.store.exists())
         self.assertEqual(os.stat(self.chat).st_nlink, 1)
@@ -654,7 +664,7 @@ class SharingTests(TwoAccountHost):
     def test_continue_on_another_account_there(self):
         (ok, message, command), opened = self.continue_there(".claude-work")
         self.assertEqual((ok, message), (True, "Opened a terminal on lab"))
-        self.assertEqual(self.calls()[0], ["lab", f"python3 -I - --remote --continue {self.CHAT} --profile .claude-work"])
+        self.assertEqual(self.calls()[0], ["lab", f"{remote.PYTHON} --remote --continue {self.CHAT} --profile .claude-work"])
         self.assertTrue(os.path.samefile(self.there, self.chat))  # shared with work only
         self.assertTrue(command.startswith("cd /srv/x 2>/dev/null; "), command)
         self.assertTrue(command.endswith(f"CLAUDE_CONFIG_DIR={self.work.resolve()} {self.claude} --resume {self.CHAT}"),
@@ -781,7 +791,7 @@ class AccountTests(FakeSSH):
         answer = self.run_main("--accounts", "lab", "--list")
         self.assertTrue(answer["ok"], answer)
         self.assertEqual([a["key"] for a in answer["accounts"]], [".claude"])
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --list"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --list"])
 
     def test_add_one_and_log_in_here_over_ssh(self):
         answer, opened = self.opening("--add", "side", "--command")
@@ -801,7 +811,7 @@ class AccountTests(FakeSSH):
         answer, opened = self.opening("--login", ".claude", "--print-command")
         self.assertEqual(opened, [])
         self.assertTrue(answer["command"].endswith(f"env -u CLAUDE_CONFIG_DIR {self.claude} auth login"), answer)
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --login .claude"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --login .claude"])
 
     def test_default_and_remove_there(self):
         main = self.fake_home / ".claude"
@@ -871,7 +881,7 @@ class HostTaskTests(TwoAccountHost):
         (found,) = answer["results"]
         self.assertEqual(found["sessionId"], self.CHAT)
         self.assertIn(f"--resume {self.CHAT}", found["openCommand"])
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --find /srv/x"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --find /srv/x"])
 
     def test_a_task_in_the_background_there(self):
         answer = remote.task("lab", ".claude", str(self.folder), "fix it", "calm-red-owl", ".claude", background=True)
@@ -1176,7 +1186,7 @@ class TalpyChatThereTests(TwoAccountHost):
                          (True, "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d", True), answer)
         # (your text and the hook's code on stdin, not on the command line there)
         command = self.calls()[-1][1]
-        self.assertEqual(command, "python3 -I - --remote --start .claude --cwd " + str(self.folder) + " --model haiku")
+        self.assertEqual(command, remote.PYTHON + " --remote --start .claude --cwd " + str(self.folder) + " --model haiku")
         copy = self.fake_home / ".local/share/talpy-den/permission-hook.py"
         self.assertEqual(copy.read_bytes(), (CODE / "permission_hook.py").read_bytes())
         self.assertEqual(oct(copy.stat().st_mode & 0o777), "0o600")
@@ -1229,7 +1239,7 @@ class HostWatchTests(FakeSSH):
         import hashlib
         import socket
         there = hashlib.sha1(f"{socket.gethostname()} a1b2c3d4e5f6".encode()).hexdigest()[:12]
-        self.assertEqual(self.calls()[-1], ["lab", f"python3 -I - --wait --requests --remote --as {there} --timeout 5"])
+        self.assertEqual(self.calls()[-1], ["lab", f"{remote.PYTHON} --wait --requests --remote --as {there} --timeout 5"])
         # (the hook's requests folder there, made so it can be watched)
         asks = self.fake_home / ".local/state/talpy-den/permissions"
         self.assertTrue(asks.is_dir())
@@ -1268,7 +1278,7 @@ class HostWatchTests(FakeSSH):
             self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])
             self.assertTrue(remote.watch("podman:web@lab", "a1b2c3d4e5f6", 50)["ok"])
         self.assertEqual(lines[0][:8], ["docker", "exec", "-i", "-u", "vscode", "web", "sh", "-c"])
-        self.assertRegex(lines[0][8], r"^python3 -I - --wait --requests --remote --as [0-9a-f]{12} --timeout 50$")
+        self.assertRegex(lines[0][8], "^" + re.escape(remote.PYTHON) + r" --wait --requests --remote --as [0-9a-f]{12} --timeout 50$")
         self.assertEqual(lines[1][0], "ssh")
         self.assertIn("podman exec -i -u vscode web sh -c", lines[1][-1])
 

@@ -12724,8 +12724,8 @@ def list_containers(cache_root, home, days=CONTAINER_DAYS, picked=(), now=None):
 
 # ---------------------------------------------------------------- remote hosts
 #
-# The widget runs this script on an SSH host (`ssh host python3 -I - --remote`
-# with the script on stdin: nothing is installed there). In that mode every row
+# The widget runs this script on an SSH host (`ssh host python3 … --remote`
+# with the script on stdin, compressed: remote.PYTHON; nothing is installed there). In that mode every row
 # also carries the shell command that opens it on the host, so the widget can
 # run it in a local terminal as `ssh -t host <command>`.
 

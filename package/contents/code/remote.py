@@ -49,8 +49,8 @@
     python3 -I remote.py --accounts HOST ACCOUNTS_ARGS... [--print-command]   the host's Claude accounts
                                                     (accounts.py there: --list, --add, --login, --default, --hide, …)
 
---status runs talpy_den.py on HOST: the script goes to `python3 -I -` on
-the host's stdin, so nothing is installed there (it keeps its caches in the
+--status runs talpy_den.py on HOST: the script goes to python3 on the
+host's stdin, compressed (PYTHON), so nothing is installed there (it keeps its caches in the
 host's ~/.cache/talpy-den, like here). Sharing sends sharing.py the same
 way, with talpy_den.py in front (host_script), and so do the accounts
 (accounts.py: adding one, logging in or out, removing one, the default one).
@@ -68,8 +68,8 @@ $XDG_RUNTIME_DIR), or --disconnect.
 
 Every HOST may also be a container: docker:NAME, podman:NAME or
 nerdctl:NAME on this computer, ENGINE:NAME@HOST on the SSH host HOST.
-Talpy Den works in it with the engine's exec (python3 -I - there, as on a
-host), over ssh in HOST's shared connection for one on a host.
+Talpy Den works in it with the engine's exec (python3 there, the script on
+its stdin, as on a host), over ssh in HOST's shared connection for one on a host.
 """
 
 import glob
@@ -84,6 +84,7 @@ import stat
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the installed widget...
@@ -261,6 +262,26 @@ PYTHON_CHECK = ("import sys\n"
                 "    why = 'python3 there is %d.%d; Talpy Den needs 3.7 or newer' % sys.version_info[:2]\n"
                 "    sys.stdout.write('\\n" + td.REMOTE_MARK + " ' + json.dumps({'ok': False, 'error': why, 'message': why}) + '\\n')\n"
                 "    sys.exit(0)\n")
+
+# The code goes to a host compressed, python3 there unpacking it from its
+# stdin and running it as `python3 -I -` would (as __main__, "<stdin>" in a
+# traceback; nothing is kept there). It's sent with every check and read:
+# Talpy Chat's read of a chat is ~920 KB of it, a status check ~630 KB, and
+# through a jump host or a home uplink sending it was most of their time
+# (a chat's read there: 4.1 s, the host's own part 0.3 s; with a quarter of
+# it, 1.6 s, 2026-11-19). zlib's level 6: ~20 ms here for 920 KB.
+UNPACK = "import sys,zlib;exec(compile(zlib.decompress(sys.stdin.buffer.read()),\"<stdin>\",\"exec\"))"
+PYTHON = "python3 -I -c " + shlex.quote(UNPACK)
+
+
+def packed(script):
+    """script as PYTHON takes it on its stdin."""
+    return zlib.compress(script.encode("utf-8"), 6)
+
+
+def python_there(args):
+    """The command that runs PYTHON there with args (its packed script on the stdin)."""
+    return " ".join([PYTHON, *(shlex.quote(a) for a in args)])
 
 
 def host_script(name="talpy_den.py", also=()):
@@ -514,11 +535,12 @@ class TooMuch(OSError):
 
 def run_capped(line, stdin=None, timeout=RUN_TIMEOUT, binary=False):
     """subprocess.run(line, input=stdin, capture_output=True, timeout=timeout,
-    text=not binary, errors="replace"), reading at most ANSWER_MAX bytes of
+    text=not binary, errors="replace") (stdin may be bytes either way: a
+    packed script), reading at most ANSWER_MAX bytes of
     stdout and of stderr as they come: past that the command is ended, and
     TooMuch raised. (As subprocess's own: writes of PIPE_BUF a pipe takes
     in one go, so neither side waits on the other.)"""
-    data = None if stdin is None else stdin if binary else stdin.encode("utf-8")
+    data = None if stdin is None else stdin if binary or isinstance(stdin, bytes) else stdin.encode("utf-8")
     proc = subprocess.Popen(line, stdin=subprocess.PIPE if data is not None else None,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     got, size = {proc.stdout: [], proc.stderr: []}, {proc.stdout: 0, proc.stderr: 0}
@@ -858,7 +880,7 @@ def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=N
         args += ["--history-since", str(since)]
     started, p = time.time(), place(host)
     try:
-        r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script(), STATUS_TIMEOUT)
+        r = ssh(host, python_there(args), packed(host_script()), STATUS_TIMEOUT)
     except subprocess.TimeoutExpired:
         return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {STATUS_TIMEOUT} s."}
     except OSError as exc:
@@ -995,10 +1017,9 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
     host = check_host(host)
     args = list(args)
     script, args = with_texts(host_script(name, also), args)
-    command = "python3 -I - --remote " + " ".join(shlex.quote(a) for a in args)
     p = place(host)
     try:
-        r = ssh(host, command, script, timeout)
+        r = ssh(host, python_there(["--remote", *args]), packed(script), timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "timedOut": True, "message": f"{p.label} didn't answer within {timeout} s"}
     except OSError as exc:
@@ -1024,7 +1045,7 @@ TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-s
 
 
 def with_texts(script, args):
-    """(script, args) for python3 -I - --remote on a host: with a TEXT_ARGS
+    """(script, args) for PYTHON --remote on a host: with a TEXT_ARGS
     value in args, the args without those texts, and the script after a line
     that gives it all its args there (Python 3.7's too), in ASCII: before
     3.10, Python reading its script from stdin misreads a long line of other
@@ -1064,7 +1085,8 @@ def watch(host, name, timeout=WATCH_S):
     script = PYTHON_CHECK + (HERE / "live.py").read_text(encoding="utf-8")
     p = place(host)
     try:
-        r = run_on(host, f"python3 -I - --wait --requests --remote --as {name} --timeout {timeout}", script, timeout + 15)
+        r = run_on(host, python_there(["--wait", "--requests", "--remote", "--as", name, "--timeout", str(timeout)]),
+                   packed(script), timeout + 15)
     except subprocess.TimeoutExpired:
         return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {timeout + 15} s"}
     except OSError as exc:
@@ -1149,7 +1171,7 @@ def agent_run(host, chat_id, agent_id, profile=None, open_it=True):
     import jump
     args = ["--remote", "--agent-run", agent_id, "--chat", chat_id] + (["--profile", profile] if profile else [])
     try:
-        r = ssh(host, "python3 -I - " + " ".join(shlex.quote(a) for a in args), host_script())
+        r = ssh(host, python_there(args), packed(host_script()))
     except subprocess.TimeoutExpired:
         return False, f"{p.label} didn't answer within {RUN_TIMEOUT} s", None
     except OSError as exc:

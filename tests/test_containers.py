@@ -354,7 +354,7 @@ class HostListTests(FakeEngines):
         self.assertTrue(out["ok"], out)
         self.assertEqual([c["id"] for c in out["containers"]], ["docker:api@lab", "docker:old@lab"])
         self.assertEqual(out["containers"][0]["host"], "lab")
-        self.assertEqual(self.calls()[-1], ["lab", "python3 -I - --remote --list-containers 30 --picked docker:old"])
+        self.assertEqual(self.calls()[-1], ["lab", remote.PYTHON + " --remote --list-containers 30 --picked docker:old"])
         # kept for the next start
         cached = remote.hosts_and_containers()["hostContainers"]
         self.assertEqual([c["id"] for c in cached["lab"]["containers"]], ["docker:api@lab", "docker:old@lab"])
@@ -398,7 +398,7 @@ class ContainerStatusTests(FakeEngines):
         calls = self.engine_calls()
         self.assertEqual(calls[0][:3], ["podman", "container", "inspect"])  # (once: which user)
         self.assertEqual(calls[1][:7], ["podman", "exec", "-i", "-u", "vscode", "shop", "sh"])
-        self.assertEqual(calls[1][8], "python3 -I - --remote --recent 3 --no-tokens")
+        self.assertEqual(calls[1][8], remote.PYTHON + " --remote --recent 3 --no-tokens")
         self.assertFalse(out["loggedIn"])
         # the next check knows the user: one call
         self.assertTrue(remote.status("podman:shop", tokens=False)["ok"])

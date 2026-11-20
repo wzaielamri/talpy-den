@@ -2461,7 +2461,8 @@ Talpy Den runs the same Python there, on the host's or the container's own Claud
 item above holds there too. Run the quick reads against that Claude (`ssh HOST`, or
 `docker exec NAME sh -c …`) when a host updates on its own. The items here are what is different there.
 
-- [ ] **Talpy Den's code runs there on stdin.** `python3 -I - --remote …` gets talpy_den.py on stdin (for
+- [ ] **Talpy Den's code runs there on stdin.** `python3 -I -c '<unpack>' --remote …` (remote.PYTHON) gets
+  talpy_den.py on stdin, zlib-compressed, and runs it as `python3 -I -` would (since 2026-11-20; for
   Talpy Chat's actions pane.py, with the modules its action needs, ACTION_MODULES: reply_words.py, replies.py,
   commands.py, turns.py, chatpick.py, made.py; for sharing sharing.py with accounts.py), after PYTHON_CHECK
   (Python 3.7 or newer). Each module goes as one line of ASCII (`exec(compile({text!a}, …))`): Python 3.7

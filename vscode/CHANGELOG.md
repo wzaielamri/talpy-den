@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Better
+
+- **Faster on SSH hosts and containers over a slow connection.** Nothing is
+  installed on a host, so Talpy Den sends its code with every check (about
+  920 KB to read a chat, 630 KB for each check of a host). Through a jump
+  host over home Wi-Fi, that took most of the time. Now it goes compressed,
+  a quarter of its size, and the host's `python3` unpacks it from its stdin;
+  still nothing is installed or kept there. Reading a chat over a 300 KB/s
+  uplink takes 1.4 s instead of 3.6 s; on a fast network it's as quick as
+  before.
+
 ## 1.23.0
 
 ### New

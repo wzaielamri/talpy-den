@@ -27,7 +27,7 @@ off: then it keeps only what the transcripts still have.
                   transcripts Claude still has)
     --account ID  one account's chats (an id of talpy_den.py's groups)
     --host HOST   an SSH host's chats too (also in --monday-recap): remote.py runs this file there
-                  (python3 -I - with talpy_den.py loaded first) with
+                  (python3 with talpy_den.py loaded first) with
     --data        that host's chats of those days, for the computer asking
                   (--since MS --until MS --now MS: of those times, by the
                   clock of the computer asking, now at --now)

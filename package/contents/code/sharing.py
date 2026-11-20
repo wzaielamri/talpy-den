@@ -23,7 +23,7 @@ A chat can be open in only one Claude session at a time (two would write the
 same file): a chat a session has open isn't shared or unshared.
 Nothing here starts Claude or sends anything anywhere.
 
-On an SSH host, remote.py runs this file's main() (python3 -I - with
+On an SSH host, remote.py runs this file's main() (python3 with
 talpy_den.py loaded first, remote.host_script), for the host's own
 profiles:
 

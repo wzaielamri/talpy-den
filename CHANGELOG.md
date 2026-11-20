@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Highlights
+
+- **SSH hosts and containers answer faster on a slow connection:** the code Talpy Den sends with every check now goes compressed, a quarter of its size, so a chat on a host opens in Talpy Chat in about 1.4 s instead of 3.6 s over a home uplink.
+
+### Every change
+
+- **Faster on SSH hosts and containers over a slow connection.** Nothing is installed on a host, so Talpy Den sends its code with every check: about 920 KB to read a chat in Talpy Chat, 630 KB for each check of a host, every 2 s while a chat there that a window shows is working. Through a jump host over home Wi-Fi, sending it took most of the time: a chat on a host took 3–6 s to open (its host's own part, 0.3 s), and one connection sent over 100 MB in 12 minutes. Now it goes compressed (zlib, a quarter of its size: about 250 KB to read a chat) and the host's `python3` unpacks it from its stdin; still nothing is installed or kept there. Opening a chat over an uplink of 300 KB/s now takes 1.4 s, down from 3.6 s; on a fast network it's as quick as before (it costs about 20 ms here). Plasma, Talpy Chat, GNOME and VS Code; SSH hosts and containers.
+
 ## 1.23.0 (2026-11-19)
 
 ### Highlights
