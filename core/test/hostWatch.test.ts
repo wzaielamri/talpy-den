@@ -4,9 +4,12 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import "./useHost";
-import { HostWatch, watchName, type WatchAnswer } from "../src/hostWatch";
-import { hookedAtWork } from "../../core/src/shared/model";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
+import { HostWatch, watchName, type WatchAnswer } from "../src/agents/claudeCode/hostWatch";
+import { hookedAtWork } from "../src/shared/model";
+
+useSettingsHost(new FakeHost());
 
 const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
 const fast = { retry: 20, retryLong: 60, again: 5 };   // (again: never a tight loop of answers at once)

@@ -6,7 +6,7 @@
 // tmux can be answered without it (with their dialog's keys).
 
 import * as vscode from "vscode";
-import type { Backend } from "./backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import { hostLabel } from "../../core/src/shared/model";
 import type { Dashboard } from "./dashboard";

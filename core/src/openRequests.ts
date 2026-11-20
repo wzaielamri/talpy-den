@@ -11,8 +11,8 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { chatRefOf } from "../../core/src/shared/model";
-import type { ChatRef, HostState, Status } from "../../core/src/shared/types";
+import { chatRefOf } from "./shared/model";
+import type { ChatRef, HostState, Status } from "./shared/types";
 
 export const OPEN_NAME = /^req-[0-9a-f]{16}\.json$/;
 export const OPEN_MAX_AGE_MS = 10_000; // (a tap long ago mustn't open a tab now)

@@ -10,7 +10,7 @@ import { test } from "node:test";
 import type * as vscode from "vscode";
 import "./useHost";
 import { chatOptionsText } from "../src/actions";
-import type { Backend } from "../src/backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { chatOptionArgs } from "../../core/src/settings";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";

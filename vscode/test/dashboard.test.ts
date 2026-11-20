@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import type * as vscode from "vscode";
 import "./useHost";
-import type { Backend } from "../src/backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
 import { demoState } from "../../core/src/shared/demo";

@@ -8,8 +8,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
-import "./useHost";
-import { Backend, runProcess } from "../src/backend";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
+import { Backend, runProcess } from "../src/agents/claudeCode/backend";
+
+useSettingsHost(new FakeHost());
 
 const children: ChildProcess[] = [];
 after(() => children.forEach((c) => c.kill()));

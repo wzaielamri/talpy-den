@@ -3,7 +3,7 @@
 // resets.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demoState } from "../../core/src/shared/demo";
+import { demoState } from "../src/shared/demo";
 import {
   countStates,
   findPlan,
@@ -16,10 +16,13 @@ import {
   stopText,
   summaryText,
   toLocalClock,
-} from "../../core/src/shared/model";
-import type { Group, Session, Status, Stop } from "../../core/src/shared/types";
-import "./useHost";
+} from "../src/shared/model";
+import type { Group, Session, Status, Stop } from "../src/shared/types";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
 import { mergeChanges, TransitionTracker } from "../src/transitions";
+
+useSettingsHost(new FakeHost());
 
 const NOW = 1_800_000_000_000;
 const MIN = 60000;

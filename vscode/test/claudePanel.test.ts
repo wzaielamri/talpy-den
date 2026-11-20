@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import "./useHost";
-import { panelConfigDir, profileKey } from "../src/claudePanel";
+import { panelConfigDir, profileKey } from "../../core/src/agents/claudeCode/claudePanel";
 
 test("the panel's config dir: its own setting, else VS Code's, else ~/.claude", () => {
   const home = os.homedir();

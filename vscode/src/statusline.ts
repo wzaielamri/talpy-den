@@ -13,8 +13,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { runProcess } from "./backend";
-import { expandHome, extraConfigDirs } from "../../core/src/settings";
+import { runProcess } from "../../core/src/agents/claudeCode/backend";
+import { profileDirs } from "../../core/src/agents/claudeCode/profiles";
+import { expandHome } from "../../core/src/settings";
 import { noLinks } from "./notify";
 import { shellQuote } from "../../core/src/shared/model";
 
@@ -99,32 +100,6 @@ export function scriptOf(command: string): string | null {
     if (w.endsWith(".sh") && fs.existsSync(w)) return fs.realpathSync(w);
   }
   return null;
-}
-
-export function profileDirs(): string[] {
-  const home = os.homedir();
-  const dirs = [path.join(home, ".claude")];
-  try {
-    for (const name of fs.readdirSync(home).sort()) if (name.startsWith(".claude-")) dirs.push(path.join(home, name));
-  } catch {
-    // no home listing
-  }
-  dirs.push(...extraConfigDirs());
-  const seen = new Set<string>();
-  return dirs.filter((d) => {
-    try {
-      const st = fs.statSync(d);
-      const real = fs.realpathSync(d);
-      // (a new one: .profile-name, or Claude's .claude.json once you've started to log in)
-      const isProfile =
-        st.isDirectory() && ["sessions", "projects", "settings.json", ".profile-name", ".claude.json"].some((f) => fs.existsSync(path.join(d, f)));
-      if (!isProfile || seen.has(real)) return false;
-      seen.add(real);
-      return true;
-    } catch {
-      return false;
-    }
-  });
 }
 
 // The file a link leads to (also a dangling one), so that a settings.json that

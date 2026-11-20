@@ -5,7 +5,8 @@ import * as path from "node:path";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import "./useHost";
-import { changesResources, manifestOf, openComparison, readComparison, type Comparison } from "../src/changes";
+import { changesResources, manifestOf, openComparison, readComparison } from "../src/changes";
+import type { Comparison } from "../../core/src/comparisons";
 
 function world() {
   const cache = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-changes-"));

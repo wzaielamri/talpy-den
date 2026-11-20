@@ -15,7 +15,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
 import { AGENT_ID } from "./agentRun";
-import type { Backend } from "./backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { openComparison } from "./changes";
 import { CHAT_VIEW, CHAT_VIEW_CONTEXT, emptyView, sideBarSupported, ViewSurface, windowFolders } from "./chatSurface";
 import { cacheDir, chatOptionArgs, configDirArgs, setChatOptions, settings } from "../../core/src/settings";
@@ -26,7 +26,8 @@ import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "../../core/src/shared/types";
 import { isDecision } from "../../core/src/shared/types";
 import { chatFont } from "./doc";
-import { asPaste, localAncestors, type Terminals } from "./terminals";
+import type { Terminals } from "./terminals";
+import { asPaste, localAncestors } from "../../core/src/terminal";
 
 // Talpy Chat's keys (keys.mjs): each a command (package.json binds its key while a chat tab has
 // the focus), and what it tells the tab in front to do

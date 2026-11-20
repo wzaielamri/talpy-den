@@ -9,7 +9,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import "./useHost";
 import { Dashboard } from "../src/dashboard";
-import { LiveWatch, sessionDirs, type LiveChange } from "../src/live";
+import { LiveWatch, sessionDirs, type LiveChange } from "../../core/src/agents/claudeCode/live";
 import { demoState } from "../../core/src/shared/demo";
 import { doingText, liveFromRows, liveOf, peekLine, tickerItems, TickerTurns, withLive, type TickerItem } from "../../core/src/shared/model";
 import type { Group, LiveView, Session } from "../../core/src/shared/types";

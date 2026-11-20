@@ -9,20 +9,21 @@
 
 import * as vscode from "vscode";
 import { AwayWatch } from "./away";
-import type { Backend, HostContainers, SshHost } from "./backend";
+import type { Backend, HostContainers, SshHost } from "../../core/src/agents/claudeCode/backend";
 import { claudePanelAvailable, localPanelProfileKey } from "./claudePanel";
 import { cacheDir, extraConfigDirs, settings, statusArgs, configDirArgs, viewSettings } from "../../core/src/settings";
-import { HostWatch, watchName, type WatchAnswer } from "./hostWatch";
-import { LiveWatch } from "./live";
+import { HostWatch, watchName, type WatchAnswer } from "../../core/src/agents/claudeCode/hostWatch";
+import { LiveWatch } from "../../core/src/agents/claudeCode/live";
 import type { Notifier } from "./notify";
-import { containerFromAuthority, currentRemoteAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./remoteHost";
+import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../../core/src/agents/claudeCode/remoteHost";
+import { currentRemoteAuthority } from "./remoteHost";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "../../core/src/shared/demo";
 import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "../../core/src/shared/model";
 import { chatRef, noLinks } from "./notify";
-import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./oldChats";
+import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "../../core/src/agents/claudeCode/oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "../../core/src/shared/types";
 import type { WeekRuleAsk } from "../../core/src/shared/week";
-import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
+import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "../../core/src/transitions";
 
 const HIDDEN_POLL_MS = 10000;
 const LIVE_WORKING_MS = 6000; // watched, a chat works, live mode (or the window isn't focused)

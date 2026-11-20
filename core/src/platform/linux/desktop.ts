@@ -3,7 +3,7 @@
 // window to the front; GNOME keeps its sound theme in its own settings.
 // The checks match jump.py's, so both sides take the same path.
 
-import { runProcess } from "./backend";
+import { runProcess } from "../../agents/claudeCode/backend";
 
 function desktops(env: NodeJS.ProcessEnv): string[] {
   return (env.XDG_CURRENT_DESKTOP ?? "").split(":");

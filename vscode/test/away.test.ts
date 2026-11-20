@@ -4,7 +4,7 @@ import "./useHost";
 import { AwayTracker } from "../src/away";
 import { demoState } from "../../core/src/shared/demo";
 import type { Group, Session } from "../../core/src/shared/types";
-import { TransitionTracker } from "../src/transitions";
+import { TransitionTracker } from "../../core/src/transitions";
 
 const NOW = 1_800_000_000_000;
 const MIN = 60000;

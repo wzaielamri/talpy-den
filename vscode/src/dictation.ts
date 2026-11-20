@@ -4,7 +4,7 @@
 // download, delete or use: one choice for the extension and the Plasma widget.
 
 import * as vscode from "vscode";
-import type { Backend } from "./backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { noLinks } from "./notify";
 
 type Model = { name: string; mb: number; note: string; installed: boolean; deletable: boolean; used: boolean };

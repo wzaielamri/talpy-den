@@ -10,7 +10,7 @@ import { markdownLinkFile } from "../src/agentRun";
 import { demoState } from "../../core/src/shared/demo";
 import { findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../../core/src/shared/model";
 import type { Group, QueuedTask, Session } from "../../core/src/shared/types";
-import { TransitionTracker } from "../src/transitions";
+import { TransitionTracker } from "../../core/src/transitions";
 import { planPath } from "../src/planReview";
 
 const NOW = 1_800_000_000_000;

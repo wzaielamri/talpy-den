@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import "./useHost";
-import type { FindAnswer } from "../src/backend";
-import { allShown, foundLines, showAll, type FoundLine } from "../src/found";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
+import type { FindAnswer } from "../src/agents/claudeCode/backend";
+import { allShown, foundLines, showAll, type FoundLine } from "../src/agents/claudeCode/found";
+
+useSettingsHost(new FakeHost());
 
 // only how many of each kind matters here
 function answer(chats: number, rest: { projects?: number; plans?: number; memories?: number; more?: boolean; error?: string } = {}): FindAnswer {

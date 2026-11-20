@@ -309,7 +309,7 @@ test("to review: finished, changed files after the first look, not marked since 
 });
 
 test("a chat waiting for a permission is told with its question, once more when the hook's request comes a poll late", async () => {
-  const { TransitionTracker } = await import("../src/transitions");
+  const { TransitionTracker } = await import("../../core/src/transitions");
   const t = new TransitionTracker();
   const opts = { notifyWaiting: true, notifyDone: true, notifyDoneMinSeconds: 0 };
   const g = demoState(NOW).status!.groups[0];
@@ -915,7 +915,7 @@ test("what a page says it showed is taken only in its shape; the chat tab's answ
 });
 
 test("a chat that asks something else while it waits is told again, with buttons for that prompt; its request coming late isn't news", async () => {
-  const { TransitionTracker } = await import("../src/transitions");
+  const { TransitionTracker } = await import("../../core/src/transitions");
   const opts = { notifyWaiting: true, notifyDone: true, notifyDoneMinSeconds: 0 };
   const g = demoState(NOW).status!.groups[0];
   const row = (state: "working" | "waiting", permission: unknown) => [{ ...g, sessions: [{ ...g.sessions[0], key: "k", chatId: "k", sessionId: "k", name: "k", state, permission } as never] }];

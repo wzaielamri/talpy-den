@@ -11,7 +11,7 @@ import * as vscode from "vscode";
 import { cacheDir } from "../../core/src/settings";
 import { duration, hostLabel } from "../../core/src/shared/model";
 import type { Group, Session } from "../../core/src/shared/types";
-import type { Changes, PetEvent } from "./transitions";
+import type { Changes, PetEvent } from "../../core/src/transitions";
 
 const MARK_EVERY_MS = 15000; // a window in use notes it this often
 const LISTED = 4; // chats named per line, then "+N" (as Plasma's and GNOME's summary)

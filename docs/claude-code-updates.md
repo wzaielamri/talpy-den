@@ -279,7 +279,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
 - [ ] **Session files are written at every change.** Claude rewrites `sessions/<pid>.json` (close-write or
   rename) when a chat starts or ends, starts working, waits or ends its turn, and after you answer or
   interrupt it in its terminal. live.py, its host watcher and the VS Code extension wake on those writes.
-  - Used in: live.py session_dirs, Watch (WATCH_MASK), wait; vscode/src/live.ts sessionDirs, LiveWatch.
+  - Used in: live.py session_dirs, Watch (WATCH_MASK), wait; core/src/agents/claudeCode/live.ts sessionDirs, LiveWatch.
   - Check: `inotifywait -m -e close_write,moved_to,delete $C/sessions` (from inotify-tools) while a throwaway
     chat starts, works, asks a permission, ends its turn and quits: one event at each step. Without
     inotify-tools, run `python3 -I $TD/live.py --wait --timeout 60` in a loop.
@@ -541,7 +541,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   hands VS Code the link's name for the profile `~/.claude` points to.
   - Used in: talpy_den.py service_config_dir, job_config_dir, config_dir_value, config_env, daemon_socket,
     start_background, stop_background, usage_refresh_command; accounts.py through_link, vscode_value;
-    vscode/src/vscodeAccount.ts configDirFor.
+    core/src/agents/claudeCode/vscodeAccount.ts configDirFor.
   - Check: `ls /tmp/cc-daemon-$(id -u)/`. `printf %s "$C" | sha256sum | cut -c1-8` should name a folder there
     with `control.sock` in it. Also
     `tr '\0' '\n' < /proc/$(jq .supervisorPid $C/daemon.status.json)/environ | grep CLAUDE_CONFIG_DIR` and
@@ -800,7 +800,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   shows comm `node` and the `cli.js` path in argv[1].
   - Used in: talpy_den.py attach_clients, own_session, process_environ_value, shown_row, attached_in,
     note_attached, attach_command; jump.py find_attached_tab, attach_clients, claude_pids, jump_job;
-    vscode/src/terminals.ts attachClients, actions.ts open.
+    core/src/terminal.ts attachClients, actions.ts open.
   - Check: open `claude attach $SHORT` in a terminal, then:
 
     ```bash
@@ -883,7 +883,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   Claude's prompt takes the paste as one message and runs no keys; type-in leaves out the Enter. While a
   dialog shows, typed text would answer the dialog, so Talpy Den refuses then.
   - Used in: pane.py tmux_type, as_typed, send_now, type_in, answer_with_keys; jump.py tmux_paste;
-    vscode/src/terminals.ts asPaste, chatPane.ts sendNow, typeIn, actions.ts sendPlanFeedback.
+    core/src/terminal.ts asPaste, chatPane.ts sendNow, typeIn, actions.ts sendPlanFeedback.
   - Check: in a throwaway chat in tmux,
     `tmux send-keys -t <pane> -l $'\e[200~line 1\nline 2\e[201~'; sleep 0.3; tmux send-keys -t <pane> Enter`.
     The transcript's last prompt should hold both lines as one message.
@@ -1017,7 +1017,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   transcript's first `cwd` only if its mangled form is the folder's name. Claude's own shortening of very long
   paths is not modelled.
   - Used in: talpy_den.py mangle, start_folder, memory_folder, project_folder_of, usage_refresh_command;
-    vscode/src/claudePanel.ts filedUnder, actions.ts windowHasChat.
+    core/src/agents/claudeCode/claudePanel.ts filedUnder, actions.ts windowHasChat.
   - Check: after a throwaway chat, `ls $C/projects | grep -Fx -- "$M"`. For long paths, start a throwaway chat
     in a folder whose path is over 200 characters and compare the folder name with the sed output.
   - Breaks: a chat's start folder becomes unknown, chats are filed under the wrong project and reopen in the
@@ -1992,7 +1992,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   with the variable keeps its panel on that folder. Claude creates `<dir>/.claude.json` once you start logging
   in, which marks a new profile.
   - Used in: talpy_den.py config_dir_value, config_env, Profile.__init__, trusted_folders, account_file,
-    usage_refresh_command, start_background, stop_background; vscode/src/vscodeAccount.ts configDirFor,
+    usage_refresh_command, start_background, stop_background; core/src/agents/claudeCode/vscodeAccount.ts configDirFor,
     accountSwitch.ts switchTo, statusline.ts profileDirs.
   - Check: `ls -l ~/.claude.json ~/.claude/.claude.json ~/.claude-*/.claude.json 2>&1`.
     `CLAUDE_CONFIG_DIR=$(mktemp -d) claude auth status --json` should say not logged in, because it doesn't
@@ -2278,7 +2278,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   host it is a machine-scoped setting (`~/.vscode-server/data/Machine/settings.json`): a user-setting write
   from a remote window lands there, and new chats use it within about a second, with no reload (Talpy Den
   waits 1.5 s). The status bar's usage follows the panel's account.
-  - Used in: vscode/src/claudePanel.ts panelConfigDir, localPanelConfigDir, localPanelProfileKey;
+  - Used in: core/src/agents/claudeCode/claudePanel.ts panelConfigDir; vscode/src/claudePanel.ts localPanelConfigDir, localPanelProfileKey;
     vscodeAccount.ts withConfigDir; accountSwitch.ts switchTo, switchHost, panelDir; actions.ts panelChat;
     statusBar.ts; accounts.py make_default, set_vscode, vscode_value, vscode_setting; talpy_den.py
     config_dir_in_settings, vscode_server_settings, set_vscode_user_config_dir, set_vscode_server_config_dir,
@@ -2448,7 +2448,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
 - [ ] **What the texts say about Claude's cleanup.** That `cleanupPeriodDays` defaults to 30 days, that at
   startup Claude deletes every chat and every plan older than that, starred or not, and that 3650 turns the
   cleanup off in practice.
-  - Used in: vscode/package.json, vscode/src/oldChats.ts, configChats.qml, configRecap.qml,
+  - Used in: vscode/package.json, core/src/agents/claudeCode/oldChats.ts, configChats.qml, configRecap.qml,
     gnome/extension/prefs.js (the logic is in cleanup.py).
   - Check: `LC_ALL=C grep -a -o '.\{80\}cleanupPeriodDays.\{80\}' "$B" | head -5`, and the settings docs for
     the default.
@@ -2544,14 +2544,14 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
   on the host's Claude rewriting session files at every change (see Sessions) and on inotify working there (a
   container's overlay or bind-mounted home). It ends when its connection goes (fd 1 hangs up).
   - Used in: remote.py watch, WATCH_S, WATCH_NAME; live.py session_dirs, Watch, wait (--requests, --remote);
-    vscode/src/hostWatch.ts; main.qml.
+    core/src/agents/claudeCode/hostWatch.ts; main.qml.
   - Check: `python3 -I $TD/remote.py --watch HOST --as check --timeout 30` and, meanwhile, start or answer a
     throwaway chat there: it should answer at once with `"sessions": true` (or `"requests": true`), not at its
     timeout. In a container, the same with `--watch docker:NAME`.
   - Breaks: a host's prompts show only at its next status check (every 30 s), not within a second.
   - Test: HostWatchTests.test_it_answers_when_something_changes_there, test_a_host_it_cant_reach,
     test_in_a_container (test_remote.py); HostWatchTests.test_a_request_wakes_it_at_once,
-    test_gone_with_the_connection_that_asked (test_live.py); vscode/test/hostWatch.test.ts "a watcher runs
+    test_gone_with_the_connection_that_asked (test_live.py); core/test/hostWatch.test.ts "a watcher runs
     again at once, hands on what changed, and stops when it's no longer wanted".
 - [ ] **The background service there.** There is no systemd scope on hosts or in containers: the service a
   chat's `claude --bg` starts there must outlive the ssh channel (ControlPersist's end, `ssh -O exit`,

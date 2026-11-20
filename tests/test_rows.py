@@ -330,7 +330,7 @@ class RowButtonsTests(unittest.TestCase):
         view = (repo / "vscode/src/view.ts").read_text()
         self.assertIn("this.dash.answeringHosts().map((h) => this.dash.readHostProjects(h))", view)
         self.assertNotIn("m.host ? null : findProject", view)
-        backend = (repo / "vscode/src/backend.ts").read_text()
+        backend = (repo / "core/src/agents/claudeCode/backend.ts").read_text()
         self.assertIn('["week.py", "--projects", "--on", host]', backend)
         tsx = (repo / "vscode/webview/components/ProjectsView.tsx").read_text()
         self.assertIn("<HostProjectsSection", tsx)

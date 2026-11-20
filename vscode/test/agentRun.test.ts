@@ -10,7 +10,7 @@ import { test } from "node:test";
 import * as vscode from "vscode";
 import "./useHost";
 import { AGENT_ID, agentRunArgs, agentRunsRoot, isAgentRunFile, openAgentRunFile } from "../src/agentRun";
-import { Backend } from "../src/backend";
+import { Backend } from "../../core/src/agents/claudeCode/backend";
 import { cacheDir } from "../../core/src/settings";
 import { docHtml, docTitle, initDocs } from "../src/doc";
 import { planFileOf } from "../src/planReview";

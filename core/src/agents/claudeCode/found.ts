@@ -5,7 +5,7 @@
 // has the words. With SSH hosts shown, each source has a heading of its own.
 
 import type { FindAnswer } from "./backend";
-import { hostLabel } from "../../core/src/shared/model";
+import { hostLabel } from "../../shared/model";
 
 export type FoundKind = "projects" | "plans" | "memories" | "chats";
 

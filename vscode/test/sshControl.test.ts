@@ -7,7 +7,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
 import "./useHost";
-import { controlDir } from "../src/sshControl";
+import { controlDir } from "../../core/src/agents/claudeCode/sshControl";
 import { sshCommand } from "../src/terminals";
 
 const posix = process.platform !== "win32";

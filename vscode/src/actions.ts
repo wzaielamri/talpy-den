@@ -8,15 +8,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as vscode from "vscode";
 import type { AccountSwitch } from "./accountSwitch";
-import type { Answer, Backend, FindAnswer } from "./backend";
+import type { Answer, Backend, FindAnswer } from "../../core/src/agents/claudeCode/backend";
 import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "../../core/src/settings";
 import { agentRunArgs } from "./agentRun";
 import { openComparison } from "./changes";
-import { claudePanelAvailable, filedUnder, localPanelConfigDir, localPanelProfileKey, openPanelChat } from "./claudePanel";
+import { claudePanelAvailable, localPanelConfigDir, localPanelProfileKey, openPanelChat } from "./claudePanel";
+import { filedUnder } from "../../core/src/agents/claudeCode/claudePanel";
 import { isAgentRunFile, openAgentRunFile, showMarkdown } from "./agentRun";
 import type { Dashboard } from "./dashboard";
-import { canRaiseWindows, isGnome } from "./desktop";
-import { allShown, foundLines, showAll } from "./found";
+import { canRaiseWindows, isGnome } from "../../core/src/platform/linux/desktop";
+import { allShown, foundLines, showAll } from "../../core/src/agents/claudeCode/found";
 import { chatRef, noLinks } from "./notify";
 import {
   ago,
@@ -53,7 +54,8 @@ import {
 } from "../../core/src/shared/model";
 import type { ChatRef, FoundChat, FoundMemory, FoundPlan, FoundProject, Group, MoveAnswer, PlanItem, Project, Session } from "../../core/src/shared/types";
 import { remoteControlPage } from "../../core/src/shared/pane";
-import { asPaste, attachClients, localAncestors, type Place, type Terminals } from "./terminals";
+import type { Terminals } from "./terminals";
+import { asPaste, attachClients, localAncestors, type Place } from "../../core/src/terminal";
 import type { PlanReview } from "./planReview";
 import type { ChatPanes } from "./chatPane";
 import { windowFolders } from "./chatSurface";

@@ -10,15 +10,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { localPanelProfileKey, panelConfigDir, profileKey } from "./claudePanel";
-import type { Backend } from "./backend";
+import { localPanelProfileKey } from "./claudePanel";
+import { panelConfigDir, profileKey } from "../../core/src/agents/claudeCode/claudePanel";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { hostLabel, machineStatus } from "../../core/src/shared/model";
 import type { Group, ViewState } from "../../core/src/shared/types";
-import { profileDirs } from "./statusline";
-import { configDirFor, withConfigDir } from "./vscodeAccount";
+import { profileDirs } from "../../core/src/agents/claudeCode/profiles";
+import { configDirFor, withConfigDir } from "../../core/src/agents/claudeCode/vscodeAccount";
 
 const RELOAD = "workbench.action.reloadWindow";
 

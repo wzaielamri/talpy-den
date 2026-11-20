@@ -5,14 +5,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import type { Backend } from "./backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { ChatPanes } from "./chatPane";
 import { cacheDir, settings } from "../../core/src/settings";
-import { gnomeSoundTheme } from "./desktop";
+import { gnomeSoundTheme } from "../../core/src/platform/linux/desktop";
 import type { Digest } from "./away";
 import { oneChoice, questionsOf, shownAsk } from "../../core/src/shared/pane";
 import type { Answers, AskShown, ChatRef, Question, Session } from "../../core/src/shared/types";
-import { askHead, type Changes } from "./transitions";
+import { askHead, type Changes } from "../../core/src/transitions";
 
 export function chatRef(s: Session, host?: string): ChatRef {
   return {

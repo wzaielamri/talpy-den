@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { test } from "node:test";
-import "./useHost";
-import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, overridesNote, riskText, runsLines, sizeText, SETTING_OF } from "../src/oldChats";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
+import { cleanupSettingOf, cleanupStatusOf, cleanupText, keptText, oldChatsDetail, overridesNote, riskText, runsLines, sizeText, SETTING_OF } from "../src/agents/claudeCode/oldChats";
+
+useSettingsHost(new FakeHost());
 
 const when = (ms: number) => `t${ms}`;
 
@@ -66,7 +69,7 @@ test("each place's last run, this computer first, a host out of reach by why", (
 });
 
 test("the settings, the command and the backend's script are declared", () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
+  const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
   const props = Object.assign({}, ...pkg.contributes.configuration.map((c: any) => c.properties));
   assert.deepEqual(props["talpyDen.oldChats"].enum, ["claude", "talpyDen"]);
   assert.equal(props["talpyDen.oldChats"].default, "claude"); // (Claude Code's own, unless you choose)

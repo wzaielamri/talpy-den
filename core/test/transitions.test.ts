@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { demoState } from "../../core/src/shared/demo";
-import type { Group, SessionState } from "../../core/src/shared/types";
-import "./useHost";
+import { demoState } from "../src/shared/demo";
+import type { Group, SessionState } from "../src/shared/types";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
 import { askText, askTitle, TransitionTracker } from "../src/transitions";
+
+useSettingsHost(new FakeHost());
 
 const NOW = 1_800_000_000_000;
 const OPTS = { notifyWaiting: true, notifyDone: true, notifyDoneMinSeconds: 30 };

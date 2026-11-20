@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import "./useHost";
-import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../src/remoteHost";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
+import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "../src/agents/claudeCode/remoteHost";
+
+useSettingsHost(new FakeHost());
 
 const hex = (o: object) => Buffer.from(JSON.stringify(o)).toString("hex");
 

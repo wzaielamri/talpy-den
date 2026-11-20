@@ -9,9 +9,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import "./useHost";
+import { useSettingsHost } from "../src/settings";
+import { FakeHost } from "./fakeHost";
 import { findJobRef, jobIdOk, JOB_ID, openDir, OpenWatch, pendingOpens, takeOpen } from "../src/openRequests";
-import { demoState } from "../../core/src/shared/demo";
+import { demoState } from "../src/shared/demo";
+
+useSettingsHost(new FakeHost());
 
 const JOB = ".claude-work/0b1c2d3e-aaaa-bbbb-cccc-1234567890ab/live";
 
@@ -42,7 +45,7 @@ test("a jobs file id's shape, and nothing else", () => {
 });
 
 test("the id rule is the backend's (live.py's JOB_ID)", () => {
-  const py = fs.readFileSync(path.join(__dirname, "../../../package/contents/code/live.py"), "utf8");
+  const py = fs.readFileSync(path.join(process.cwd(), "..", "package", "contents", "code", "live.py"), "utf8");
   const m = /^JOB_ID = re\.compile\(r"(.*)"\)$/m.exec(py);
   assert.ok(m, "live.py's JOB_ID");
   assert.equal(JOB_ID.source.replace(/^\^/, "").replace(/\$$/, "").replace(/\\\//g, "/"), m![1]);

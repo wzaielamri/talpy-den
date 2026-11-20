@@ -7,13 +7,14 @@
 
 import * as vscode from "vscode";
 import type { AccountSwitch } from "./accountSwitch";
-import type { Backend } from "./backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { configDirArgs } from "../../core/src/settings";
 import type { Dashboard } from "./dashboard";
 import { noLinks } from "./notify";
 import { accountNameProblem, containerOf, hostLabel, machineStatus } from "../../core/src/shared/model";
 import type { Group } from "../../core/src/shared/types";
-import type { Place, Terminals } from "./terminals";
+import type { Terminals } from "./terminals";
+import type { Place } from "../../core/src/terminal";
 
 // One account, as accounts.py --list says
 export interface AccountInfo {

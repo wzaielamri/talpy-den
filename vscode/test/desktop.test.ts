@@ -7,9 +7,9 @@ import type * as vscode from "vscode";
 import "./useHost";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
-import type { Backend } from "../src/backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../src/dashboard";
-import { canRaiseWindows, gnomeRaiserRunning, isGnome, isKde } from "../src/desktop";
+import { canRaiseWindows, gnomeRaiserRunning, isGnome, isKde } from "../../core/src/platform/linux/desktop";
 import type { ChatRef } from "../../core/src/shared/types";
 import type { Terminals } from "../src/terminals";
 

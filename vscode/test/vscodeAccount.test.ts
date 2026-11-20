@@ -7,7 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import "./useHost";
-import { configDirFor, withConfigDir } from "../src/vscodeAccount";
+import { configDirFor, withConfigDir } from "../../core/src/agents/claudeCode/vscodeAccount";
 
 function home(withLink: boolean): string {
   const h = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-test-")));

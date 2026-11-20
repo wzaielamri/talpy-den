@@ -7,11 +7,12 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
 import "./useHost";
-import type { Backend } from "../src/backend";
+import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
 import { demoState } from "../../core/src/shared/demo";
-import { asPaste, Terminals } from "../src/terminals";
+import { Terminals } from "../src/terminals";
+import { asPaste } from "../../core/src/terminal";
 
 const stub = vscode as unknown as typeof import("./vscode-stub");
 const NOW = 1_800_000_000_000;
