@@ -24,7 +24,7 @@ section, then the next open task.
 
 | Task | Status | Commits | Review | Notes |
 |---|---|---|---|---|
-| 1 Core folder, build, tests | not started | | | |
+| 1 Core folder, build, tests | done | 3a532755, f7963eda | clean after 1 fix round | 401 → 406 tests. Core tests build to `vscode/out/test/core/`; the extension's stay in `out/test/` (R6). `Emitter.fire` isolates listener errors, as `vscode.EventEmitter` does. |
 | 2 HostServices, FakeHost, VsCodeHost | not started | | | |
 | 3 Shared types, agent-neutral | not started | | | |
 | 4 Settings through the host | not started | | | |
@@ -37,7 +37,11 @@ section, then the next open task.
 | 11 Talpy Chat's logic | not started | | | |
 | 12 Wiring, VS Code check, docs | not started | | | |
 
-Decisions taken during execution: (none yet)
+Decisions taken during execution (details in the ledger):
+- R5: Task 1 started before the animation fix merged. Task 1 touches nothing the fix touches; the fix must be in `main` and here before Task 3.
+- R6: test bundles. The extension's tests stay in `vscode/out/test/<name>.test.js`, because six of them find files through `__dirname/../..`. Core's tests go to `out/test/core/`. A test that moves to `core/test` and reads files through `__dirname` switches to paths from `process.cwd()`; `npm test` runs in `vscode/`.
+- R7: `node --test` prints `ℹ tests N / ℹ pass N / ℹ fail N`, not `# tests N`. The baseline was 401.
+- Task 1: `Emitter.fire` reports a throwing listener with `console.error` and goes on to the others, as `vscode.EventEmitter` does. This keeps later swaps free of any behaviour change.
 
 ## Global Constraints
 
