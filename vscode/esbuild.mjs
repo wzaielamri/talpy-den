@@ -16,6 +16,8 @@ import * as path from "node:path";
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
 const tests = process.argv.includes("--tests");
+// The tests build starts clean: a moved or deleted test's old bundle would keep running.
+if (tests) rmSync("out/test", { recursive: true, force: true });
 const harness = process.argv.includes("--harness");
 const onlyVendor = process.argv.includes("--vendor");
 
