@@ -1,0 +1,148 @@
+// A HostServices a core test scripts: what it was asked is in `recorded`, what it answers in `answer`
+// (none: undefined, as when Escape is pressed), its settings in `values` and `others`.
+
+import { Emitter } from "../src/events";
+import type {
+  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions,
+} from "../src/host";
+
+export class FakeHost implements HostServices {
+  recorded = {
+    messages: [] as { level: MessageLevel; text: string; options?: MessageOptions; actions: string[] }[],
+    picks: [] as { items: readonly PickItem[]; options?: PickOptions }[],
+    inputs: [] as InputOptions[],
+    choices: [] as ChooseOptions[],
+    external: [] as string[],
+    files: [] as string[],
+    revealed: [] as string[],
+    settingsOpened: [] as string[],
+    views: 0,
+    contexts: new Map<string, unknown>(),
+    status: [] as string[],
+    logs: [] as string[],
+  };
+
+  answer: {
+    message?: (text: string, actions: string[]) => string | undefined;
+    pick?: (items: readonly PickItem[]) => PickItem | undefined;
+    pickMany?: (items: readonly PickItem[]) => PickItem[] | undefined;
+    input?: (o: InputOptions) => string | undefined;
+    choose?: (o: ChooseOptions) => string[] | undefined;
+  } = {};
+
+  values = new Map<string, unknown>(); // talpyDen.<key> -> value
+  others = new Map<string, unknown>(); // "section.key" -> value
+  clip = "";
+  folders: { name: string; path: string }[] = [];
+  environment: { remoteName?: string; web: boolean } = { web: false };
+
+  private settingsChanged = new Emitter<string[]>();
+  private focusChanged = new Emitter<boolean>();
+  private foldersChanged = new Emitter<void>();
+  private isFocused = false;
+
+  // Sets a talpyDen setting, as the user would, and tells the listeners
+  set(key: string, value: unknown): void {
+    this.values.set(key, value);
+    this.settingsChanged.fire([key]);
+  }
+
+  setFocused(focused: boolean): void {
+    this.isFocused = focused;
+    this.focusChanged.fire(focused);
+  }
+
+  // Changes the open folders and tells the listeners
+  setFolders(folders: { name: string; path: string }[]): void {
+    this.folders = folders;
+    this.foldersChanged.fire(undefined);
+  }
+
+  async message<A extends string>(level: MessageLevel, text: string, options?: MessageOptions, ...actions: A[]): Promise<A | undefined> {
+    this.recorded.messages.push({ level, text, options, actions });
+    return this.answer.message?.(text, actions) as A | undefined;
+  }
+
+  async pick<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T | undefined> {
+    this.recorded.picks.push({ items, options });
+    return this.answer.pick?.(items) as T | undefined;
+  }
+
+  async pickMany<T extends PickItem>(items: readonly T[], options?: PickOptions): Promise<T[] | undefined> {
+    this.recorded.picks.push({ items, options });
+    return this.answer.pickMany?.(items) as T[] | undefined;
+  }
+
+  async input(options: InputOptions = {}): Promise<string | undefined> {
+    this.recorded.inputs.push(options);
+    return this.answer.input?.(options);
+  }
+
+  async choose(options: ChooseOptions): Promise<string[] | undefined> {
+    this.recorded.choices.push(options);
+    return this.answer.choose?.(options);
+  }
+
+  progress<R>(_options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R> {
+    return task();
+  }
+
+  statusMessage(text: string, _ms: number): void {
+    this.recorded.status.push(text);
+  }
+
+  readonly settings: HostSettings = {
+    get: <T>(key: string, fallback: T) => (this.values.has(key) ? (this.values.get(key) as T) : fallback),
+    update: async (key, value) => this.set(key, value),
+    inspect: (key) => (this.values.has(key) ? { global: this.values.get(key) } : undefined),
+    other: <T>(section: string, key: string, fallback: T) => (this.others.has(`${section}.${key}`) ? (this.others.get(`${section}.${key}`) as T) : fallback),
+    onDidChange: this.settingsChanged.event,
+  };
+
+  readonly focus = ((self: FakeHost) => ({
+    get focused() { return self.isFocused; },
+    onDidChange: self.focusChanged.event,
+  }))(this);
+
+  readonly clipboard = {
+    read: async () => this.clip,
+    write: async (text: string) => { this.clip = text; },
+  };
+
+  async openExternal(url: string): Promise<boolean> {
+    this.recorded.external.push(url);
+    return true;
+  }
+
+  async openFile(path: string): Promise<void> {
+    this.recorded.files.push(path);
+  }
+
+  async revealFile(path: string): Promise<void> {
+    this.recorded.revealed.push(path);
+  }
+
+  async openSettings(query: string): Promise<void> {
+    this.recorded.settingsOpened.push(query);
+  }
+
+  async showView(): Promise<void> {
+    this.recorded.views++;
+  }
+
+  setContext(key: string, value: unknown): void {
+    this.recorded.contexts.set(key, value);
+  }
+
+  workspaceFolders(): readonly { name: string; path: string }[] {
+    return this.folders;
+  }
+
+  readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
+
+  readonly log = {
+    info: (m: string) => void this.recorded.logs.push(`info ${m}`),
+    warn: (m: string) => void this.recorded.logs.push(`warn ${m}`),
+    error: (m: string) => void this.recorded.logs.push(`error ${m}`),
+  };
+}

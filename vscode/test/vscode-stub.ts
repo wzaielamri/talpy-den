@@ -33,13 +33,38 @@ export function changeSettings(...keys: string[]): void {
 
 // settings a test sets (key -> value); the rest read as their defaults
 export const overrides = new Map<string, unknown>();
+// another section's settings, by "section.key" (a section other than talpyDen reads these first)
+export const sectionValues = new Map<string, unknown>();
+
+// The calls the window, command and env APIs got, in order (VsCodeHost's tests read them), and the answer a
+// method gives (answers, by method name: a value, or a function of the call's arguments; none: undefined,
+// as when Escape is pressed)
+export const calls: { method: string; args: unknown[] }[] = [];
+export const answers = new Map<string, unknown>();
+function call(method: string, args: unknown[], fallback?: unknown): unknown {
+  calls.push({ method, args });
+  if (!answers.has(method)) return fallback;
+  const answer = answers.get(method);
+  return typeof answer === "function" ? answer(...args) : answer;
+}
+
+const folderChanges = listeners<void>();
 
 export const workspace = {
-  getConfiguration: () => ({ get: <T>(key: string, fallback: T) => (overrides.has(key) ? (overrides.get(key) as T) : fallback), update: async () => undefined }),
-  workspaceFolders: undefined,
+  getConfiguration: (section?: string): { get<T>(key: string, fallback: T): T; update(...args: unknown[]): Promise<unknown>; inspect?(key: string): unknown } => ({
+    get: <T>(key: string, fallback: T) => {
+      const qualified = `${section}.${key}`;
+      if (section !== "talpyDen" && sectionValues.has(qualified)) return sectionValues.get(qualified) as T;
+      return overrides.has(key) ? (overrides.get(key) as T) : fallback;
+    },
+    update: async (key: string, value: unknown, target?: unknown) => void call("config.update", [section, key, value, target]),
+    inspect: (key: string) => call("config.inspect", [section, key]),
+  }),
+  // the folders a test opens (setWorkspaceFolders)
+  workspaceFolders: undefined as { name: string; uri: Uri }[] | undefined,
   workspaceFile: undefined,
   onDidChangeConfiguration: configChanges.on,
-  onDidChangeWorkspaceFolders: disposable,
+  onDidChangeWorkspaceFolders: folderChanges.on,
   registerTextDocumentContentProvider: disposable,
   // files: a test's own (stubFiles, by path)
   fs: { readFile: async (u: { path: string }) => {
@@ -53,6 +78,11 @@ export const workspace = {
     return { onDidChange: changed.on, onDidCreate: changed.on, onDidDelete: disposable, dispose: () => off.dispose() };
   },
 };
+
+export function setWorkspaceFolders(folders: { name: string; uri: Uri }[] | undefined): void {
+  workspace.workspaceFolders = folders;
+  folderChanges.fire(undefined);
+}
 
 export const stubFiles = new Map<string, string>();
 const fileChanges = listeners<string>();
@@ -76,12 +106,19 @@ const logChannel = () => ({
   dispose() {},
 });
 
+const windowStates = listeners<{ focused: boolean }>();
+// The window gains or loses the focus
+export function setWindowFocused(focused: boolean): void {
+  window.state.focused = focused;
+  windowStates.fire({ focused });
+}
+
 export const window = {
   terminals: [],
   visibleTextEditors: [],
   state: { focused: false },
   onDidCloseTerminal: disposable,
-  onDidChangeWindowState: disposable,
+  onDidChangeWindowState: windowStates.on,
   createOutputChannel: logChannel,
   createStatusBarItem: () => {
     const item = { text: "", tooltip: undefined as unknown, backgroundColor: undefined as unknown, show() {}, hide() {}, dispose() {} };
@@ -175,14 +212,18 @@ export const window = {
     return panel;
   },
   showTextDocument: async () => undefined,
-  showInformationMessage: async (m: string) => void recorded.messages.push(m),
-  showWarningMessage: async (m: string) => void recorded.messages.push(m),
-  showErrorMessage: async (m: string) => void recorded.messages.push(m),
-  setStatusBarMessage: (m: string) => (recorded.messages.push(m), disposable()),
-  withProgress: async <T>(_o: unknown, task: (p: { report(): void }) => Promise<T>) => task({ report() {} }),
+  showInformationMessage: async (m: string, ...rest: unknown[]) => (recorded.messages.push(m), call("showInformationMessage", [m, ...rest])),
+  showWarningMessage: async (m: string, ...rest: unknown[]) => (recorded.messages.push(m), call("showWarningMessage", [m, ...rest])),
+  showErrorMessage: async (m: string, ...rest: unknown[]) => (recorded.messages.push(m), call("showErrorMessage", [m, ...rest])),
+  showQuickPick: async (...args: unknown[]) => call("showQuickPick", args),
+  showInputBox: async (...args: unknown[]) => call("showInputBox", args),
+  showOpenDialog: async (...args: unknown[]) => call("showOpenDialog", args),
+  setStatusBarMessage: (m: string, ms?: number) => (recorded.messages.push(m), call("setStatusBarMessage", [m, ms]), disposable()),
+  withProgress: async <T>(o: unknown, task: (p: { report(): void }) => Promise<T>) => (call("withProgress", [o]), task({ report() {} })),
 };
 
 export enum ProgressLocation {
+  Window = 10,
   Notification = 15,
 }
 
@@ -191,7 +232,7 @@ export const commands = {
     recorded.commands.set(id, fn);
     return disposable();
   },
-  executeCommand: async () => undefined,
+  executeCommand: async (...args: unknown[]) => call("executeCommand", args),
   getCommands: async () => [] as string[],
 };
 
@@ -220,7 +261,7 @@ export enum UIKind {
 export const env = {
   remoteName: undefined as string | undefined,
   uiKind: UIKind.Desktop,
-  openExternal: async () => true,
+  openExternal: async (uri: unknown) => call("openExternal", [uri], true),
   clipboard: { writeText: async (text: string) => void clipboardWrites.push(text), readText: async () => clipboardWrites.at(-1) ?? "" },
 };
 
@@ -238,6 +279,8 @@ export function setVersion(v: string): void {
 
 export enum ConfigurationTarget {
   Global = 1,
+  Workspace = 2,
+  WorkspaceFolder = 3,
 }
 
 export enum StatusBarAlignment {
@@ -278,6 +321,9 @@ export class Uri {
   }
   static parse(s: string) {
     return new Uri(s.split(":")[0], s);
+  }
+  with(c: { path?: string }) {
+    return new Uri(this.scheme, c.path ?? this.path, this.authority);
   }
   static joinPath(base: Uri, ...parts: string[]) {
     return new Uri(base.scheme, [base.path, ...parts].join("/"));
