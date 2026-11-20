@@ -407,8 +407,10 @@ PlasmoidItem {
     readonly property bool shownInPlace: Window.window !== null && fullRepresentationItem !== null
                                          && fullRepresentationItem.Window.window === Window.window
     onShownInPlaceChanged: Hub.placed(instanceId, !shownInPlace)
-    // (with the mouse on it, it can be seen: a window over it would have the mouse)
-    readonly property bool coveredByWindow: coverWatch.item !== null && coverWatch.item.covered && !mouseOnWidget.hovered
+    // (with the mouse on it, it can be seen: a window over it would have the
+    // mouse). The screen locked covers every copy, the panel's popup too: it
+    // holds still till the screen is unlocked (hub/Beat.qml: locked).
+    readonly property bool coveredByWindow: Beat.locked || (coverWatch.item !== null && coverWatch.item.covered && !mouseOnWidget.hovered)
     // Windows over a part of the widget on the desktop (CoverWatch.qml): what's
     // all under them holds still, as everything does once all of it is
     // covered (a stage of pets: PetStrip.qml, the spinner, the ticker).

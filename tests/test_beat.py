@@ -6,6 +6,7 @@ import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -19,7 +20,9 @@ NEEDS_QT = unittest.skipUnless(subprocess.run(
 
 def run_qml(body, ms):
     """Runs body (an Item with a string property report) offscreen in a shown
-    window for ms, with the widget's QML and hub/ imported; returns report."""
+    window for ms, with the widget's QML and hub/ imported; returns report.
+    On a D-Bus session of its own where it can (no screen locker there: the
+    machine's screen, locked as the tests run, would stop the beat)."""
     with tempfile.TemporaryDirectory() as tmp:
         qml = Path(tmp) / "t.qml"
         qml.write_text(f'import QtQuick\nimport "{UI.as_uri()}"\nimport "{(UI / "hub").as_uri()}"\n{body}\n')
@@ -36,7 +39,8 @@ def run_qml(body, ms):
             "QTimer.singleShot(int(sys.argv[2]), app.quit)\n"
             "app.exec()\n"
             "print('REPORT', r.property('report') if r else '')\n")
-        out = subprocess.run(["python3", "-c", script, str(qml), str(ms)], capture_output=True, text=True, timeout=60,
+        own_bus = ["dbus-run-session", "--"] if shutil.which("dbus-run-session") else []
+        out = subprocess.run(own_bus + ["python3", "-c", script, str(qml), str(ms)], capture_output=True, text=True, timeout=60,
                              env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
                                       QT_FORCE_STDERR_LOGGING="1"))
     report = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
@@ -103,6 +107,83 @@ Item {
 }""", 200)
         # 1 down to 0.25 in 600 ms and back, eased in and out (Easing.InOutSine), and on round
         self.assertEqual(got, [1, 0.89, 0.625, 0.25, 0.625, 1, 0.625, 1])
+
+
+def plasma_dbus_qml():
+    try:
+        from PySide6.QtCore import QLibraryInfo
+    except ImportError:
+        return False
+    return (Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath)) / "org/kde/plasma/workspace/dbus/qmldir").exists()
+
+
+@NEEDS_QT
+@unittest.skipUnless(shutil.which("dbus-run-session") and plasma_dbus_qml(), "needs dbus-run-session and Plasma's D-Bus QML module")
+class LockTests(unittest.TestCase):
+    def test_the_beat_stops_while_the_screen_is_locked(self):
+        # A screen locker of our own on a bus of our own: locked as the
+        # widget starts, then unlocked, then locked again
+        with tempfile.TemporaryDirectory() as tmp:
+            qml = Path(tmp) / "t.qml"
+            qml.write_text(f'import QtQuick\nimport "{(UI / "hub").as_uri()}"\n' + """
+Item {
+    id: t
+    property var seen: []
+    property string report: JSON.stringify(seen)
+    OnBeat { active: true }
+    Timer {
+        interval: 100; repeat: true; running: true
+        onTriggered: { t.seen.push([Beat.locked, Beat.timer.running]); t.report = JSON.stringify(t.seen) }
+    }
+}
+""")
+            script = (
+                "import sys\n"
+                "from PySide6.QtCore import QObject, QTimer, QUrl, Slot, ClassInfo\n"
+                "from PySide6.QtGui import QGuiApplication\n"
+                "from PySide6.QtQml import QQmlComponent, QQmlEngine\n"
+                "from PySide6.QtDBus import QDBusConnection, QDBusMessage\n"
+                "app = QGuiApplication(sys.argv)\n"
+                "bus = QDBusConnection.sessionBus()\n"
+                "state = {'active': True}\n"
+                "@ClassInfo({'D-Bus Interface': 'org.freedesktop.ScreenSaver'})\n"
+                "class Locker(QObject):\n"
+                "    @Slot(result=bool)\n"
+                "    def GetActive(self):\n"
+                "        return state['active']\n"
+                "locker = Locker()\n"
+                "assert bus.registerService('org.freedesktop.ScreenSaver')\n"
+                "assert bus.registerObject('/ScreenSaver', locker, QDBusConnection.RegisterOption.ExportAllSlots)\n"
+                "def say(active):\n"
+                "    state['active'] = active\n"
+                "    m = QDBusMessage.createSignal('/ScreenSaver', 'org.freedesktop.ScreenSaver', 'ActiveChanged')\n"
+                "    m.setArguments([active])\n"
+                "    bus.send(m)\n"
+                "eng = QQmlEngine()\n"
+                "c = QQmlComponent(eng, QUrl.fromLocalFile(sys.argv[1]))\n"
+                "o = c.create()\n"
+                "QTimer.singleShot(650, lambda: say(False))\n"
+                "QTimer.singleShot(1250, lambda: say(True))\n"
+                "QTimer.singleShot(1800, app.quit)\n"
+                "app.exec()\n"
+                "print('REPORT', o.property('report') if o else c.errorString())\n")
+            out = subprocess.run(["dbus-run-session", "--", "python3", "-c", script, str(qml)], capture_output=True,
+                                 text=True, timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen",
+                                                                 QT_FORCE_STDERR_LOGGING="1"))
+        report = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
+        if not report.startswith("["):
+            raise AssertionError((report, out.stderr[-3000:]))
+        seen = json.loads(report)          # [locked, beat ticking], every 100 ms
+        self.assertEqual(seen[4], [True, False], seen)    # (asked as it started: locked)
+        self.assertEqual(seen[9], [False, True], seen)    # unlocked: it ticks
+        self.assertEqual(seen[15], [True, False], seen)   # locked again: it stops
+
+    def test_a_locked_screen_covers_every_copy(self):
+        # main.qml: what stops for a copy under windows (the pets, the ticker,
+        # a desktop's dashboard holding its answers) stops for a locked screen
+        main = (UI / "main.qml").read_text()
+        covered = main[main.index("readonly property bool coveredByWindow:"):]
+        self.assertIn("Beat.locked", covered[:covered.index("\n    //")])
 
 
 class NothingMovesForeverTests(unittest.TestCase):
