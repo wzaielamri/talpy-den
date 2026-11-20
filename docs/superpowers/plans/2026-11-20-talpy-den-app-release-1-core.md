@@ -25,7 +25,7 @@ section, then the next open task.
 | Task | Status | Commits | Review | Notes |
 |---|---|---|---|---|
 | 1 Core folder, build, tests | done | 3a532755, f7963eda | clean after 1 fix round | 401 → 406 tests. Core tests build to `vscode/out/test/core/`; the extension's stay in `out/test/` (R6). `Emitter.fire` isolates listener errors, as `vscode.EventEmitter` does. |
-| 2 HostServices, FakeHost, VsCodeHost | not started | | | |
+| 2 HostServices, FakeHost, VsCodeHost | done | 7031abf4, 6e9ad962 | clean after 1 fix round | 406 → 430 tests. The contract gained what today's code needs (the Task 2 block above shows it): `update(…, scope?)`, `updateOther`, `watchOther`, `ChooseOptions.localOnly`. `FakeHost` records `updates` and has `setOther`. |
 | 3 Shared types, agent-neutral | not started | | | |
 | 4 Settings through the host | not started | | | |
 | 5 VS Code-free modules | not started | | | |
@@ -159,12 +159,15 @@ Integration tests that use the VS Code stub stay in `vscode/test` and import the
     password?: boolean; ignoreFocusOut?: boolean; validateInput?: (value: string) => string | undefined | null }
   export interface ChooseOptions { kind: "folder" | "file"; many?: boolean; title?: string; openLabel?: string;
     defaultPath?: string; onRemote?: boolean /* the window's remote file system (Remote-SSH) */;
-    filters?: Record<string, string[]> }
+    filters?: Record<string, string[]>; localOnly?: boolean /* only this computer's files (file:) */ }
+  export type SettingScope = "global" | "workspace" | "workspaceFolder";
   export interface HostSettings {
     get<T>(key: string, fallback: T): T;                 // talpyDen.<key>
-    update(key: string, value: unknown): Promise<void>;  // user (global) scope
+    update(key: string, value: unknown, scope?: SettingScope): Promise<void>;  // global unless given (config.ts whereSet)
     inspect(key: string): { global?: unknown; workspace?: unknown; workspaceFolder?: unknown } | undefined;
     other<T>(section: string, key: string, fallback: T): T; // another extension's or VS Code's setting
+    updateOther(section: string, key: string, value: unknown): Promise<void>; // global (accountSwitch: claudeCode.environmentVariables)
+    watchOther(keys: readonly string[]): Event<string[]>; // which of these full keys a change touched (chatPane: the fonts)
     readonly onDidChange: Event<string[]>;              // the talpyDen keys that changed
   }
   export interface HostServices {
