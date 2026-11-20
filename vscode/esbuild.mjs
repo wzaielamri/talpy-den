@@ -74,7 +74,11 @@ const builds = harness
   ? [{
       ...common,
       sourcemap: false,
-      entryPoints: readdirSync("test").filter((f) => f.endsWith(".test.ts")).map((f) => `test/${f}`),
+      // (core's tests land in out/test/core/, the extension's in out/test/)
+      entryPoints: [
+        ...readdirSync("test").filter((f) => f.endsWith(".test.ts")).map((f) => ({ in: `test/${f}`, out: f.replace(/\.ts$/, "") })),
+        ...readdirSync("../core/test").filter((f) => f.endsWith(".test.ts")).map((f) => ({ in: `../core/test/${f}`, out: `core/${f.replace(/\.ts$/, "")}` })),
+      ],
       outdir: "out/test",
       platform: "node",
       format: "cjs",
