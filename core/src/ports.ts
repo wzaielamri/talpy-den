@@ -59,6 +59,9 @@ export interface EditorPort {
   claudePanelAvailable(): Promise<boolean>;
   // It may have come or gone: the host's extensions changed (dashboard checks claudePanelAvailable again)
   readonly onDidChangeClaudePanel: Event<void>;
+  // Whether the Claude Code extension is installed, its panel able to open chats here or not (an untrusted
+  // folder: not) (accountSwitch.ts:115 switch: none, no VS Code Claude to switch)
+  claudeCodeInstalled(): boolean;
   // The Claude config folder the panel runs this computer's chats on (actions' windowHasChat)
   localPanelConfigDir(): string;
   // ... as a profile key (dashboard's claudeCodeInfo; actions' openInClaudeCode and panelChoice;

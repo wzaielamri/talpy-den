@@ -238,9 +238,14 @@ export const commands = {
   getCommands: async () => [] as string[],
 };
 
-// Extensions installed, removed or enabled: changeExtensions tells the listeners
+// The extensions installed (by id: a test's; none by default); installed, removed or enabled:
+// changeExtensions tells the listeners
+export const installedExtensions = new Set<string>();
 const extensionChanges = listeners<void>();
-export const extensions = { onDidChange: extensionChanges.on };
+export const extensions = {
+  onDidChange: extensionChanges.on,
+  getExtension: (id: string) => (installedExtensions.has(id) ? { id } : undefined),
+};
 export function changeExtensions(): void {
   extensionChanges.fire(undefined);
 }

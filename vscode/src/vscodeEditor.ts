@@ -48,6 +48,10 @@ export class VsCodeEditor implements EditorPort {
   // (the Claude Code extension installed, removed or, in a new folder, enabled)
   readonly onDidChangeClaudePanel: Event<void> = (listener) => vscode.extensions.onDidChange(() => listener());
 
+  claudeCodeInstalled(): boolean {
+    return !!vscode.extensions.getExtension("anthropic.claude-code");
+  }
+
   localPanelConfigDir(): string {
     return localPanelConfigDir();
   }

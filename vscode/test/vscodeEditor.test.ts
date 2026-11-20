@@ -141,3 +141,20 @@ test("Claude Code's panel: whether it's here, the account it runs on, a new chat
   stub.changeExtensions();
   assert.equal(changes, 1);
 });
+
+// accountSwitch's switch: no Claude Code extension, no VS Code Claude to switch. Installed is not the same as
+// its panel being available: in an untrusted folder it's there, its commands not registered
+test("claudeCodeInstalled: whether the Claude Code extension is installed, even where its panel can't open chats", async () => {
+  const editor = new VsCodeEditor();
+  assert.equal(editor.claudeCodeInstalled(), false);
+  try {
+    stub.installedExtensions.add("anthropic.claude-code");
+    assert.equal(editor.claudeCodeInstalled(), true);
+    assert.equal(await editor.claudePanelAvailable(), false);
+  } finally {
+    stub.installedExtensions.clear();
+  }
+  stub.installedExtensions.add("someone.else");
+  assert.equal(editor.claudeCodeInstalled(), false);
+  stub.installedExtensions.clear();
+});
