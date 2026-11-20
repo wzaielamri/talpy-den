@@ -337,6 +337,13 @@ test("openFile, revealFile, openSettings, showView and setContext run their VS C
   assert.deepEqual(last().args, ["setContext", "talpyDen.chatSideBar", true]);
 });
 
+// (accountSwitch: Claude Code's panel takes the account it was switched to when the window starts again)
+test("reloadWindow runs VS Code's reload command", async () => {
+  const host = make();
+  await host.reloadWindow();
+  assert.deepEqual(last(), { method: "executeCommand", args: ["workbench.action.reloadWindow"] });
+});
+
 test("clipboard reads and writes", async () => {
   const host = make();
   await host.clipboard.write("copied");

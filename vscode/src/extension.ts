@@ -5,14 +5,14 @@
 
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { Accounts } from "./accounts";
-import { AccountSwitch } from "./accountSwitch";
+import { Accounts } from "../../core/src/accounts";
+import { AccountSwitch } from "../../core/src/accountSwitch";
 import { Actions } from "../../core/src/actions";
 import { Backend } from "../../core/src/agents/claudeCode/backend";
 import { openChangesLink } from "./changes";
 import { CHAT_KEYS, ChatPanes } from "./chatPane";
-import { dictationModels } from "./dictation";
-import { answerPermissionsHere, liveModeHere } from "./relay";
+import { dictationModels } from "../../core/src/dictation";
+import { answerPermissionsHere, liveModeHere } from "../../core/src/relay";
 import { configDirArgs, extraConfigDirs, settings, useSettingsHost } from "../../core/src/settings";
 import { VsCodeEditor } from "./vscodeEditor";
 import { VsCodeHost } from "./vscodeHost";
@@ -72,7 +72,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const dash = new Dashboard(host, editor, backend, notifier);
   const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
   const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
-  const account = new AccountSwitch(dash, backend);
+  // (Add Account… and Claude Accounts… open the accounts, made below with this switch: found when clicked)
+  const account: AccountSwitch = new AccountSwitch(host, editor, dash, { add: () => accounts.add(), manage: () => accounts.manage() }, backend);
   const answerOldest = async (decision: "allow" | "deny"): Promise<void> => {
     const r = await backend.pane(["--oldest", decision], 20000);
     const message = String(r.message ?? "");
@@ -81,7 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
     dash.refreshAll();
   };
   actions = new Actions(host, terminals, editor, backend, dash, account);
-  const accounts = new Accounts(backend, dash, terminals, account, log);
+  const accounts = new Accounts(host, backend, dash, terminals, account);
   const view = new ViewHost(context.extensionUri, dash, actions, context.globalState);
   // The Monday recap: once a week, the last 7 days in a few words; Open the
   // Recap shows the view on its Recap tab (week.py marks the week: the widget
@@ -280,9 +281,9 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage(on ? "Talpy Den shows made-up demo chats now." : "Talpy Den shows your chats again.");
     }),
     vscode.commands.registerCommand("talpyDen.showLog", () => log.show()),
-    vscode.commands.registerCommand("talpyDen.answerPermissions", () => answerPermissionsHere(backend, dash)),
-    vscode.commands.registerCommand("talpyDen.liveMode", () => liveModeHere(backend, dash)),
-    vscode.commands.registerCommand("talpyDen.dictationModels", () => dictationModels(backend)),
+    vscode.commands.registerCommand("talpyDen.answerPermissions", () => answerPermissionsHere(host, backend, dash)),
+    vscode.commands.registerCommand("talpyDen.liveMode", () => liveModeHere(host, backend, dash)),
+    vscode.commands.registerCommand("talpyDen.dictationModels", () => dictationModels(host, backend)),
     // (the replies hidden with a chip's Don't suggest this: suggested again)
     vscode.commands.registerCommand("talpyDen.suggestHiddenReplies", async () => {
       const r = await backend.pane(["--hide-reply", "-", "--off"], 20000);

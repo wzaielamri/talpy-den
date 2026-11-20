@@ -5,19 +5,19 @@
 // Claude still asks in the chat too, and the first answer counts. Chats in
 // tmux can be answered without it (with their dialog's keys).
 
-import * as vscode from "vscode";
-import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { configDirArgs } from "../../core/src/settings";
-import { hostLabel } from "../../core/src/shared/model";
-import type { Dashboard } from "../../core/src/dashboard";
-import { noLinks } from "../../core/src/notify";
+import type { Backend } from "./agents/claudeCode/backend";
+import type { Dashboard } from "./dashboard";
+import type { HostServices, PickItem } from "./host";
+import { noLinks } from "./notify";
+import { configDirArgs } from "./settings";
+import { hostLabel } from "./shared/model";
 
-export async function answerPermissionsHere(backend: Backend, dash: Dashboard): Promise<void> {
+export async function answerPermissionsHere(host: HostServices, backend: Backend, dash: Dashboard): Promise<void> {
   const status = await backend.pane(["--relay", "status", ...configDirArgs()], 30000);
   const on = !!status.on;
   const hosts = dash.shownHosts();
   const where = hosts.length ? ` (and on ${hosts.map(hostLabel).join(", ")})` : "";
-  const items: (vscode.QuickPickItem & { on: boolean })[] = [
+  const items: (PickItem & { on: boolean })[] = [
     {
       label: `${on ? "$(check) " : ""}Answer them from Talpy Den too`,
       description: on ? "on now" : "",
@@ -31,7 +31,7 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
       on: false,
     },
   ];
-  const pick = await vscode.window.showQuickPick(items, { title: "Permission prompts", placeHolder: "Where can you answer them?" });
+  const pick = await host.pick(items, { title: "Permission prompts", placeHolder: "Where can you answer them?" });
   if (!pick) return;
   const flag = pick.on ? "on" : "off";
   // (chats Talpy Chat started answer their prompts here with a hook of their own: asked whether they keep it)
@@ -39,7 +39,7 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   let keep: string[] = [];
   if (!pick.on && hooked > 0) {
     const them = "Yes, for Them Too", mine = "No, Keep It for Them";
-    const answer = await vscode.window.showWarningMessage(
+    const answer = await host.message("warning",
       hooked === 1 ? "1 chat started from Talpy Chat answers its prompts here with it. Turn it off for it too?"
         : `${hooked} chats started from Talpy Chat answer their prompts here with it. Turn it off for them too?`,
       { modal: true, detail: "Yes: they ask in their own prompt (Talpy Chat shows Answer it in a terminal). No: off for every other chat; they still answer their prompts in Talpy Chat." },
@@ -53,20 +53,20 @@ export async function answerPermissionsHere(backend: Backend, dash: Dashboard): 
   ]);
   const failed = results.filter((r) => !r.ok);
   if (failed.length)
-    void vscode.window.showErrorMessage(
+    void host.message("error",
       noLinks(`Talpy Den: ${failed.map((r) => `${r.host ? `${hostLabel(r.host)}: ` : ""}${String(r.message ?? "no answer")}`).join("; ")}`),
     );
-  else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${String(results[0].message ?? "")}${where}.`));
+  else void host.message("info", noLinks(`Talpy Den: ${String(results[0].message ?? "")}${where}.`));
 }
 
 // Live Mode…: the widget's live hook (pane.py --live on|off) in each Claude
 // profile's settings.json, here. With it, each step of each chat shows as it
 // happens (its row, its tab, the line under the big Talpy), and the checks
 // in between are rarer.
-export async function liveModeHere(backend: Backend, dash: Dashboard): Promise<void> {
+export async function liveModeHere(host: HostServices, backend: Backend, dash: Dashboard): Promise<void> {
   const status = await backend.pane(["--live", "status", ...configDirArgs()], 30000);
   const on = !!status.on;
-  const items: (vscode.QuickPickItem & { on: boolean })[] = [
+  const items: (PickItem & { on: boolean })[] = [
     {
       label: `${on ? "$(check) " : ""}Show each step as it happens`,
       description: on ? "on now" : "",
@@ -80,10 +80,10 @@ export async function liveModeHere(backend: Backend, dash: Dashboard): Promise<v
       on: false,
     },
   ];
-  const pick = await vscode.window.showQuickPick(items, { title: "Live mode", placeHolder: "When do chats' steps show?" });
+  const pick = await host.pick(items, { title: "Live mode", placeHolder: "When do chats' steps show?" });
   if (!pick) return;
   const result: Record<string, any> = await backend.pane(["--live", pick.on ? "on" : "off", ...configDirArgs()], 30000);
-  if (!result.ok) void vscode.window.showErrorMessage(noLinks(`Talpy Den: ${String(result.message ?? "no answer")}`));
-  else void vscode.window.showInformationMessage(noLinks(`Talpy Den: ${String(result.message ?? "")}.`));
+  if (!result.ok) void host.message("error", noLinks(`Talpy Den: ${String(result.message ?? "no answer")}`));
+  else void host.message("info", noLinks(`Talpy Den: ${String(result.message ?? "")}.`));
   void dash.refresh();
 }

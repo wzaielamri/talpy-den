@@ -97,6 +97,9 @@ export interface HostServices {
   openSettings(query: string): Promise<void>; // VS Code: "workbench.action.openSettings"
   showView(): Promise<void>; // VS Code: "talpyDen.view.focus"
   setContext(key: string, value: unknown): void; // VS Code: "setContext"
+  // The window starts again, Claude Code's panel with it, on the account it was switched to (accountSwitch);
+  // VS Code: "workbench.action.reloadWindow", which can be declined (unsaved files)
+  reloadWindow(): Promise<void>;
   workspaceFolders(): readonly WindowFolder[];
   readonly onDidChangeWorkspaceFolders: Event<void>;
   // remoteAuthority: the remote the window has open ("ssh-remote+lab", "dev-container+…"), as it is at

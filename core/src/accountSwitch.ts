@@ -1,7 +1,8 @@
 // VS Code's Claude, the Claude Code extension's panel: which account it runs
-// on (named in Talpy Den's status bar item, statusBar.ts, with a link in its
-// hover to switch) and switching it, through VS Code's own setting
-// (vscodeAccount.ts). In a Remote-SSH window the panel runs on the host: the
+// on (named in Talpy Den's status bar item, vscode/src/statusBar.ts, with a
+// link in its hover to switch) and switching it, through VS Code's own setting
+// (vscodeAccount.ts), read and written through the host, the window reloaded
+// by it. In a Remote-SSH window the panel runs on the host: the
 // setting is a machine setting, which VS Code keeps per host (its Remote
 // Settings, written from a window connected to it), so the host's accounts
 // are listed and switched there, and this computer's setting stays as it is.
@@ -9,19 +10,17 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import * as vscode from "vscode";
-import { localPanelProfileKey } from "./claudePanel";
-import { panelConfigDir, profileKey } from "../../core/src/agents/claudeCode/claudePanel";
-import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { configDirArgs } from "../../core/src/settings";
-import type { Dashboard } from "../../core/src/dashboard";
-import { noLinks } from "../../core/src/notify";
-import { hostLabel, machineStatus } from "../../core/src/shared/model";
-import type { Group, ViewState } from "../../core/src/shared/types";
-import { profileDirs } from "../../core/src/agents/claudeCode/profiles";
-import { configDirFor, withConfigDir } from "../../core/src/agents/claudeCode/vscodeAccount";
-
-const RELOAD = "workbench.action.reloadWindow";
+import type { Backend } from "./agents/claudeCode/backend";
+import { panelConfigDir, profileKey } from "./agents/claudeCode/claudePanel";
+import { profileDirs } from "./agents/claudeCode/profiles";
+import { configDirFor, withConfigDir } from "./agents/claudeCode/vscodeAccount";
+import type { Dashboard } from "./dashboard";
+import type { HostServices, PickItem } from "./host";
+import { noLinks } from "./notify";
+import type { EditorPort } from "./ports";
+import { configDirArgs } from "./settings";
+import { hostLabel, machineStatus } from "./shared/model";
+import type { Group, ViewState } from "./shared/types";
 
 function tildify(p: string): string {
   const home = os.homedir();
@@ -36,10 +35,6 @@ function realOr(p: string): string {
   }
 }
 
-function panelDir(): string {
-  return panelConfigDir(vscode.workspace.getConfiguration("claudeCode").get("environmentVariables"));
-}
-
 // The account the status bar item names (null: one account, nothing to
 // tell apart): its short name, its group (so the usage next to it is known
 // to be its own), what its hover says, and what the hover's link does
@@ -50,25 +45,46 @@ export interface AccountShown {
   link: string;
 }
 
+// Claude Accounts (accounts.ts), as the switch opens it: Add Account… and the accounts list. extension.ts makes
+// the accounts after the switch (they take it), so it hands closures that find them when called
+export interface AccountsOpener {
+  add(): Promise<void>;
+  manage(): Promise<void>;
+}
+
 export class AccountSwitch {
-  private startedOn = realOr(panelDir()); // the folder this window's panel started on
+  private startedOn: string; // the folder this window's panel started on
   private switching = false;
   private told = "";
 
   constructor(
+    private host: HostServices,
+    private editor: EditorPort,
     private dash: Dashboard,
+    private accounts: AccountsOpener,
     private backend?: Backend, // for pointing ~/.claude at the default account too (accounts.py)
-  ) {}
+  ) {
+    this.startedOn = realOr(this.panelDir());
+  }
+
+  // claudeCode.environmentVariables: the Claude Code extension's setting (in a Remote-SSH window, the host's)
+  private panelVars(): unknown {
+    return this.host.settings.other<unknown>("claudeCode", "environmentVariables", undefined);
+  }
+
+  private panelDir(): string {
+    return panelConfigDir(this.panelVars());
+  }
 
   // Which account VS Code's Claude runs on, for the status bar item; and a
   // window whose panel's account was switched elsewhere offers to reload
   update(state: ViewState): AccountShown | null {
-    if (vscode.env.remoteName) return this.updateOnHost(state);
+    if (this.host.environment.remoteName) return this.updateOnHost(state);
     const groups = state.status?.groups ?? [];
     if (state.demo || groups.length < 2) return null;
-    const key = localPanelProfileKey();
+    const key = this.editor.localPanelProfileKey();
     const group = groups.find((g) => g.profileKeys.includes(key));
-    const dir = panelDir();
+    const dir = this.panelDir();
     const plain = groups.find((g) => g.plainHere);
     const shown: AccountShown = {
       name: group ? group.name : key,
@@ -85,12 +101,14 @@ export class AccountSwitch {
     const now = realOr(dir);
     if (now !== this.startedOn && !this.switching && this.told !== now) {
       this.told = now;
-      void vscode.window
-        .showInformationMessage(
+      void this.host
+        .message(
+          "info",
           noLinks(`VS Code's Claude runs on ${group ? group.name : path.basename(now)} now. Reload this window so its Claude Code panel does too.`),
+          undefined,
           "Reload Window",
         )
-        .then((c) => c && vscode.commands.executeCommand(RELOAD));
+        .then((c) => c && this.host.reloadWindow());
     }
     return shown;
   }
@@ -111,32 +129,34 @@ export class AccountSwitch {
   }
 
   async switch(): Promise<void> {
-    if (vscode.env.remoteName) return this.switchOnHost();
-    if (!vscode.extensions.getExtension("anthropic.claude-code")) {
-      void vscode.window.showInformationMessage("The Claude Code extension isn't installed, so there's no VS Code Claude to switch.");
+    if (this.host.environment.remoteName) return this.switchOnHost();
+    if (!this.editor.claudeCodeInstalled()) {
+      void this.host.message("info", "The Claude Code extension isn't installed, so there's no VS Code Claude to switch.");
       return;
     }
     const groups = this.dash.state().status?.groups ?? [];
     const hidden = this.dash.state().status?.hiddenGroups ?? [];
     if (groups.length < 2 && hidden.length) {
       const names = hidden.map((g) => g.name).join(", ");
-      const show = await vscode.window.showInformationMessage(
+      const show = await this.host.message("info",
         noLinks(`The other Claude account${hidden.length === 1 ? ` on this computer, ${names}, is` : `s on this computer, ${names}, are`} hidden. Show ${hidden.length === 1 ? "it" : "them"} again to pick ${hidden.length === 1 ? "it" : "one"} (Claude Accounts → Show), or make ${hidden.length === 1 ? "it" : "one"} the default there.`),
+        undefined,
         "Claude Accounts…",
       );
-      if (show) await vscode.commands.executeCommand("talpyDen.accounts");
+      if (show) await this.accounts.manage();
       return;
     }
     if (groups.length < 2) {
-      const add = await vscode.window.showInformationMessage(
+      const add = await this.host.message("info",
         "There's one Claude account on this computer. Add another one (a ~/.claude-NAME folder, logged in with Claude's own login) to switch between them.",
+        undefined,
         "Add Account…",
       );
-      if (add) await vscode.commands.executeCommand("talpyDen.addAccount");
+      if (add) await this.accounts.add();
       return;
     }
-    const key = localPanelProfileKey();
-    const pick = await vscode.window.showQuickPick<vscode.QuickPickItem & { group?: Group }>(
+    const key = this.editor.localPanelProfileKey();
+    const pick = await this.host.pick<PickItem & { group?: Group }>(
       [
         ...groups.map((g) => ({
           label: g.title,
@@ -150,7 +170,7 @@ export class AccountSwitch {
             .join(" · "),
           group: g,
         })),
-        { label: "", kind: vscode.QuickPickItemKind.Separator },
+        { label: "", separator: true },
         { label: "$(person-add) Add Account…" },
       ],
       {
@@ -158,7 +178,7 @@ export class AccountSwitch {
         placeHolder: "Listed first, its usage in the status bar; VS Code's Claude and plain claude (~/.claude, where it's a link) run on it",
       },
     );
-    if (pick && !pick.group) await vscode.commands.executeCommand("talpyDen.addAccount");
+    if (pick && !pick.group) await this.accounts.add();
     else if (pick?.group) await this.switchTo(pick.group);
   }
 
@@ -169,7 +189,7 @@ export class AccountSwitch {
   // running through ~/.claude (accounts.py refuses: it would go on on the
   // other account).
   async switchTo(group: Group): Promise<void> {
-    const onIt = group.profileKeys.includes(localPanelProfileKey());
+    const onIt = group.profileKeys.includes(this.editor.localPanelProfileKey());
     const link = path.join(os.homedir(), ".claude");
     // ~/.claude a link: plain claude can follow the default (one is only
     // re-pointed, never made: without CLAUDE_CONFIG_DIR, plain claude reads
@@ -182,7 +202,7 @@ export class AccountSwitch {
     }
     const moveLink = linked && !group.plainHere && !!this.backend;
     if (onIt && !moveLink) {
-      void vscode.window.showInformationMessage(noLinks(`${group.name} is the default account already.`));
+      void this.host.message("info", noLinks(`${group.name} is the default account already.`));
       return;
     }
     const dir = profileDirs().find((d) => profileKey(d) === group.chatProfile);
@@ -197,7 +217,7 @@ export class AccountSwitch {
             "making another account the default reloads this window, which would stop it. Try again once it's done.",
         );
     }
-    const ok = await vscode.window.showWarningMessage(
+    const ok = await this.host.message("warning",
       `Make ${group.name} the default account?`,
       {
         modal: true,
@@ -231,28 +251,27 @@ export class AccountSwitch {
           `Start VS Code without it to use ${group.name}.`,
       );
     }
-    const cc = vscode.workspace.getConfiguration("claudeCode");
-    const next = withConfigDir(cc.get("environmentVariables"), value);
+    const next = withConfigDir(this.panelVars(), value);
     if (onIt) {
       // the same account, maybe under the link's name now: no reload needed
-      if (realOr(panelDir()) === realOr(dir) && panelDir() !== (value ?? link)) {
+      if (realOr(this.panelDir()) === realOr(dir) && this.panelDir() !== (value ?? link)) {
         try {
-          await cc.update("environmentVariables", next.length ? next : undefined, vscode.ConfigurationTarget.Global);
+          await this.host.settings.updateOther("claudeCode", "environmentVariables", next.length ? next : undefined);
         } catch {
           // it still runs on the account
         }
       }
-      void vscode.window.showInformationMessage(noLinks(`${group.name} is the default account: plain claude runs on it too now.`));
+      void this.host.message("info", noLinks(`${group.name} is the default account: plain claude runs on it too now.`));
       return;
     }
     this.switching = true;
     try {
-      await cc.update("environmentVariables", next.length ? next : undefined, vscode.ConfigurationTarget.Global);
+      await this.host.settings.updateOther("claudeCode", "environmentVariables", next.length ? next : undefined);
     } catch (err) {
       this.switching = false;
       return this.fail(`Couldn't change VS Code's Claude settings: ${(err as Error).message}`);
     }
-    setTimeout(() => void vscode.commands.executeCommand(RELOAD), 300);
+    setTimeout(() => void this.host.reloadWindow(), 300);
     // the reload can be declined (unsaved files): then other switches count again
     setTimeout(() => (this.switching = false), 15000);
   }
@@ -260,7 +279,7 @@ export class AccountSwitch {
   private async switchOnHost(): Promise<void> {
     const host = this.dash.currentHost;
     if (!host) {
-      void vscode.window.showInformationMessage(
+      void this.host.message("info",
         "This window isn't connected to an SSH host (Remote-SSH), so there's no Claude account here to switch.",
       );
       return;
@@ -268,7 +287,7 @@ export class AccountSwitch {
     const groups = machineStatus(this.dash.state(), host)?.groups ?? [];
     if (groups.length < 2) {
       const hidden = machineStatus(this.dash.state(), host)?.hiddenGroups?.length ?? 0;
-      void vscode.window.showInformationMessage(
+      void this.host.message("info",
         noLinks(
           hidden
             ? `The other Claude account${hidden === 1 ? " is" : "s are"} hidden on ${hostLabel(host)}: Claude Accounts → Show lists ${hidden === 1 ? "it" : "them"} again.`
@@ -277,7 +296,7 @@ export class AccountSwitch {
       );
       return;
     }
-    const pick = await vscode.window.showQuickPick(
+    const pick = await this.host.pick(
       groups.map((g) => ({
         label: g.title,
         description: [
@@ -296,11 +315,11 @@ export class AccountSwitch {
     );
     if (!pick) return;
     if (pick.group.vscodeHere && pick.group.plainHere !== false) {
-      void vscode.window.showInformationMessage(noLinks(`${pick.group.name} is the default account on ${hostLabel(host)} already.`));
+      void this.host.message("info", noLinks(`${pick.group.name} is the default account on ${hostLabel(host)} already.`));
       return;
     }
     if (await this.switchHost(pick.group, true))
-      void vscode.window.showInformationMessage(
+      void this.host.message("info",
         noLinks(`${pick.group.name} is the default account on ${hostLabel(host)} now: new chats start there. Chats already open keep their account.`),
       );
   }
@@ -326,10 +345,9 @@ export class AccountSwitch {
       // (~/.claude may lead there now: the name terminals there use)
       if (typeof r.configDir === "string" || r.configDir === null) value = r.configDir;
     }
-    const cc = vscode.workspace.getConfiguration("claudeCode");
-    const next = withConfigDir(cc.get("environmentVariables"), value);
+    const next = withConfigDir(this.panelVars(), value);
     try {
-      await cc.update("environmentVariables", next.length ? next : undefined, vscode.ConfigurationTarget.Global);
+      await this.host.settings.updateOther("claudeCode", "environmentVariables", next.length ? next : undefined);
     } catch (err) {
       this.fail(`Couldn't change Claude Code's settings on ${hostLabel(group.host ?? "")}: ${(err as Error).message}`);
       return false;
@@ -339,6 +357,6 @@ export class AccountSwitch {
   }
 
   private fail(message: string): void {
-    void vscode.window.showErrorMessage(noLinks(message));
+    void this.host.message("error", noLinks(message));
   }
 }

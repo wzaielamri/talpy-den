@@ -4,10 +4,11 @@
 import assert from "node:assert/strict";
 import * as os from "node:os";
 import { test } from "node:test";
+import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
 import type { Answer, Backend } from "../src/agents/claudeCode/backend";
 import type { Dashboard } from "../src/dashboard";
-import type { AccountSwitch, EditorPort, Place, TerminalHandle, TerminalPort } from "../src/ports";
+import type { EditorPort, Place, TerminalHandle, TerminalPort } from "../src/ports";
 import { useSettingsHost } from "../src/settings";
 import type { ChatRef, Group } from "../src/shared/types";
 import { FakeHost } from "./fakeHost";

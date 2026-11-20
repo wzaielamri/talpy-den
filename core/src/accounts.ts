@@ -5,16 +5,15 @@
 // command, and make one the default (accountSwitch.ts). The login is
 // Claude's: the extension never sees it.
 
-import * as vscode from "vscode";
 import type { AccountSwitch } from "./accountSwitch";
-import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { configDirArgs } from "../../core/src/settings";
-import type { Dashboard } from "../../core/src/dashboard";
-import { noLinks } from "../../core/src/notify";
-import { accountNameProblem, containerOf, hostLabel, machineStatus } from "../../core/src/shared/model";
-import type { Group } from "../../core/src/shared/types";
-import type { Terminals } from "./terminals";
-import type { Place } from "../../core/src/terminal";
+import type { Backend } from "./agents/claudeCode/backend";
+import type { Dashboard } from "./dashboard";
+import type { HostServices, PickItem } from "./host";
+import { noLinks } from "./notify";
+import type { Place, TerminalPort } from "./ports";
+import { configDirArgs } from "./settings";
+import { accountNameProblem, containerOf, hostLabel, machineStatus } from "./shared/model";
+import type { Group } from "./shared/types";
 
 // One account, as accounts.py --list says
 export interface AccountInfo {
@@ -51,15 +50,15 @@ export function accountDetail(a: AccountInfo): string {
   return parts.join(" · ");
 }
 
-type Item<T> = vscode.QuickPickItem & { run?: T };
+type Item<T> = PickItem & { run?: T };
 
 export class Accounts {
   constructor(
+    private host: HostServices,
     private backend: Backend,
     private dash: Dashboard,
-    private terminals: Terminals,
+    private terminals: TerminalPort,
     private switcher: AccountSwitch,
-    private log: vscode.LogOutputChannel,
   ) {}
 
   private linked = false; // ~/.claude is a link there: plain claude can follow the default
@@ -80,8 +79,8 @@ export class Accounts {
   }
 
   private async list(host?: string): Promise<AccountInfo[] | null> {
-    const r = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `Claude accounts${this.where(host)}…` },
+    const r = await this.host.progress(
+      { where: "window", title: `Claude accounts${this.where(host)}…` },
       () => this.call(["--list", "--check"], host),
     );
     if (!r.ok || !Array.isArray(r.accounts)) {
@@ -94,15 +93,15 @@ export class Accounts {
   }
 
   private fail(message: string): void {
-    this.log.warn(message);
-    void vscode.window.showErrorMessage(noLinks(message));
+    this.host.log.warn(message);
+    void this.host.message("error", noLinks(message));
   }
 
   // What accounts.py said, as a message (and the dashboard looks again)
   private said(r: Record<string, any>, failure: string, host?: string): boolean {
     const message = String(r.message ?? "");
     if (r.ok) {
-      if (message) void vscode.window.showInformationMessage(noLinks(message));
+      if (message) void this.host.message("info", noLinks(message));
     } else this.fail(`${failure}: ${message || "no answer"}`);
     if (host) void this.dash.pollHost(host);
     else this.dash.refreshAll();
@@ -113,7 +112,7 @@ export class Accounts {
   private async machine(): Promise<{ host?: string } | undefined> {
     const hosts = this.dash.state().hosts.filter((h) => h.result && !h.error);
     if (!hosts.length) return {};
-    const pick = await vscode.window.showQuickPick(
+    const pick = await this.host.pick(
       [
         { label: "$(device-desktop) This computer", host: undefined as string | undefined },
         // (a container: its section's line, "podman · ubuntu:22.04 · on lab", as the hosts picker's)
@@ -137,7 +136,7 @@ export class Accounts {
     if (!accounts) return;
     const items: Item<() => Promise<void>>[] = [
       { label: "$(person-add) Add Account…", detail: "A ~/.claude-NAME folder, logged in with Claude's own login", run: () => this.add(accounts, host) },
-      { label: `Accounts${host ? ` on ${hostLabel(host)}` : " on this computer"}`, kind: vscode.QuickPickItemKind.Separator },
+      { label: `Accounts${host ? ` on ${hostLabel(host)}` : " on this computer"}`, separator: true },
       ...accounts.map((a) => ({
         label: `$(${a.loggedIn ? "account" : "circle-slash"}) ${a.label}`,
         description: a.folder,
@@ -145,7 +144,7 @@ export class Accounts {
         run: () => this.actionsFor(a, host, accounts),
       })),
     ];
-    const pick = await vscode.window.showQuickPick(items, {
+    const pick = await this.host.pick(items, {
       title: `Claude Accounts${this.where(host)}`,
       placeHolder: "Add an account, or pick one to log in or out, make it the default, remove it, …",
     });
@@ -190,7 +189,7 @@ export class Accounts {
         run: () => this.hide(a, true, host),
       });
     items.push({ label: "$(trash) Remove…", detail: a.notRemovable || "Logs out and moves the folder to the Trash", run: () => this.remove(a, host) });
-    const pick = await vscode.window.showQuickPick(items, { title: `${a.label} (${a.folder}${this.where(host)})`, placeHolder: accountDetail(a) });
+    const pick = await this.host.pick(items, { title: `${a.label} (${a.folder}${this.where(host)})`, placeHolder: accountDetail(a) });
     if (pick?.run) await pick.run();
   }
 
@@ -199,7 +198,7 @@ export class Accounts {
     if (!accounts) return;
     const folders = accounts.map((a) => a.folder);
     const name = (
-      await vscode.window.showInputBox({
+      await this.host.input({
         title: `Add a Claude Account${this.where(host)} (1/3)`,
         prompt: "Its name. The account's folder is ~/.claude-NAME.",
         placeHolder: "e.g. work",
@@ -207,7 +206,7 @@ export class Accounts {
       })
     )?.trim();
     if (!name) return;
-    const share = await vscode.window.showQuickPick(
+    const share = await this.host.pick(
       [
         ...accounts.map((a) => ({ label: `Shared with ${a.label}`, description: a.folder, key: a.key })),
         { label: "Claude's defaults, nothing shared", description: "a fresh folder", key: "" },
@@ -219,7 +218,7 @@ export class Accounts {
       },
     );
     if (!share) return;
-    const command = await vscode.window.showQuickPick(
+    const command = await this.host.pick(
       [
         { label: `Add a claude-${name} command`, description: "in ~/.local/bin: runs Claude on the account in any terminal", on: true },
         { label: "No command", on: false },
@@ -233,7 +232,7 @@ export class Accounts {
     );
     if (!this.said(r, `Couldn't add ${name}`, host) || typeof r.command !== "string") return;
     await this.terminals.run(`login|${host ?? ""}|${r.key}`, `log in to ${name}`, r.command, this.place(host), { private: true });
-    void vscode.window.showInformationMessage(
+    void this.host.message("info",
       noLinks(
         (host
           ? `Log in to ${name} on ${hostLabel(host)} in the terminal: open the address Claude shows in your browser, sign in with the other account, and paste the code you get back.`
@@ -251,7 +250,7 @@ export class Accounts {
 
   private async logout(a: AccountInfo, host?: string): Promise<void> {
     if (a.chats > 0) return this.fail(`${a.chats === 1 ? "A chat runs" : `${a.chats} chats run`} on ${a.label}: close them first, they'd lose the login.`);
-    const ok = await vscode.window.showWarningMessage(
+    const ok = await this.host.message("warning",
       `Log out of ${a.label}${this.where(host)}?`,
       { modal: true, detail: "Claude deletes its login (claude auth logout). Its chats and history stay, and Log In signs it in again, also with another account." },
       "Log Out",
@@ -261,7 +260,7 @@ export class Accounts {
 
   private async remove(a: AccountInfo, host?: string): Promise<void> {
     if (a.notRemovable) return this.fail(`${a.label} isn't removed: ${a.notRemovable}`);
-    const ok = await vscode.window.showWarningMessage(
+    const ok = await this.host.message("warning",
       `Remove ${a.label}${this.where(host)}?`,
       {
         modal: true,
@@ -294,7 +293,7 @@ export class Accounts {
       if (!group) return this.fail(`${a.label} isn't in the list yet: try again in a moment.`);
       if (host) {
         if (await this.switcher.switchHost({ ...group, host }, true))
-          void vscode.window.showInformationMessage(noLinks(`${a.label} is the default account on ${hostLabel(host)} now.`));
+          void this.host.message("info", noLinks(`${a.label} is the default account on ${hostLabel(host)} now.`));
         return;
       }
       return this.switcher.switchTo(group);

@@ -1,7 +1,7 @@
 // The status bar item: the panel icon of the widget, one item. A status bar
 // can only show text and icons, so the count of chats that need you goes in
 // the text (with the warning background), then, with two or more accounts,
-// the one VS Code's Claude runs on (accountSwitch.ts), then the 5-hour usage:
+// the one VS Code's Claude runs on (core/src/accountSwitch.ts), then the 5-hour usage:
 // of that account, when it has numbers. Clicking it opens Talpy Den; its
 // hover has a link to change the default account. The icon is Talpy, held
 // still in the panel icon's pose for the state (the extension's icon font,
@@ -10,7 +10,7 @@
 // a core, under other windows too.
 
 import * as vscode from "vscode";
-import type { AccountShown } from "./accountSwitch";
+import type { AccountShown } from "../../core/src/accountSwitch";
 import { settings } from "../../core/src/settings";
 import { allGroups, claudeCodeGroup, countStates, overallState, panelWindow, tooltipLines } from "../../core/src/shared/model";
 import type { ViewState } from "../../core/src/shared/types";

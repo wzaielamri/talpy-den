@@ -60,7 +60,7 @@ export interface EditorPort {
   // It may have come or gone: the host's extensions changed (dashboard checks claudePanelAvailable again)
   readonly onDidChangeClaudePanel: Event<void>;
   // Whether the Claude Code extension is installed, its panel able to open chats here or not (an untrusted
-  // folder: not) (accountSwitch.ts:115 switch: none, no VS Code Claude to switch)
+  // folder: not) (accountSwitch's switch: none, no VS Code Claude to switch)
   claudeCodeInstalled(): boolean;
   // The Claude config folder the panel runs this computer's chats on (actions' windowHasChat)
   localPanelConfigDir(): string;
@@ -69,13 +69,6 @@ export interface EditorPort {
   localPanelProfileKey(): string;
   // A new chat in the panel; prompt: typed into its input, for you to send (actions' panelChat)
   openPanelChat(prompt?: string): Promise<void>;
-}
-
-// What actions calls of the account switch (VS Code: accountSwitch.ts), until that moves to the core (Task 10,
-// which removes this). switchHost: Claude Code on this window's SSH host runs on the group's account from now on
-// (actions' panelChat, for a chat tab on another account than Claude Code's there); false: it couldn't (said)
-export interface AccountSwitch {
-  switchHost(group: Group): Promise<boolean>;
 }
 
 // Talpy Chat's panes, as notify.ts and actions.ts use them (VS Code: chatPane.ts ChatPanes)

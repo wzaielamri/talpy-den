@@ -206,7 +206,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Used in: talpy_den.py reply_route, stop_chat, end_for_handover, background_work, kept_step, live_row,
     add_remote_commands; core/src/actions.ts open, openSystem, stop, sendPlanFeedback; vscode/src/chatPane.ts
     windowTerminal; core/src/shared/pane.ts chatWhere; core/src/shared/model.ts canMoveToClaudeCode, handoverTarget, goOnAt;
-    accountSwitch.ts switchTo; main.qml, SessionRow.qml, ChatPane.qml; gnome/extension/logic.js openHint,
+    core/src/accountSwitch.ts switchTo; main.qml, SessionRow.qml, ChatPane.qml; gnome/extension/logic.js openHint,
     stopTip, stopQuestion, indicator.js remoteShow.
   - Check: with a throwaway chat in VS Code's Claude panel and one in a terminal,
     `jq -r .entrypoint $C/sessions/*.json | sort | uniq -c`. Only the panel chat should say `claude-vscode`.
@@ -521,7 +521,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   for them. Without the file, the guard in the hook's command makes it exit 0, and Claude is left to ask by
   itself (a background chat has nowhere to ask).
   - Used in: talpy_den.py finish_row (hooked), hook_settings; pane.py relay, hooked_chats, relay_status,
-    install_hook, forget_hook; configChats.qml; vscode/src/relay.ts.
+    install_hook, forget_hook; configChats.qml; core/src/relay.ts.
   - Check: compare `python3 -I $TD/pane.py --relay status | jq .hooked` with
     `grep -l permission-hook.py ~/.claude*/jobs/*/state.json | wc -l`.
   - Breaks: if Claude stores the settings elsewhere, the count is 0 and the question isn't asked, so turning
@@ -1744,7 +1744,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   still taken. A hook that exits 0 with no output leaves the dialog to decide. Claude doesn't wait for the
   hook before it shows its dialog, and the hook gives up after 5 s (NO_DIALOG_S) if the chat never shows
   "waiting". install.sh turns the relay and live hooks on through `pane.py --relay`/`--live`.
-  - Used in: permission_hook.py main (NO_DIALOG_S, LONGEST_S); pane.py answer_request; vscode/src/relay.ts;
+  - Used in: permission_hook.py main (NO_DIALOG_S, LONGEST_S); pane.py answer_request; core/src/relay.ts;
     install.sh hook, relay, live, uninstall.
   - Check: with the relay on (`python3 -I $TD/pane.py --relay status`), ask a throwaway chat in tmux, started
     without `--setting-sources`, to 'run touch x'. While the dialog shows,
@@ -1993,7 +1993,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   in, which marks a new profile.
   - Used in: talpy_den.py config_dir_value, config_env, Profile.__init__, trusted_folders, account_file,
     usage_refresh_command, start_background, stop_background; core/src/agents/claudeCode/vscodeAccount.ts configDirFor,
-    accountSwitch.ts switchTo, statusline.ts profileDirs.
+    core/src/accountSwitch.ts switchTo, vscode/src/statusline.ts profileDirs.
   - Check: `ls -l ~/.claude.json ~/.claude/.claude.json ~/.claude-*/.claude.json 2>&1`.
     `CLAUDE_CONFIG_DIR=$(mktemp -d) claude auth status --json` should say not logged in, because it doesn't
     read `~/.claude.json` (remove the folder after).
@@ -2009,7 +2009,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   those links. Each account keeps its own login and MCP servers (in `.claude.json`) and `plugins/`.
   `skills/synced` (claude.ai's synced skills) and `.trash` are Claude's own and never shared.
   - Used in: accounts.py SHARED_FILES, SHARED_FOLDERS, NOT_SHARED, share_into, add_account; talpy_den.py
-    is_profile_dir, discover_profiles; the texts in vscode/src/accounts.ts, gnome/extension/prefs.js,
+    is_profile_dir, discover_profiles; the texts in core/src/accounts.ts, gnome/extension/prefs.js,
     configAccounts.qml.
   - Check: `ls -A $C/skills` (is `synced` still the name, anything new of Claude's?).
     `jq 'has("mcpServers"), has("oauthAccount")' "$A"`. In a profile with linked skills, start claude and
@@ -2256,9 +2256,9 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   (onStartupFinished), and not in an untrusted folder. Talpy Den calls it with the positional arguments
   (sessionId = undefined, prompt) to open a new tab with the prompt typed in but not sent. It also checks the
   extension id `anthropic.claude-code` with getExtension.
-  - Used in: vscode/src/claudePanel.ts NEW_CHAT_TAB, claudePanelAvailable, openPanelChat; accountSwitch.ts
-    switch; core/src/actions.ts panelChoice, panelChat, dashboard.ts checkClaudeCode, claudeCodeInfo
-    (through vscodeEditor.ts).
+  - Used in: vscode/src/claudePanel.ts NEW_CHAT_TAB, claudePanelAvailable, openPanelChat; vscode/src/vscodeEditor.ts
+    claudeCodeInstalled (the getExtension check: core/src/accountSwitch.ts switch); core/src/actions.ts
+    panelChoice, panelChat, dashboard.ts checkClaudeCode, claudeCodeInfo (through vscodeEditor.ts).
   - Check:
 
     ```bash
@@ -2280,8 +2280,8 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   from a remote window lands there, and new chats use it within about a second, with no reload (Talpy Den
   waits 1.5 s). The status bar's usage follows the panel's account.
   - Used in: core/src/agents/claudeCode/claudePanel.ts panelConfigDir; vscode/src/claudePanel.ts localPanelConfigDir, localPanelProfileKey;
-    vscodeAccount.ts withConfigDir; accountSwitch.ts switchTo, switchHost, panelDir; statusBar.ts;
-    core/src/actions.ts panelChat; accounts.py make_default, set_vscode, vscode_value, vscode_setting; talpy_den.py
+    core/src/agents/claudeCode/vscodeAccount.ts withConfigDir; core/src/accountSwitch.ts switchTo, switchHost, panelDir;
+    vscode/src/statusBar.ts; core/src/actions.ts panelChat; accounts.py make_default, set_vscode, vscode_value, vscode_setting; talpy_den.py
     config_dir_in_settings, vscode_server_settings, set_vscode_user_config_dir, set_vscode_server_config_dir,
     vscode_running_config_dir, VSCODE_SERVERS.
   - Check:
@@ -2312,7 +2312,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   window reload stops a working panel chat.
   - Used in: talpy_den.py stop_chat, end_leftovers, end_for_handover; jump.py stop, jump; accounts.py
     vscode_chats; core/src/shared/model.ts canEndChat, handoverTarget, goOnAt; core/src/actions.ts stop;
-    vscode/src/accountSwitch.ts switchTo (refuses while a panel chat works or waits); main.qml; gnome/extension/logic.js
+    core/src/accountSwitch.ts switchTo (refuses while a panel chat works or waits); main.qml; gnome/extension/logic.js
     stopTip, stopQuestion.
   - Check: in an idle throwaway panel chat,
     `kill -INT $(jq -r 'select(.entrypoint=="claude-vscode").pid' $C/sessions/*.json | head -1)`. The tab
@@ -2440,7 +2440,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   `--model`/`--effort`/`--permission-mode`, claude auth login/logout, /login, /compact and /usage, plus where
   claude is looked for.
   - Used in: core/src/shared/model.ts stopText, core/src/shared/pane.ts whereTag, attachedTag, contextHint,
-    accounts.ts; SessionRow.qml, ChatPane.qml, PermissionAsk.qml, main.qml; gnome/extension/logic.js openHint,
+    core/src/accounts.ts; SessionRow.qml, ChatPane.qml, PermissionAsk.qml, main.qml; gnome/extension/logic.js openHint,
     stopTip, prefs.js.
   - Check: `claude --help` and `claude attach --help`, `claude stop --help`, `claude auth --help`. /login,
     /compact and /usage should still be in a chat's `/` list.

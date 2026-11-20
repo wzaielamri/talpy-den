@@ -5,8 +5,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
-import { dictationModels } from "../src/dictation";
+import { host } from "./useHost";
+import { dictationModels } from "../../core/src/dictation";
 import { recorded } from "./vscode-stub";
 
 const model = (name: string, more: Record<string, unknown> = {}) =>
@@ -25,7 +25,7 @@ function harness(status: Record<string, unknown>, picks: string[], warn = "") {
   const backend = {
     dictate: async (args: string[]) => (calls.push(args), args[0] === "--status" ? status : { ok: true, message: `done: ${args.join(" ")}` }),
   };
-  return { calls, pickers, run: () => dictationModels(backend as never) };
+  return { calls, pickers, run: () => dictationModels(host, backend as never) };
 }
 
 test("nothing writes it down: setting up is offered and runs", async () => {

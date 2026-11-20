@@ -28,7 +28,7 @@ import {
 import type { Group, PlanItem } from "../../core/src/shared/types";
 import * as vscode from "vscode";
 import { host } from "./useHost";
-import type { AccountSwitch } from "../src/accountSwitch";
+import type { AccountSwitch } from "../../core/src/accountSwitch";
 import { Actions, typedFolder } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../../core/src/dashboard";

@@ -9,6 +9,7 @@
 
 import * as fs from "node:fs";
 import * as os from "node:os";
+import type { AccountSwitch } from "./accountSwitch";
 import { agentRunArgs, isAgentRunFile } from "./agentRun";
 import type { Answer, Backend, FindAnswer } from "./agents/claudeCode/backend";
 import { filedUnder } from "./agents/claudeCode/claudePanel";
@@ -17,7 +18,7 @@ import type { Dashboard } from "./dashboard";
 import type { HostServices, PickButton, PickItem, WindowFolder } from "./host";
 import { chatRef, noLinks } from "./notify";
 import { canRaiseWindows, isGnome } from "./platform/linux/desktop";
-import type { AccountSwitch, ChatPanesPort, EditorPort, TerminalHandle, TerminalPort } from "./ports";
+import type { ChatPanesPort, EditorPort, TerminalHandle, TerminalPort } from "./ports";
 import { chatOptionArgs, configDirArgs, setChatOptions, setSshHosts, settings } from "./settings";
 import {
   ago,

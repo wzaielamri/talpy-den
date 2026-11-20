@@ -169,6 +169,10 @@ export class VsCodeHost implements HostServices {
     void vscode.commands.executeCommand("setContext", key, value);
   }
 
+  async reloadWindow(): Promise<void> {
+    await vscode.commands.executeCommand("workbench.action.reloadWindow");
+  }
+
   // (a folder of the window's host: its URI's path there; this computer's: a file: URI's fsPath)
   workspaceFolders(): readonly WindowFolder[] {
     return (vscode.workspace.workspaceFolders ?? []).map((f) => {

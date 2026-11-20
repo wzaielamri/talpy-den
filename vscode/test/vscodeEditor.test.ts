@@ -8,7 +8,7 @@ import { beforeEach, test } from "node:test";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
 import { host } from "./useHost";
-import type { AccountSwitch } from "../src/accountSwitch";
+import type { AccountSwitch } from "../../core/src/accountSwitch";
 import { initDocs } from "../src/doc";
 import { PlanReview } from "../src/planReview";
 import { VsCodeEditor } from "../src/vscodeEditor";

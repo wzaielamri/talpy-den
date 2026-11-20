@@ -3,26 +3,26 @@
 // ~/.local/share/talpy-den/whisper, no sudo), and the speech models to
 // download, delete or use: one choice for the extension and the Plasma widget.
 
-import * as vscode from "vscode";
-import type { Backend } from "../../core/src/agents/claudeCode/backend";
-import { noLinks } from "../../core/src/notify";
+import type { Backend } from "./agents/claudeCode/backend";
+import type { HostServices, PickItem } from "./host";
+import { noLinks } from "./notify";
 
 type Model = { name: string; mb: number; note: string; installed: boolean; deletable: boolean; used: boolean };
-type Item = vscode.QuickPickItem & { run?: string[]; busy?: string; model?: Model; ask?: string };
+type Item = PickItem & { run?: string[]; busy?: string; model?: Model; ask?: string };
 
-export async function dictationModels(backend: Backend): Promise<void> {
-  if (vscode.env.uiKind === vscode.UIKind.Web) {
-    void vscode.window.showInformationMessage("Dictating works in VS Code on your computer, not in a browser");
+export async function dictationModels(host: HostServices, backend: Backend): Promise<void> {
+  if (host.environment.web) {
+    void host.message("info", "Dictating works in VS Code on your computer, not in a browser");
     return;
   }
   const st = await backend.dictate(["--status"]);
   if (!Array.isArray(st.models)) {
-    void vscode.window.showErrorMessage(noLinks(`Talpy Den: dictation can't be asked now (${String(st.message ?? "no answer")})`));
+    void host.message("error", noLinks(`Talpy Den: dictation can't be asked now (${String(st.message ?? "no answer")})`));
     return;
   }
   const missing = (Array.isArray(st.missing) ? st.missing : []).join(" and ");
   if (!st.engine && !st.canSetup) {
-    void vscode.window.showWarningMessage(noLinks(`To dictate, install ${missing}.`));
+    void host.message("warning", noLinks(`To dictate, install ${missing}.`));
     return;
   }
   const items: Item[] = [];
@@ -57,22 +57,21 @@ export async function dictationModels(backend: Backend): Promise<void> {
       });
   }
   if (!st.recorder && missing) title += ` · to record, install ${missing}`;
-  const pick = await vscode.window.showQuickPick(items, { title, placeHolder: "A speech model, to download, use or delete it" });
+  const pick = await host.pick(items, { title, placeHolder: "A speech model, to download, use or delete it" });
   if (!pick) return;
-  const action = pick.model ? await modelAction(pick.model) : pick;
+  const action = pick.model ? await modelAction(host, pick.model) : pick;
   if (!action?.run) return;
-  if (action.ask && (await vscode.window.showWarningMessage(action.ask, { modal: true }, "Delete")) !== "Delete") return;
+  if (action.ask && (await host.message("warning", action.ask, { modal: true }, "Delete")) !== "Delete") return;
   const r = action.busy
-    ? await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: action.busy },
-        () => backend.dictate(action.run!, 3600000))
+    ? await host.progress({ where: "notification", title: action.busy }, () => backend.dictate(action.run!, 3600000))
     : await backend.dictate(action.run);
   const message = String(r.message ?? "");
-  if (r.ok) void vscode.window.showInformationMessage(noLinks(message));
-  else void vscode.window.showErrorMessage(noLinks(message) || "Talpy Den: that didn't work");
+  if (r.ok) void host.message("info", noLinks(message));
+  else void host.message("error", noLinks(message) || "Talpy Den: that didn't work");
 }
 
 // What to do with one model: download it (and use it), use it, delete it
-async function modelAction(m: Model): Promise<Item | undefined> {
+async function modelAction(host: HostServices, m: Model): Promise<Item | undefined> {
   const items: Item[] = [];
   if (!m.installed)
     items.push({ label: "$(cloud-download) Download and use it", description: `${m.mb} MB from huggingface.co`, run: ["--get-model", m.name],
@@ -80,5 +79,5 @@ async function modelAction(m: Model): Promise<Item | undefined> {
   if (m.installed && !m.used) items.push({ label: "$(check) Use it", run: ["--use-model", m.name] });
   if (m.installed && m.deletable) items.push({ label: "$(trash) Delete it", description: "download it again any time", run: ["--delete-model", m.name] });
   if (m.installed && !m.deletable) items.push({ label: "whisper.cpp's own model", description: "in whisper.cpp's folder: not Talpy Den's to delete" });
-  return vscode.window.showQuickPick(items, { title: `The ${m.name} model · ${m.mb} MB`, placeHolder: m.note });
+  return host.pick(items, { title: `The ${m.name} model · ${m.mb} MB`, placeHolder: m.note });
 }

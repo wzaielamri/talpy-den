@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { host } from "./useHost";
-import type { AccountSwitch } from "../src/accountSwitch";
+import type { AccountSwitch } from "../../core/src/accountSwitch";
 import { Actions } from "../../core/src/actions";
 import type { Backend } from "../../core/src/agents/claudeCode/backend";
 import type { Dashboard } from "../../core/src/dashboard";

@@ -72,12 +72,14 @@ export class FakeHost implements HostServices {
     picks: [] as { items: readonly PickItem[]; options?: PickOptions }[],
     inputs: [] as InputOptions[],
     choices: [] as ChooseOptions[],
+    progress: [] as { where: "window" | "notification"; title: string }[],
     quickPicks: [] as FakeQuickPick<PickItem>[],
     external: [] as string[],
     files: [] as string[],
     revealed: [] as string[],
     settingsOpened: [] as string[],
     views: 0,
+    reloads: 0,
     contexts: new Map<string, unknown>(),
     updates: [] as { section: string; key: string; value: unknown; scope: SettingScope }[], // section "talpyDen" or another
     status: [] as string[],
@@ -173,7 +175,8 @@ export class FakeHost implements HostServices {
     return this.answer.choose?.(options);
   }
 
-  progress<R>(_options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R> {
+  progress<R>(options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R> {
+    this.recorded.progress.push({ where: options.where, title: options.title });
     return task();
   }
 
@@ -236,6 +239,10 @@ export class FakeHost implements HostServices {
 
   setContext(key: string, value: unknown): void {
     this.recorded.contexts.set(key, value);
+  }
+
+  async reloadWindow(): Promise<void> {
+    this.recorded.reloads++;
   }
 
   workspaceFolders(): readonly WindowFolder[] {
