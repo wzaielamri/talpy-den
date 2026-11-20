@@ -2,7 +2,6 @@
    each Talpy draws itself on its own canvas (pet.ts). */
 
 .td-stage {
-  --td-ease-in-out-sine: cubic-bezier(0.37, 0, 0.63, 1);
   --td-small-font: calc(var(--vscode-font-size, 13px) * 0.85);
   --td-panel-bg: var(--vscode-sideBar-background, var(--vscode-editor-background, #1e1e1e));
   position: relative;
@@ -146,7 +145,8 @@
 }
 
 /* It pulses while a chat needs you: a brighter light fades in and out over
-   it (only its opacity changes, which needs no repainting) */
+   it (only its opacity changes, which needs no repainting), on the pets'
+   beat (stage.ts sets --td-glow) */
 .td-stage-light::after {
   content: "";
   position: absolute;
@@ -159,12 +159,8 @@
 }
 
 .td-stage--hero.td-glowing .td-stage-light::after {
-  animation: td-glow 1.8s infinite;
-}
-
-@keyframes td-glow {
-  0%, 100% { opacity: 0; animation-timing-function: var(--td-ease-in-out-sine); }
-  50% { opacity: 1; animation-timing-function: var(--td-ease-in-out-sine); }
+  opacity: var(--td-glow, 0);
+  will-change: opacity;
 }
 
 .td-stage-stars {
@@ -173,11 +169,13 @@
   pointer-events: none;
 }
 
+/* (they twinkle on the pets' beat: stage.ts sets their opacity) */
 .td-star {
   position: absolute;
   line-height: 1;
   opacity: 0.5;
   color: #5363b8;
+  will-change: opacity;
 }
 
 .td-dark .td-star {
@@ -402,6 +400,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .td-stage-light::after {
-    animation: none !important;
+    opacity: 0 !important;
   }
 }

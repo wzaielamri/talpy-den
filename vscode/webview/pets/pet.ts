@@ -26,6 +26,7 @@ import { DECOR, SCORED, pickGame, type Game, type RunThing } from "../../vendor/
 import { BOX, LILAC, Talpy, calmColors, drawCookie, drawHole, drawHoleSide, drawPuff, drawThing } from "../../vendor/talpy/talpy.mjs";
 import type { StageChat } from "./api";
 import { PALETTE, textOn } from "./colors";
+import { BEAT_MS, FRAME_MS } from "./beat";
 import { Spring, Timer, Tween, ease, reducedMotion } from "./motion";
 import { world, type Stage } from "./stage";
 
@@ -36,6 +37,15 @@ export const LARGE = 8;
 // Events that happened while a stage was hidden are acted out when it shows
 // again, if they're this recent
 const MISSED_MS = 60000;
+
+// How far apart a Talpy's pictures come on ticks pace ms apart: a whole number
+// of ticks (a film counts its pictures in ticks: any other number plays its
+// moves too fast or too slow), as near as that gets to a picture every frame of
+// a 60 Hz screen for the big Talpy (every tick on the beat, every frame while
+// you play with him) and 30 a second for a chat's pet
+function picturesEvery(pace: number, lone: boolean): number {
+  return pace * Math.max(1, Math.round((lone ? FRAME_MS : BEAT_MS) / pace));
+}
 
 // A scored game: px around a thing's picture (thingSprite), for its outline's edge
 const SPRITE_PAD = 2;
@@ -284,15 +294,17 @@ export class Pet {
 
     // Drawing: Talpy on its sheets (with room around it for what it throws
     // and holds up), its name tag, and a grab area around its body
-    // The hero: every frame, live until a new pose has settled, breathing at
-    // rest; a chat's pet: 30 pictures a second, pictures in between poses,
-    // still at rest; both: a move too slow for a picture every frame is drawn
-    // live (as in the widget, where such moves stepped)
+    // The hero: a picture every tick of its stage (the page's beat, 30 a
+    // second; every frame while you play with him), live until a new pose
+    // has settled, breathing at rest; a chat's pet: 30 pictures a second,
+    // pictures in between poses, still at rest; both: a move too slow for a
+    // picture every tick is drawn live (as in the widget, where such moves
+    // stepped). paceChanged: the ticks come quicker or slower.
     this.film = new Films(
       this.talpy,
       this.lone
-        ? { frameMs: 16.7, maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: 1000 / 60 }
-        : { frameMs: 33.3, maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: 1000 / 60 },
+        ? { frameMs: picturesEvery(stage.pace, this.lone), maxFrames: 32, sheets: 36, tweenMs: 0, restMs: 200, smooth: true, clockMs: stage.pace }
+        : { frameMs: picturesEvery(stage.pace, this.lone), maxFrames: 32, sheets: 32, tweenMs: 200, tweens: 5, smooth: true, clockMs: stage.pace },
     );
     this.sheets = div("td-pet-sheets");
     this.view = this.canvas();
@@ -400,6 +412,21 @@ export class Pet {
     if (this.destroyed) return;
     this.updateTimers();
     this.stage.invalidate();
+  }
+
+  // You play with it: it's in your hand (till it has landed), pulled at or
+  // pushed down, or a game or the hero's cookie is on. Its stage ticks every
+  // frame then, as it follows your hand or the game
+  quick(): boolean {
+    return this.held || this.landing || this.tugging || this.pushing || this.dragging || !!this.play?.on || !!this.game?.on;
+  }
+
+  // The stage's ticks come pace ms apart from now on (the screen's frame, or
+  // the beat's): the film counts them again, its pictures a whole number of
+  // them apart (picturesEvery)
+  paceChanged(pace: number): void {
+    this.film.setPace(pace, picturesEvery(pace, this.lone));
+    this.changed();
   }
 
   // ------------------------------------------------------------ from the stage

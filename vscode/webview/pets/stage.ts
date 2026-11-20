@@ -14,8 +14,9 @@
 // acts the chat out, opens it when clicked, and stays the same pet until the
 // chat leaves the list; then it waves and digs away.
 //
-// Everything stops while a stage isn't shown: no animation frame, no timer,
-// paused CSS animations.
+// Everything stops while a stage isn't shown: no beat, no timer, paused CSS
+// animations. What moves moves on the page's beat (beat.ts): 30 times a
+// second, every frame while you play with a pet.
 
 import { editorTab, isDark } from "../env";
 import { hostLabel, petKeyOf, plural } from "../../../core/src/shared/model";
@@ -24,7 +25,8 @@ import type { AccountInput, HeroInput, PetStage, StageCallbacks, StageChat } fro
 import type { ChatRef, Counts, GameName, ScoredGame } from "../../../core/src/shared/types";
 import { PALETTE, allPetColors, freeColor, setPetColors } from "./colors";
 import { BOX, FLOOR } from "../../vendor/talpy/talpy.mjs";
-import { Clock, Timer, Tween, cssEase, onReducedMotionChange, reducedMotion, type Animator } from "./motion";
+import { BEAT_MS, beatInterval, cancelBeat, nextBeat, screenFrame } from "./beat";
+import { Clock, Timer, Tween, ease, onReducedMotionChange, reducedMotion, type Animator } from "./motion";
 import { Pet, SMALL } from "./pet";
 
 export const allStages = new Set<Stage>();
@@ -121,6 +123,7 @@ export class Stage implements PetStage, Animator {
   private readonly bubbleEl: HTMLDivElement;
   private readonly floorEl: HTMLDivElement | null = null;
   private readonly moreEl: HTMLDivElement | null = null;
+  private readonly lightEl: HTMLDivElement | null = null;
   private readonly starsEl: HTMLDivElement | null = null;
   private readonly stars: HTMLSpanElement[] = [];
   private readonly headlineEl: HTMLDivElement | null = null;
@@ -158,11 +161,15 @@ export class Stage implements PetStage, Animator {
   private hiddenSince = 0;
   private everLive = false;
   private destroyed = false;
-  private frame = 0;
+  private frame = 0; // its wish for the next beat (nextBeat)
+  private frameQuick = false; // (that wish: the next frame)
+  pace = BEAT_MS; // how far apart its ticks come now: the beat's, or the screen's frame while you play with a pet
+  private paceQuick = false; // (that's the screen's frame)
   private renderQueued = false;
   private rendering = false; // (hidden: what changes while it draws is in that drawing)
   private readonly tweens = new Set<Tween>();
-  private starAnims: Animation[] = [];
+  private glowSince = -1; // (the light pulses: since then, on its clock; -1 not)
+  private nightSince = -1; // (the stars twinkle: since then, on its clock; -1 not)
   private hoverClientX = -1;
   private bubbleOwner: Pet | null = null;
   private bubbleSize = { w: 0, h: 0 };
@@ -196,7 +203,7 @@ export class Stage implements PetStage, Animator {
     this.tagWidth = this.gu * 3.5;
 
     if (hero) {
-      el("div", "td-stage-light", this.root); // a soft card lit in the dashboard's mood
+      this.lightEl = el("div", "td-stage-light", this.root); // a soft card lit in the dashboard's mood
       this.starsEl = el("div", "td-stage-stars", this.root);
       this.starsEl.setAttribute("aria-hidden", "true");
       this.starsEl.hidden = true;
@@ -322,11 +329,10 @@ export class Stage implements PetStage, Animator {
     allStages.delete(this);
     this.resizeObserver.disconnect();
     this.intersectionObserver.disconnect();
-    if (this.frame) cancelAnimationFrame(this.frame);
+    cancelBeat(this.frame);
     this.frame = 0;
     this.clock.dispose();
     this.tweens.clear();
-    for (const a of this.starAnims) a.cancel();
     for (const p of this.pets) p.destroy();
     this.pets = [];
     if (!this.hero) setPetColors(this.colorKey, {});
@@ -350,7 +356,7 @@ export class Stage implements PetStage, Animator {
     } else {
       this.hiddenSince = performance.now();
       this.clock.pause();
-      if (this.frame) cancelAnimationFrame(this.frame);
+      cancelBeat(this.frame);
       this.frame = 0;
     }
     this.updateStars();
@@ -534,7 +540,13 @@ export class Stage implements PetStage, Animator {
     const mood = input.mood || "loading";
     this.root.dataset.light = lightOf(mood);
     // The light pulses while a chat needs you
-    this.root.classList.toggle("td-glowing", mood === "needs");
+    const glowing = mood === "needs";
+    if (glowing !== this.root.classList.contains("td-glowing")) {
+      this.root.classList.toggle("td-glowing", glowing);
+      this.glowSince = glowing ? this.clock.now() : -1;
+      this.renderLight();
+      this.invalidate();
+    }
     this.updateStars();
 
     const h = this.headlineEl!;
@@ -590,35 +602,49 @@ export class Stage implements PetStage, Animator {
     if (c) this.cb.open(c);
   }
 
-  // A starry night once everything is done
+  // A starry night once everything is done; its stars twinkle (renderLight)
   private updateStars(): void {
     if (!this.starsEl) return;
     const night = this.heroInput?.mood === "done";
     this.starsEl.hidden = !night;
     const twinkle = night && !reducedMotion();
-    if (twinkle && !this.starAnims.length) {
-      this.starAnims = this.stars.map((star, i) => {
-        const up = 900 + 260 * i,
-          down = 1100 + 190 * i;
-        const a = star.animate(
-          [
-            { opacity: 0.15, easing: cssEase.inOutSine },
-            { opacity: 0.9, offset: up / (up + down), easing: cssEase.inOutSine },
-            { opacity: 0.15 },
-          ],
-          { duration: up + down, iterations: Infinity },
-        );
-        a.currentTime = up * 0.48; // from 0.5 on the way up, like the widget
-        return a;
-      });
-    } else if (!twinkle && this.starAnims.length) {
-      for (const a of this.starAnims) a.cancel();
-      this.starAnims = [];
+    if (twinkle && this.nightSince < 0) {
+      this.nightSince = this.clock.now();
+      this.renderLight();
+      this.invalidate();
+    } else if (!twinkle && this.nightSince >= 0) {
+      this.nightSince = -1;
+      for (const star of this.stars) star.style.opacity = "";
     }
-    for (const a of this.starAnims) {
-      if (this.live) a.play();
-      else a.pause();
+  }
+
+  // The light pulsing while a chat needs you (the opacity of a brighter light
+  // over it: 0 to 1 and back in 1.8 s, easing in and out), and each star
+  // twinkling, 0.15 to 0.9 and back in its own time (from 0.5 on the way up,
+  // like the widget): on the beat with what else moves, not on the
+  // compositor's clock, which would draw the page at every frame of the
+  // screen. The stars take a step every other beat (15 a second: a twinkle
+  // that slow looks the same, and a night with Talpy asleep draws half the
+  // frames)
+  private renderLight(): void {
+    const now = this.clock.now();
+    if (this.lightEl) {
+      const glow = reducedMotion() ? 0 : (1 - Math.cos((2 * Math.PI * (now - this.glowSince)) / 1800)) / 2;
+      const value = this.glowSince < 0 ? "" : glow.toFixed(3);
+      if (this.drawn.glow !== value) {
+        this.drawn.glow = value;
+        this.lightEl.style.setProperty("--td-glow", value);
+      }
     }
+    if (this.nightSince < 0) return;
+    const night = Math.floor((now - this.nightSince) / (2 * BEAT_MS)) * 2 * BEAT_MS;
+    this.stars.forEach((star, i) => {
+      const up = 900 + 260 * i,
+        down = 1100 + 190 * i;
+      const t = (night + up * 0.48) % (up + down);
+      const value = (t < up ? 0.15 + 0.75 * ease.inOutSine(t / up) : 0.9 - 0.75 * ease.inOutSine((t - up) / down)).toFixed(3);
+      if (star.style.opacity !== value) star.style.opacity = value;
+    });
   }
 
   // ------------------------------------------------------------ shared by the pets
@@ -670,14 +696,22 @@ export class Stage implements PetStage, Animator {
     this.tweens.delete(t);
   }
 
-  // Something changed: draw it on the next frame (or right away while hidden,
+  // Something changed: draw it on the next beat (or right away while hidden,
   // where nothing moves anyway; not again for a change made by that drawing
   // itself, such as a cookie's game ticking on the paused clock, or it would
   // draw again and again without ever letting the page do anything else)
   invalidate(): void {
     if (this.destroyed) return;
     if (this.live) {
-      if (!this.frame) this.frame = requestAnimationFrame(this.loop);
+      const quick = this.pets.some((p) => p.quick());
+      if (this.frame && quick && !this.frameQuick) {
+        cancelBeat(this.frame);
+        this.frame = 0;
+      }
+      if (!this.frame) {
+        this.frame = nextBeat(this.loop, quick);
+        this.frameQuick = quick;
+      }
     } else if (!this.renderQueued && !this.rendering) {
       this.renderQueued = true;
       queueMicrotask(() => {
@@ -687,14 +721,26 @@ export class Stage implements PetStage, Animator {
     }
   }
 
-  // One loop per live stage with pets (they're always up to something)
+  // One loop per live stage with pets (they're always up to something), on
+  // the page's beat; every frame while you play with one of them (a pet in
+  // your hand, a game, a cookie), its pets told how far apart the ticks come
+  // then (their films count them)
   private readonly loop = (): void => {
     this.frame = 0;
     if (!this.live || this.destroyed) return;
+    // (as measured: the beat is 40 ms on a 75 Hz screen, a frame 6.9 ms on a
+    // 144 Hz one; the films go by it, not by the 33.3 ms they're told at first)
+    const quick = this.pets.some((p) => p.quick());
+    const pace = quick ? screenFrame() : beatInterval();
+    if (quick !== this.paceQuick || Math.abs(pace - this.pace) > 0.03 * this.pace) {
+      this.paceQuick = quick;
+      this.pace = pace;
+      for (const p of this.pets) p.paceChanged(pace);
+    }
     const now = this.clock.now();
     for (const t of [...this.tweens]) t.step(now);
     this.render();
-    if ((this.tweens.size || this.pets.length) && !this.frame) this.frame = requestAnimationFrame(this.loop);
+    if ((this.tweens.size || this.pets.length || this.nightSince >= 0 || this.glowSince >= 0) && !this.frame) this.invalidate();
   };
 
   private render(): void {
@@ -703,6 +749,7 @@ export class Stage implements PetStage, Animator {
     try {
       for (const p of this.pets) p.render();
       this.renderBubble();
+      this.renderLight();
     } finally {
       this.rendering = false;
     }

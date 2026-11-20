@@ -20,6 +20,7 @@ export class Films {
     readonly front: FilmSheet;
     readonly fx: { readonly on: boolean; paint: boolean };   // what flies about: shown while on, drawn again when paint
     reset(): void;
+    setPace(clockMs: number, frameMs?: number): void;   // the host's ticks come about clockMs apart from now on
     tick(now: number): boolean;   // true when what shows changed
     paint(sheet: FilmSheet, ctx: unknown): void;
     paintFx(ctx: unknown): void;
