@@ -450,7 +450,8 @@ function ToolLine({ item, open, outWhole, onOut, onToggle, asking, going, gap, s
 // does"); unfolded, the tasks (✓ done, ▸ the one it's on, ○ to do) and its
 // subagents as under its row (AgentTree.tsx: what each does now, the running
 // ones first; click one for more), made only then. Its line unfolds or folds
-// all of it; the header's Agents tag unfolds only its subagents (open.agents).
+// the tasks only (open.tasks; without a task list, the subagents); the header's Agents tag
+// unfolds only its subagents (open.agents). With a task list, a heading parts the subagents from it.
 export interface StripOpen {
   tasks: boolean;
   agents: boolean;
@@ -461,6 +462,7 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
 }) {
   const [details, setDetails] = useState<Record<string, boolean>>({}); // (a subagent unfolded: its task, steps and report)
   const unfolded = (open.tasks && !!tasks) || (open.agents && !!agents);
+  const lineOpen = tasks ? open.tasks : open.agents; // (what the line opens: the tasks, else the subagents)
   const next = tasks?.items.find((t) => t.status !== "completed")?.subject ?? "";
   const done = tasks ? tasks.done : agents?.done ?? 0;
   const total = tasks ? tasks.total : agents?.total ?? 0;
@@ -469,10 +471,10 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
     : agents && now ? `Agents ${agents.done}/${agents.total} · ${now.what}` : "";
   return (
     <div class="pane-tasks">
-      <button type="button" class="pane-tasks-line" aria-expanded={unfolded}
-        onClick={() => setOpen(unfolded ? { tasks: false, agents: false } : { tasks: !!tasks, agents: !!agents })}
-        title={keyed(unfolded ? "Fold it" : tasks ? "Its tasks and subagents" : "What each of its subagents is doing", "tasks")}>
-        <Icon name={I.folded} class={"chevron" + (unfolded ? " open" : "")} />
+      <button type="button" class="pane-tasks-line" aria-expanded={lineOpen}
+        onClick={() => setOpen(tasks ? { ...open, tasks: !open.tasks } : { ...open, agents: !open.agents })}
+        title={keyed(lineOpen ? "Fold it" : tasks ? "Its tasks" : "What each of its subagents is doing", "tasks")}>
+        <Icon name={I.folded} class={"chevron" + (lineOpen ? " open" : "")} />
         <span class="pane-tasks-bar" aria-hidden="true">
           <span style={{ width: `${Math.round((done / Math.max(1, total)) * 100)}%` }} />
         </span>
@@ -490,6 +492,7 @@ function TaskStrip({ tasks, agents, open, setOpen, host }: {
               ))}
             </ul>
           ) : null}
+          {tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}
           {open.agents && agents ? (
             <AgentTree tree={agentsRunningFirst(agents.tree)} now={Date.now()} rowKey="pane" host={host || undefined} opened={details}
               onToggle={(key) => setDetails((was) => ({ ...was, [key]: !was[key] }))}
@@ -2093,8 +2096,7 @@ function ChatApp() {
       case "tasks": {
         const agents = chat?.agents && chat.agents.total > 0 ? chat.agents : null;
         if (!chat?.tasks && !agents) return;
-        const unfolded = (strip.tasks && !!chat?.tasks) || (strip.agents && !!agents);
-        setStrip(unfolded ? { tasks: false, agents: false } : { tasks: !!chat?.tasks, agents: !!agents });
+        setStrip(chat?.tasks ? { ...strip, tasks: !strip.tasks } : { ...strip, agents: !strip.agents });
         return;
       }
       case "copyLast": {

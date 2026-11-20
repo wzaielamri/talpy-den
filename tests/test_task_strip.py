@@ -4,8 +4,11 @@ its tab (VS Code's chat.tsx): a strip under the header, a progress bar and
 one does"), folded; unfolded, the tasks and the subagents as under the
 chat's row in the popup or the view (AgentTree.qml, AgentTree.tsx: what each
 does now, the running ones first, click one for its task, steps and report).
-The header's Agents tag unfolds only the subagents. Hidden without either;
-what's unfolded is made only then, so the window opens as quickly."""
+The line unfolds only the tasks (without a task list, where the line is about
+the subagents, only them); the header's Agents tag unfolds only the subagents.
+With a task list, a muted "Subagents" heading sits over the subagents' tree
+whenever it is shown, so it doesn't look like part of the task line or list. Hidden without either; what's
+unfolded is made only then, so the window opens as quickly."""
 import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import re
 import unittest
@@ -61,8 +64,24 @@ class PlasmaStripTests(unittest.TestCase):
         self.assertIn("onClicked: pane.toggleStrip()", strip)
         toggle = PANE[PANE.index("function toggleStrip() {"):]
         toggle = toggle[:toggle.index("\n    }")]
-        self.assertIn("tasksOpen = open && tasks !== null", toggle)
-        self.assertIn("agentsOpen = open && agents !== null", toggle)
+        self.assertIn("if (tasks)", toggle)
+        self.assertIn("tasksOpen = !tasksOpen", toggle)
+        self.assertIn("agentsOpen = !agentsOpen", toggle)
+        self.assertNotIn("tasksOpen = open", toggle)
+        self.assertNotIn("agentsOpen = open", toggle)
+        self.assertIn("readonly property bool stripOpen: tasks ? tasksOpen : agentsOpen", PANE)
+        self.assertIn("source: pane.stripOpen ? Icons.plasma.unfolded", strip)
+        self.assertNotIn("pane.tasksOpen || pane.agentsOpen ?", strip)
+
+    def test_with_both_shown_a_muted_subagents_heading_parts_them(self):
+        strip = self.strip()
+        heading = strip[strip.index("// its subagents, as under its row"):strip.index("AgentTree {")]
+        self.assertIn('text: i18n("Subagents")', heading)
+        self.assertIn("visible: pane.tasks !== null && pane.agentsOpen && pane.agents !== null", heading)
+        self.assertIn("color: pane.mutedColor", heading)
+        self.assertIn("Layout.topMargin", heading)
+        tree = strip[strip.index("AgentTree {"):]
+        self.assertIn("Layout.topMargin: 0", tree[:tree.index("agents: pane.stripAgents")])   # (the heading carries the space)
 
     def test_the_headers_agents_tag_unfolds_its_subagents(self):
         header = PANE[PANE.index("// mode, its plan, its subagents (SessionRow.qml's tags)"):PANE.index("// Its tasks, when it has a task list")]
@@ -105,6 +124,24 @@ class VsCodeStripTests(unittest.TestCase):
         self.assertIn("agentsNow(agents)", strip)
         self.assertIn('<span class="pane-tasks-doing">▸ {now.doing}</span>', strip)
         self.assertIn("I.folded", strip)
+
+    def test_the_line_unfolds_only_the_tasks_or_without_a_task_list_the_subagents(self):
+        strip = self.strip()
+        self.assertIn("const lineOpen = tasks ? open.tasks : open.agents;", strip)
+        self.assertIn("setOpen(tasks ? { ...open, tasks: !open.tasks } : { ...open, agents: !open.agents })", strip)
+        self.assertIn("aria-expanded={lineOpen}", strip)
+        self.assertIn('"chevron" + (lineOpen ? " open" : "")', strip)
+        self.assertIn('keyed(lineOpen ? "Fold it" : tasks ? "Its tasks" : "What each of its subagents is doing", "tasks")', strip)
+        self.assertNotIn("and subagents", strip)
+        # (the shortcut does what the line does)
+        key = CHAT[CHAT.index('case "tasks": {'):CHAT.index('case "copyLast"')]
+        self.assertIn("setStrip(chat?.tasks ? { ...strip, tasks: !strip.tasks } : { ...strip, agents: !strip.agents })", key)
+        self.assertNotIn("tasks: !!chat?.tasks, agents: !!agents", key)
+
+    def test_with_both_shown_a_muted_subagents_heading_parts_them(self):
+        strip = self.strip()
+        self.assertIn('{tasks && open.agents && agents ? <div class="pane-tasks-sub">Subagents</div> : null}', strip)
+        self.assertIn(".pane-tasks-sub {", (ROOT / "vscode/webview/styles.css").read_text())
 
     def test_the_headers_agents_tag_unfolds_its_subagents(self):
         tag = CHAT[CHAT.index("<Tag text={`Agents ${chat.agents.done}/${chat.agents.total}`}"):]

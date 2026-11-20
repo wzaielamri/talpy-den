@@ -1149,6 +1149,13 @@ button.pane-ctx[aria-expanded="true"] {
   margin-top: 4px;
 }
 
+/* (the "Subagents" heading, when the tasks are shown above them) */
+.pane-tasks-sub {
+  margin-top: 4px;
+  color: var(--td-muted);
+  font-size: 0.85em;
+}
+
 /* Continue on another account, under a chat a usage limit stopped */
 /* (at the line's right end, as Plasma puts them at the end of the step line) */
 .handover {
