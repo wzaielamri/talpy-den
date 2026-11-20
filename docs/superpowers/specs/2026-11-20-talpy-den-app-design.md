@@ -169,15 +169,44 @@ URL, read and write settings, the clipboard, the status bar text. VS Code
 implements it with its API (behaviour unchanged); the app implements it with
 its own windows and the platform layer.
 
-**Agent adapter.** Everything that knows Claude Code sits behind one
-interface, shaped by the sections of `docs/claude-code-updates.md`: sessions
-and their state, background jobs, the service socket, the CLI (start, resume,
-send), transcripts (read, follow), hooks (live mode, permission answers),
-settings, the status line (usage), wording, SSH hosts and containers. Claude
-Code is the only adapter now; the UI shows what the core reports about
-"chats" and never asks which agent it is. Another agent later is a second
-adapter; Talpy Den's own harness later is an adapter that runs the agent
-itself (on the Claude Agent SDK, TypeScript).
+**Agent adapters.** The owner wants other agents to be easy to add later:
+Gemini CLI and the like, and the owner's own agent on a custom endpoint.
+Everything that knows one agent sits behind one interface, and the rest of the
+core, the connection and the UI speak only agent-neutral terms:
+
+- **An agent-neutral model.** A chat (its agent, state, folder, host), its
+  turns and messages, tool calls (kind, title, status, the diff they make),
+  permission requests (with their options), questions, a plan (to-do list),
+  subagents. Usage windows, accounts, background jobs, Remote Control and the
+  like are **capabilities**: an adapter says which it has, and the UI shows
+  only those (a Gemini chat shows no Claude plan bars). Each chat carries its
+  agent's id, and the UI names the agent ("Claude", "Gemini") where today it
+  says Claude.
+- **Two kinds of adapter.**
+  - *Watching*: the agent runs elsewhere (a terminal, an SSH host) and Talpy
+    Den reads its files and drives it from outside: **Claude Code** today,
+    shaped by the sections of `docs/claude-code-updates.md` (sessions,
+    background jobs, the service socket, the CLI, transcripts, hooks, settings,
+    the status line, wording, SSH hosts and containers).
+  - *Running*: Talpy Den starts the agent and talks to it. The general route
+    is the **Agent Client Protocol** (ACP: an open standard, JSON-RPC over the
+    agent's stdio, the editor-to-agent counterpart of what LSP is for language
+    servers). Its agent list (agentclientprotocol.com, 2026-11-20) names 51,
+    among them Gemini CLI, Goose, OpenCode, Qwen Code, GitHub Copilot and
+    Cline natively, and Codex CLI and Claude Agent through adapters. **One ACP
+    adapter covers all of them**, and the owner's own agent plugs in by
+    speaking ACP. Talpy Den's own harness is a running adapter too, on the
+    Claude Agent SDK (TypeScript).
+- **The model follows ACP's terms** where they fit (sessions, prompt turns,
+  session updates, tool calls and their updates, permission requests, plans,
+  the file system and terminal requests an agent makes of its client), so the
+  ACP adapter maps one to one, and Claude Code's adapter translates its files
+  into the same terms.
+
+Now: only the Claude Code adapter, with the agent-neutral model and the
+capabilities in place (release 1 makes the shared types agent-neutral where
+it costs little, with no change users see). Later: the ACP adapter, with Gemini
+CLI as its first test.
 
 **Platform layer.** What differs per system, Linux only now: finding running
 chats (`/proc`), bringing a chat's terminal to the front (Konsole, tmux, GNOME
@@ -396,7 +425,10 @@ of the connection rule above.
   the core starts with the app or as a login item instead of systemd; Python on
   this computer replaced by core code or bundled; signing (an Apple developer
   account, a Windows code-signing certificate).
-- **Other agents**: a second adapter.
+- **Other agents**: the ACP adapter (Gemini CLI first; then any agent on
+  ACP's list, and the owner's custom-endpoint agent once it speaks ACP).
+  Agents that don't speak ACP but keep session files can get a watching
+  adapter of their own, as Claude Code has.
 - **Harness**: an adapter that runs agents itself, on the Claude Agent SDK
   (TypeScript), with an API key (Anthropic doesn't allow third-party products
   to offer claude.ai login unless approved); coding views from VS Code's
@@ -457,7 +489,8 @@ Each one is a working Talpy Den.
   the GNOME extension to 46–48.
 - Electron, the React UI and a TypeScript core; the shell kept replaceable;
   Rust later, piece by piece; nothing to Rust now.
-- Harness and other agents later; the agent adapter now.
+- Harness and other agents later; the agent adapter now, made so that Gemini
+  CLI and the owner's own custom-endpoint agent are easy to add.
 
 ## My calls (for the owner to check)
 
@@ -477,6 +510,10 @@ Each one is a working Talpy Den.
   handed off to VS Code as Plasma does today.
 - Notifications show once: in the focused window (app or VS Code), else on the
   desktop.
+- Other agents through the Agent Client Protocol (one adapter for many
+  agents); the core's agent-neutral model follows ACP's terms; agent features
+  such as usage windows are capabilities the UI shows only where an agent has
+  them.
 - A long-running Python worker instead of rewriting the backend.
 - One settings file owned by the core; a one-time import.
 - rpm first (the owner's Fedora), then the deb with an AppArmor profile; the
