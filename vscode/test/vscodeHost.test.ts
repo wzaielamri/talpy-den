@@ -226,6 +226,47 @@ test("statusMessage sets the status bar message", () => {
   assert.deepEqual(last(), { method: "setStatusBarMessage", args: ["Copied", 2500] });
 });
 
+test("settings update writes the scope it's given, global by default", async () => {
+  const host = make();
+  await host.settings.update("reopenIn", "talpy");
+  assert.equal(last().args[3], vscode.ConfigurationTarget.Global);
+  await host.settings.update("reopenIn", "talpy", "global");
+  assert.equal(last().args[3], vscode.ConfigurationTarget.Global);
+  await host.settings.update("reopenIn", "talpy", "workspace");
+  assert.deepEqual(last().args, ["talpyDen", "reopenIn", "talpy", vscode.ConfigurationTarget.Workspace]);
+  await host.settings.update("reopenIn", "talpy", "workspaceFolder");
+  assert.equal(last().args[3], vscode.ConfigurationTarget.WorkspaceFolder);
+});
+
+test("settings updateOther writes another section's key globally", async () => {
+  await make().settings.updateOther("claudeCode", "environmentVariables", [{ name: "A", value: "b" }]);
+  assert.deepEqual(last(), { method: "config.update", args: ["claudeCode", "environmentVariables", [{ name: "A", value: "b" }], vscode.ConfigurationTarget.Global] });
+});
+
+test("settings watchOther fires with the touched keys only", () => {
+  const host = make();
+  const got: string[][] = [];
+  const sub = host.settings.watchOther(["editor.fontFamily", "terminal.integrated.fontFamily"])((keys) => got.push(keys));
+  stub.changeSettings("files.exclude");
+  assert.equal(got.length, 0);
+  stub.changeSettings("terminal.integrated.fontFamily");
+  assert.deepEqual(got, [["terminal.integrated.fontFamily"]]);
+  stub.changeSettings("editor.fontFamily", "terminal.integrated.fontFamily");
+  assert.deepEqual(got[1], ["editor.fontFamily", "terminal.integrated.fontFamily"]);
+  sub.dispose();
+  stub.changeSettings("editor.fontFamily");
+  assert.equal(got.length, 2);
+});
+
+test("choose with localOnly keeps only this computer's files", async () => {
+  const remote = vscode.Uri.from({ scheme: "vscode-remote", authority: "ssh-remote+box", path: "/srv/a.png" });
+  stub.answers.set("showOpenDialog", [vscode.Uri.file("/home/me/b.png"), remote]);
+  assert.deepEqual(await make().choose({ kind: "file", many: true, localOnly: true }), ["/home/me/b.png"]);
+  assert.deepEqual(await make().choose({ kind: "file", many: true }), ["/home/me/b.png", "/srv/a.png"]);
+  stub.answers.set("showOpenDialog", [remote]);
+  assert.equal(await make().choose({ kind: "file", localOnly: true }), undefined);
+});
+
 test("log writes to the output channel", () => {
   const host = make();
   host.log.info("a");

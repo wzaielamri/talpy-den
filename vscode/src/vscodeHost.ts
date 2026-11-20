@@ -79,7 +79,9 @@ export class VsCodeHost implements HostServices {
       ...(options.filters ? { filters: options.filters } : {}),
     });
     if (!picked?.length) return undefined;
-    return picked.map((u) => (options.onRemote ? u.path : u.fsPath));
+    const kept = options.localOnly ? picked.filter((u) => u.scheme === "file") : picked;
+    if (!kept.length) return undefined;
+    return kept.map((u) => (options.onRemote ? u.path : u.fsPath));
   }
 
   progress<R>(options: { where: "window" | "notification"; title: string }, task: () => Promise<R>): Promise<R> {
@@ -93,9 +95,18 @@ export class VsCodeHost implements HostServices {
 
   readonly settings: HostSettings = {
     get: <T>(key: string, fallback: T) => vscode.workspace.getConfiguration("talpyDen").get<T>(key, fallback),
-    update: async (key, value) => {
-      await vscode.workspace.getConfiguration("talpyDen").update(key, value, vscode.ConfigurationTarget.Global);
+    update: async (key, value, scope = "global") => {
+      const target = scope === "workspace" ? vscode.ConfigurationTarget.Workspace : scope === "workspaceFolder" ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Global;
+      await vscode.workspace.getConfiguration("talpyDen").update(key, value, target);
     },
+    updateOther: async (section, key, value) => {
+      await vscode.workspace.getConfiguration(section).update(key, value, vscode.ConfigurationTarget.Global);
+    },
+    watchOther: (keys) => (listener) =>
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        const touched = keys.filter((k) => e.affectsConfiguration(k));
+        if (touched.length) listener(touched);
+      }),
     inspect: (key) => {
       const found = vscode.workspace.getConfiguration("talpyDen").inspect(key);
       return found && { global: found.globalValue, workspace: found.workspaceValue, workspaceFolder: found.workspaceFolderValue };

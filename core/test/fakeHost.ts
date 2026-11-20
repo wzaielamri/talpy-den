@@ -3,7 +3,7 @@
 
 import { Emitter } from "../src/events";
 import type {
-  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions,
+  ChooseOptions, HostServices, HostSettings, InputOptions, MessageLevel, MessageOptions, PickItem, PickOptions, SettingScope,
 } from "../src/host";
 
 export class FakeHost implements HostServices {
@@ -18,6 +18,7 @@ export class FakeHost implements HostServices {
     settingsOpened: [] as string[],
     views: 0,
     contexts: new Map<string, unknown>(),
+    updates: [] as { section: string; key: string; value: unknown; scope: SettingScope }[], // section "talpyDen" or another
     status: [] as string[],
     logs: [] as string[],
   };
@@ -39,12 +40,22 @@ export class FakeHost implements HostServices {
   private settingsChanged = new Emitter<string[]>();
   private focusChanged = new Emitter<boolean>();
   private foldersChanged = new Emitter<void>();
+  private watchers: { keys: readonly string[]; changed: Emitter<string[]> }[] = [];
   private isFocused = false;
 
   // Sets a talpyDen setting, as the user would, and tells the listeners
   set(key: string, value: unknown): void {
     this.values.set(key, value);
     this.settingsChanged.fire([key]);
+  }
+
+  // Sets another section's setting ("editor.fontFamily"), as the user would, and tells its watchers
+  setOther(fullKey: string, value: unknown): void {
+    this.others.set(fullKey, value);
+    for (const w of this.watchers) {
+      const touched = w.keys.filter((k) => k === fullKey);
+      if (touched.length) w.changed.fire(touched);
+    }
   }
 
   setFocused(focused: boolean): void {
@@ -93,7 +104,19 @@ export class FakeHost implements HostServices {
 
   readonly settings: HostSettings = {
     get: <T>(key: string, fallback: T) => (this.values.has(key) ? (this.values.get(key) as T) : fallback),
-    update: async (key, value) => this.set(key, value),
+    update: async (key, value, scope = "global") => {
+      this.recorded.updates.push({ section: "talpyDen", key, value, scope });
+      this.set(key, value);
+    },
+    updateOther: async (section, key, value) => {
+      this.recorded.updates.push({ section, key, value, scope: "global" });
+      this.setOther(`${section}.${key}`, value);
+    },
+    watchOther: (keys) => {
+      const watcher = { keys, changed: new Emitter<string[]>() };
+      this.watchers.push(watcher);
+      return watcher.changed.event;
+    },
     inspect: (key) => (this.values.has(key) ? { global: this.values.get(key) } : undefined),
     other: <T>(section: string, key: string, fallback: T) => (this.others.has(`${section}.${key}`) ? (this.others.get(`${section}.${key}`) as T) : fallback),
     onDidChange: this.settingsChanged.event,

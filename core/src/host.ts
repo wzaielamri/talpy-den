@@ -16,18 +16,25 @@ export interface InputOptions {
   title?: string; prompt?: string; placeHolder?: string; value?: string; password?: boolean; ignoreFocusOut?: boolean;
   validateInput?: (value: string) => string | undefined | null;
 }
-// onRemote: the window's remote file system (Remote-SSH), not this computer's
+// onRemote: the window's remote file system (Remote-SSH), not this computer's; localOnly: keep only this
+// computer's files (a Remote window's dialog can also pick the remote's)
 export interface ChooseOptions {
-  kind: "folder" | "file"; many?: boolean; title?: string; openLabel?: string; defaultPath?: string; onRemote?: boolean;
+  kind: "folder" | "file"; many?: boolean; title?: string; openLabel?: string; defaultPath?: string; onRemote?: boolean; localOnly?: boolean;
   filters?: Record<string, string[]>;
 }
+
+// Where a setting is written (a caller keeps a value in the scope it is already set in)
+export type SettingScope = "global" | "workspace" | "workspaceFolder";
 
 // The talpyDen.* settings
 export interface HostSettings {
   get<T>(key: string, fallback: T): T;
-  update(key: string, value: unknown): Promise<void>; // the user (global) scope
+  update(key: string, value: unknown, scope?: SettingScope): Promise<void>; // scope: global by default
   inspect(key: string): { global?: unknown; workspace?: unknown; workspaceFolder?: unknown } | undefined;
   other<T>(section: string, key: string, fallback: T): T; // another extension's or VS Code's setting
+  updateOther(section: string, key: string, value: unknown): Promise<void>; // another section's key, globally
+  // Tells which of these full keys ("editor.fontFamily") a settings change touched; silent when none
+  watchOther(keys: readonly string[]): Event<string[]>;
   readonly onDidChange: Event<string[]>; // the talpyDen keys that changed
 }
 
