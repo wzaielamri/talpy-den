@@ -80,7 +80,8 @@ class PlasmaStripTests(unittest.TestCase):
         self.assertIn("visible: pane.tasks !== null && pane.agentsOpen && pane.agents !== null", heading)
         self.assertIn("color: pane.mutedColor", heading)
         self.assertIn("Layout.topMargin", heading)
-        self.assertIn("Layout.topMargin: pane.tasksOpen && pane.tasks ? Kirigami.Units.smallSpacing : 0", strip)
+        tree = strip[strip.index("AgentTree {"):]
+        self.assertIn("Layout.topMargin: 0", tree[:tree.index("agents: pane.stripAgents")])   # (the heading carries the space)
 
     def test_the_headers_agents_tag_unfolds_its_subagents(self):
         header = PANE[PANE.index("// mode, its plan, its subagents (SessionRow.qml's tags)"):PANE.index("// Its tasks, when it has a task list")]

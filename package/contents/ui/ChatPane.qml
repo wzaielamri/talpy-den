@@ -3660,7 +3660,7 @@ Window {
                             }
                             AgentTree {
                                 Layout.fillWidth: true
-                                Layout.topMargin: pane.tasksOpen && pane.tasks ? Kirigami.Units.smallSpacing : 0
+                                Layout.topMargin: 0
                                 visible: pane.agentsOpen && pane.agents !== null
                                 agents: pane.stripAgents
                                 rowKey: "pane|" + pane.host + "|" + pane.chatId   // (its agents' details: unfolded here, not under its row)
