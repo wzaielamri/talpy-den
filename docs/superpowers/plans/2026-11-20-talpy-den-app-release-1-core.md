@@ -26,7 +26,7 @@ section, then the next open task.
 |---|---|---|---|---|
 | 1 Core folder, build, tests | done | 3a532755, f7963eda | clean after 1 fix round | 401 → 406 tests. Core tests build to `vscode/out/test/core/`; the extension's stay in `out/test/` (R6). `Emitter.fire` isolates listener errors, as `vscode.EventEmitter` does. |
 | 2 HostServices, FakeHost, VsCodeHost | done | 7031abf4, 6e9ad962 | clean after 1 fix round | 406 → 430 tests. The contract gained what today's code needs (the Task 2 block above shows it): `update(…, scope?)`, `updateOther`, `watchOther`, `ChooseOptions.localOnly`. `FakeHost` records `updates` and has `setOther`. |
-| 3 Shared types, agent-neutral | not started | | | |
+| 3 Shared types, agent-neutral | done | 469194c1, cf7e0df1 | clean after 1 fix round | 430 → 433 tests; Python 1669 OK. The Python tests, `docs/claude-code-updates.md` and the comments that named `vscode/src/shared` now name `core/src/shared`. The row-key test needs the webview, so it stays in `vscode/test/rowKey.test.ts`. The tests build clears `out/test` first, so stale bundles don't run. Open for later: `core/src/shared/pane.ts` imports `vscode/vendor/*.mjs`. |
 | 4 Settings through the host | not started | | | |
 | 5 VS Code-free modules | not started | | | |
 | 6 Ports | not started | | | |
