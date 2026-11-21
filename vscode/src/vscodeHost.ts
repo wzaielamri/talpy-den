@@ -78,7 +78,7 @@ export class VsCodeHost implements HostServices {
   }
 
   input(options?: InputOptions): Promise<string | undefined> {
-    return Promise.resolve(vscode.window.showInputBox(options)) as Promise<string | undefined>;
+    return Promise.resolve(vscode.window.showInputBox(options));
   }
 
   async choose(options: ChooseOptions): Promise<string[] | undefined> {
@@ -165,10 +165,6 @@ export class VsCodeHost implements HostServices {
 
   async showView(): Promise<void> {
     await vscode.commands.executeCommand("talpyDen.view.focus");
-  }
-
-  setContext(key: string, value: unknown): void {
-    void vscode.commands.executeCommand("setContext", key, value);
   }
 
   async reloadWindow(): Promise<void> {

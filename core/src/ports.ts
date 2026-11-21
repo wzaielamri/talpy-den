@@ -1,7 +1,8 @@
 // What only one host can do, asked for through a port of its own (the rest goes through HostServices):
 // terminals, VS Code's own UI (its changes view, Talpy Den's doc tab, an editor tab, the plan review,
-// Claude Code's panel), Talpy Chat's panes (as the rest of the core uses them) and the surfaces they show
-// in. Each has exactly the members the core calls; paths cross as plain strings, never as a host's own types.
+// Claude Code's panel) and the surfaces Talpy Chat's panes show in; and Talpy Chat's panes as the rest of the
+// core uses them (ChatPanesPort: the core's own, not a host's). Each has exactly the members the core calls;
+// paths cross as plain strings, never as a host's own types.
 
 import type { Comparison } from "./comparisons";
 import type { Event } from "./events";
@@ -72,7 +73,9 @@ export interface EditorPort {
   openPanelChat(prompt?: string): Promise<void>;
 }
 
-// Talpy Chat's panes, as notify.ts and actions.ts use them (chatPanes.ts ChatPanes)
+// Talpy Chat's panes, as notify.ts and actions.ts use them. Not a host's to implement: the core's own
+// ChatPanes (chatPanes.ts) is it, on the host's PaneSurfaces; this is how notify and actions reach the panes
+// without importing chatPanes.ts
 export interface ChatPanesPort {
   // The chat's pane, opened or brought up (notify's handle, askQuestions, told and openChat; actions' open and nextChat)
   open(chat: ChatRef, tab?: "chat" | "review"): void;

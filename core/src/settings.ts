@@ -17,11 +17,10 @@ function hostSettings(): HostSettings {
   if (!host) throw new Error("no settings host: call useSettingsHost first");
   return host.settings;
 }
-const cfg = hostSettings;
 
 // A whole number in [min, max]: the scripts take counts like --recent 2.5 as an error
 function num(key: string, fallback: number, min: number, max: number): number {
-  const v = cfg().get<number>(key, fallback);
+  const v = hostSettings().get<number>(key, fallback);
   return Math.round(Math.min(max, Math.max(min, typeof v === "number" && isFinite(v) ? v : fallback)));
 }
 
@@ -33,61 +32,61 @@ export const settings = {
   pollInterval: () => num("pollInterval", 2000, 1000, 60000),
   idlePollInterval: () => num("idlePollInterval", 20000, 1000, 300000),
   remotePollSeconds: () => num("remotePollSeconds", 30, 10, 600),
-  showContainers: () => cfg().get<boolean>("showContainers", true) !== false,
+  showContainers: () => hostSettings().get<boolean>("showContainers", true) !== false,
   containerDays: () => num("containerDays", 30, 0, 365),
-  sshHosts: () => [...new Set((cfg().get<string[]>("sshHosts", []) ?? []).map((h) => String(h).trim()).filter(Boolean))], // (a host twice would be two rows)
-  includeCurrentRemote: () => cfg().get<boolean>("includeCurrentRemote", true),
-  clickOpensPane: () => cfg().get<boolean>("clickOpensPane", true) !== false,
+  sshHosts: () => [...new Set((hostSettings().get<string[]>("sshHosts", []) ?? []).map((h) => String(h).trim()).filter(Boolean))], // (a host twice would be two rows)
+  includeCurrentRemote: () => hostSettings().get<boolean>("includeCurrentRemote", true),
+  clickOpensPane: () => hostSettings().get<boolean>("clickOpensPane", true) !== false,
   // Where Talpy Chat shows: its view in the secondary side bar (one chat at a time; the default), or an editor tab for each chat
-  chatPlace: (): "tab" | "sideBar" => (cfg().get<string>("chatPlace", "sideBar") === "tab" ? "tab" : "sideBar"),
-  openIn: () => (cfg().get<string>("openIn", "vscode") === "system" ? "system" : "vscode"),
+  chatPlace: (): "tab" | "sideBar" => (hostSettings().get<string>("chatPlace", "sideBar") === "tab" ? "tab" : "sideBar"),
+  openIn: () => (hostSettings().get<string>("openIn", "vscode") === "system" ? "system" : "vscode"),
   reopenIn: (): ReopenIn => {
-    const v = cfg().get<string>("reopenIn", "terminal");
+    const v = hostSettings().get<string>("reopenIn", "terminal");
     return v === "claudeCode" || v === "talpyChat" ? v : "terminal";
   },
   sshUsage: (): SshUsage => {
-    const v = cfg().get<string>("sshUsage", "once");
+    const v = hostSettings().get<string>("sshUsage", "once");
     return v === "all" || v === "none" ? v : "once";
   },
   recapCurrency: () => {
-    const v = cfg().get<string>("recapCurrency", "USD");
+    const v = hostSettings().get<string>("recapCurrency", "USD");
     return typeof v === "string" && /^[A-Z]{3}$/.test(v) ? v : "USD";
   },
-  recapRules: () => cfg().get<boolean>("recapRules", true) !== false,
-  recapHistory: () => cfg().get<boolean>("recapHistory", true) !== false,
+  recapRules: () => hostSettings().get<boolean>("recapRules", true) !== false,
+  recapHistory: () => hostSettings().get<boolean>("recapHistory", true) !== false,
   // Old chats: Claude Code's own cleanup ("claude") or Talpy Den's ("talpyDen"), at oldChatsDays (cleanup.py)
-  oldChats: (): "claude" | "talpyDen" => (cfg().get<string>("oldChats", "claude") === "talpyDen" ? "talpyDen" : "claude"),
+  oldChats: (): "claude" | "talpyDen" => (hostSettings().get<string>("oldChats", "claude") === "talpyDen" ? "talpyDen" : "claude"),
   oldChatsDays: () => Math.round(num("oldChatsDays", 30, 1, 3649)),
-  notifyWaiting: () => cfg().get<boolean>("notifyWaiting", true),
-  notifyDone: () => cfg().get<boolean>("notifyDone", true),
+  notifyWaiting: () => hostSettings().get<boolean>("notifyWaiting", true),
+  notifyDone: () => hostSettings().get<boolean>("notifyDone", true),
   notifyDoneMinSeconds: () => num("notifyDoneMinSeconds", 30, 0, 3600),
-  notifySound: () => cfg().get<boolean>("notifySound", true),
+  notifySound: () => hostSettings().get<boolean>("notifySound", true),
   soundVolume: () => num("soundVolume", 70, 0, 100),
-  soundWaiting: () => cfg().get<string>("soundWaiting", "message-new-instant"),
-  soundDone: () => cfg().get<string>("soundDone", "outcome-success,complete"),
-  soundFailed: () => cfg().get<string>("soundFailed", "dialog-error"),
-  showUsageInStatusBar: () => cfg().get<boolean>("showUsageInStatusBar", true),
+  soundWaiting: () => hostSettings().get<string>("soundWaiting", "message-new-instant"),
+  soundDone: () => hostSettings().get<string>("soundDone", "outcome-success,complete"),
+  soundFailed: () => hostSettings().get<string>("soundFailed", "dialog-error"),
+  showUsageInStatusBar: () => hostSettings().get<boolean>("showUsageInStatusBar", true),
   recentChats: () => num("recentChats", 5, 0, 20),
   keepDoneHours: () => num("keepDoneHours", 24, 0, 168),
-  showTokens: () => cfg().get<boolean>("showTokens", true),
-  awayDigest: () => cfg().get<boolean>("awayDigest", true),
+  showTokens: () => hostSettings().get<boolean>("showTokens", true),
+  awayDigest: () => hostSettings().get<boolean>("awayDigest", true),
   awayMinutes: () => num("awayMinutes", 5, 1, 240),
-  python: () => expandHome(cfg().get<string>("pythonPath", "python3")?.trim() || "python3"),
+  python: () => expandHome(hostSettings().get<string>("pythonPath", "python3")?.trim() || "python3"),
   usageCap: () => num("usageCap", 0, 0, 100),
   usageRefreshMinutes: () => num("usageRefreshMinutes", 5, 0, 60),
-  newChatModel: () => (cfg().get<string>("newChatModel", "opus") ?? "").trim(),
-  newChatEffort: () => (cfg().get<string>("newChatEffort", "xhigh") ?? "").trim(),
-  newChatMode: () => (cfg().get<string>("newChatMode", "") ?? "").trim(),
+  newChatModel: () => (hostSettings().get<string>("newChatModel", "opus") ?? "").trim(),
+  newChatEffort: () => (hostSettings().get<string>("newChatEffort", "xhigh") ?? "").trim(),
+  newChatMode: () => (hostSettings().get<string>("newChatMode", "") ?? "").trim(),
 };
 
 // The conversation's font (talpyDen.chatFont), as a CSS font-family: the terminal's, as Claude's terminal
 // shows a chat (terminal.integrated.fontFamily, which falls back to the editor's), the editor's, or "" (the
 // host's own); Talpy Chat's and the doc tab's
 export function chatFont(): string {
-  const which = cfg().get<string>("chatFont", "terminal");
+  const which = hostSettings().get<string>("chatFont", "terminal");
   if (which === "ui") return "";
-  const editor = cfg().other<string>("editor", "fontFamily", "") || "var(--vscode-editor-font-family, monospace)";
-  const terminal = which === "editor" ? "" : cfg().other<string>("terminal.integrated", "fontFamily", "") || "";
+  const editor = hostSettings().other<string>("editor", "fontFamily", "") || "var(--vscode-editor-font-family, monospace)";
+  const terminal = which === "editor" ? "" : hostSettings().other<string>("terminal.integrated", "fontFamily", "") || "";
   return terminal || editor;
 }
 // (the other settings it reads: a change to one is a new font, as a change to talpyDen.chatFont is)
@@ -104,9 +103,9 @@ export function chatOptionArgs(): string[] {
 // (application settings: only your user settings hold them, never a
 // workspace's or a remote's, which could start chats with prompts off)
 export async function setChatOptions(model: string, effort: string, mode: string): Promise<void> {
-  await hostSettings().update("newChatModel", model);
-  await hostSettings().update("newChatEffort", effort);
-  await hostSettings().update("newChatMode", mode);
+  await hostSettings().update("newChatModel", model, "global");
+  await hostSettings().update("newChatEffort", effort, "global");
+  await hostSettings().update("newChatMode", mode, "global");
 }
 
 // Where a setting's value comes from: its folder's, its workspace's, else the user's
@@ -117,8 +116,8 @@ function whereSet(key: string): SettingScope {
 
 export function viewSettings(): ViewSettings {
   return {
-    showPet: cfg().get<boolean>("showPet", true),
-    playful: cfg().get<boolean>("playfulTalpy", true) !== false,
+    showPet: hostSettings().get<boolean>("showPet", true),
+    playful: hostSettings().get<boolean>("playfulTalpy", true) !== false,
     chatPets: num("chatPets", 5, 0, 8),
     showTokens: settings.showTokens(),
     recentChats: settings.recentChats(),
@@ -134,7 +133,7 @@ export function viewSettings(): ViewSettings {
 // itself): the one Claude Code itself would use here ($CLAUDE_CONFIG_DIR), and
 // any the user added.
 export function extraConfigDirs(env: NodeJS.ProcessEnv = process.env): string[] {
-  const dirs = (cfg().get<string[]>("extraConfigDirs", []) ?? []).map((d) => expandHome(String(d).trim())).filter(Boolean);
+  const dirs = (hostSettings().get<string[]>("extraConfigDirs", []) ?? []).map((d) => expandHome(String(d).trim())).filter(Boolean);
   if (env.CLAUDE_CONFIG_DIR) dirs.unshift(expandHome(env.CLAUDE_CONFIG_DIR));
   return [...new Set(dirs)];
 }
@@ -158,7 +157,7 @@ export function statusArgs(): string[] {
 
 // (an "application" setting: only your user settings hold it)
 export async function setSshHosts(hosts: string[]): Promise<void> {
-  await hostSettings().update("sshHosts", hosts);
+  await hostSettings().update("sshHosts", hosts, "global");
 }
 
 // Written where it's set: a workspace's own value would win over the user's

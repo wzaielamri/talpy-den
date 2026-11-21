@@ -80,7 +80,6 @@ export class FakeHost implements HostServices {
     settingsOpened: [] as string[],
     views: 0,
     reloads: 0,
-    contexts: new Map<string, unknown>(),
     updates: [] as { section: string; key: string; value: unknown; scope: SettingScope }[], // section "talpyDen" or another
     status: [] as string[],
     logs: [] as string[],
@@ -237,10 +236,6 @@ export class FakeHost implements HostServices {
 
   async showView(): Promise<void> {
     this.recorded.views++;
-  }
-
-  setContext(key: string, value: unknown): void {
-    this.recorded.contexts.set(key, value);
   }
 
   async reloadWindow(): Promise<void> {

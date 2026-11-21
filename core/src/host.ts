@@ -1,5 +1,10 @@
 // What the core asks of whatever hosts it (the VS Code extension, the desktop app): dialogs, settings,
 // the clipboard, the window's focus. Paths cross as plain strings, never as a host's own types.
+//
+// Texts may carry codicon markup, $(name) (VS Code's icon font: "$(check) Use it", "$(person-add) Add
+// Account…"): the labels and descriptions of pick, pickMany and quickPick's items (accounts, accountSwitch,
+// dictation, relay, actions' findChat) and statusMessage's text (actions' "$(check) The card is copied…"). A
+// host shows the icon, or strips the markup ("$(check) Use it" -> "Use it").
 
 import type { Event } from "./events";
 
@@ -59,7 +64,12 @@ export interface ChooseOptions {
 // Where a setting is written (a caller keeps a value in the scope it is already set in)
 export type SettingScope = "global" | "workspace" | "workspaceFolder";
 
-// The talpyDen.* settings
+// The talpyDen.* settings, and a few of other sections (other, updateOther, watchOther), which a host answers
+// as VS Code would (its own setting, or the fallback):
+// - editor.fontFamily and terminal.integrated.fontFamily: read and watched, the conversation's font
+//   (settings.ts chatFont, CHAT_FONT_KEYS; chatPanes);
+// - dev.containers.dockerPath: read, the docker that lists Dev Containers (dashboard);
+// - claudeCode.environmentVariables: read and written, the account Claude Code's panel runs on (accountSwitch).
 export interface HostSettings {
   get<T>(key: string, fallback: T): T;
   update(key: string, value: unknown, scope?: SettingScope): Promise<void>; // scope: global by default
@@ -97,13 +107,20 @@ export interface HostServices {
   };
   readonly clipboard: { read(): Promise<string>; write(text: string): Promise<void> };
   openExternal(url: string): Promise<boolean>;
-  openFile(path: string): Promise<void>; // VS Code: "vscode.open"
-  revealFile(path: string): Promise<void>; // VS Code: "revealFileInOS"
-  openSettings(query: string): Promise<void>; // VS Code: "workbench.action.openSettings"
-  showView(): Promise<void>; // VS Code: "talpyDen.view.focus"
-  setContext(key: string, value: unknown): void; // VS Code: "setContext"
-  // The window starts again, Claude Code's panel with it, on the account it was switched to (accountSwitch);
-  // VS Code: "workbench.action.reloadWindow", which can be declined (unsaved files)
+  // This computer's file (a picture, a Markdown file a chat made) opened to look at, in the host's own viewer
+  // or the system's default app for it (chatPanes' openPicture and openMade); VS Code: "vscode.open"
+  openFile(path: string): Promise<void>;
+  // This computer's file shown in the system's file manager (actions' Show It); VS Code: "revealFileInOS"
+  revealFile(path: string): Promise<void>;
+  // The settings shown at one: query is a talpyDen setting's full id ("talpyDen.oldChats"; the dashboard's
+  // Settings button); VS Code: "workbench.action.openSettings"
+  openSettings(query: string): Promise<void>;
+  // Talpy Den's dashboard (its list of chats) brought up and shown, the window to the front (actions' nextChat
+  // with no chat left, the away digest's Show Chats); VS Code: "talpyDen.view.focus"
+  showView(): Promise<void>;
+  // The window starts again, Claude Code's panel with it, on the account it was switched to (accountSwitch); a
+  // host reloads its window, or whatever runs Claude Code's panel; VS Code: "workbench.action.reloadWindow",
+  // which can be declined (unsaved files)
   reloadWindow(): Promise<void>;
   workspaceFolders(): readonly WindowFolder[];
   readonly onDidChangeWorkspaceFolders: Event<void>;

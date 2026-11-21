@@ -1,7 +1,10 @@
-// Which SSH host this VS Code window is connected to (Remote-SSH), or which
-// container (Dev Containers: attached-container, dev-container), if any.
-// The extension itself always runs on this computer ("extensionKind": ["ui"]),
-// so it reaches that host with its own ssh, like any other picked host.
+// A remote authority, as the host gives it (HostServices.environment.remoteAuthority:
+// "ssh-remote+lab", "dev-container+…"), read: the SSH host it names (Remote-SSH,
+// hex-encoded JSON included) and the port given with it, the port ssh would
+// use for that host, and the container it names (Dev Containers:
+// attached-container, dev-container), looked up in the containers listed.
+// Talpy Den runs on this computer and reaches that host with its own ssh, like
+// any other picked host.
 
 import { spawnSync } from "node:child_process";
 import { containerOf } from "../../shared/model";

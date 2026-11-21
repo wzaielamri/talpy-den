@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { cacheDir, chatFont, configDirArgs, setReopenIn, setSshHosts, settings, useSettingsHost } from "../src/settings";
+import { cacheDir, chatFont, chatOptionArgs, configDirArgs, setChatOptions, setReopenIn, setSshHosts, settings, useSettingsHost } from "../src/settings";
 import { FakeHost } from "./fakeHost";
 
 const make = () => {
@@ -42,6 +42,18 @@ test("setSshHosts writes talpyDen.sshHosts", async () => {
   const fake = make();
   await setSshHosts(["h1", "h2"]);
   assert.deepEqual(fake.recorded.updates, [{ section: "talpyDen", key: "sshHosts", value: ["h1", "h2"], scope: "global" }]);
+});
+
+// (application settings: only your user settings hold them)
+test("setChatOptions writes the model, effort and mode new chats start with in your user settings", async () => {
+  const fake = make();
+  await setChatOptions("sonnet", "high", "plan");
+  assert.deepEqual(fake.recorded.updates, [
+    { section: "talpyDen", key: "newChatModel", value: "sonnet", scope: "global" },
+    { section: "talpyDen", key: "newChatEffort", value: "high", scope: "global" },
+    { section: "talpyDen", key: "newChatMode", value: "plan", scope: "global" },
+  ]);
+  assert.deepEqual(chatOptionArgs(), ["--model", "sonnet", "--effort", "high", "--permission-mode", "plan"]);
 });
 
 test("setReopenIn writes where reopenIn is already set", async () => {

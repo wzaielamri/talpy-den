@@ -45,8 +45,8 @@ export interface AccountShown {
   link: string;
 }
 
-// Claude Accounts (accounts.ts), as the switch opens it: Add Account… and the accounts list. extension.ts makes
-// the accounts after the switch (they take it), so it hands closures that find them when called
+// Claude Accounts (accounts.ts), as the switch opens it: Add Account… and the accounts list. The accounts are
+// made after the switch (they take it), so these find them when called
 export interface AccountsOpener {
   add(): Promise<void>;
   manage(): Promise<void>;

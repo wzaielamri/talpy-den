@@ -7,7 +7,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { Disposable } from "./events";
+import type { Disposable } from "./events";
 import type { HostServices } from "./host";
 import { cacheDir } from "./settings";
 import { duration, hostLabel } from "./shared/model";

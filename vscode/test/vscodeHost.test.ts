@@ -342,7 +342,7 @@ test("environment's remoteAuthority is the remote the window has open, read anew
   assert.equal(host.environment.remoteAuthority, undefined);
 });
 
-test("openFile, revealFile, openSettings, showView and setContext run their VS Code commands", async () => {
+test("openFile, revealFile, openSettings and showView run their VS Code commands", async () => {
   const host = make();
   await host.openFile("/home/me/a.md");
   assert.equal(last().args[0], "vscode.open");
@@ -354,8 +354,6 @@ test("openFile, revealFile, openSettings, showView and setContext run their VS C
   assert.deepEqual(last().args, ["workbench.action.openSettings", "talpyDen.chatTextScale"]);
   await host.showView();
   assert.deepEqual(last().args, ["talpyDen.view.focus"]);
-  host.setContext("talpyDen.chatSideBar", true);
-  assert.deepEqual(last().args, ["setContext", "talpyDen.chatSideBar", true]);
 });
 
 // (accountSwitch: Claude Code's panel takes the account it was switched to when the window starts again)

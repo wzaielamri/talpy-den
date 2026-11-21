@@ -5,7 +5,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Backend } from "./agents/claudeCode/backend";
-import { Disposable } from "./events";
+import type { Disposable } from "./events";
 import type { HostServices, PickItem } from "./host";
 import type { ChatPanesPort } from "./ports";
 import { cacheDir, settings } from "./settings";
@@ -166,7 +166,7 @@ export class Notifier implements Disposable {
 
   // Claude's questions: one with one answer has a button per option, then
   // Other… (your own words); else Answer… goes through them one by one
-  // (VS Code's pickers); Open shows the chat
+  // (the host's pickers); Open shows the chat
   private askQuestions(text: string, show: Shower, chat: ChatRef, s: Session, shown: AskShown | null): void {
     const choices = oneChoice(s.permission);
     const items: { title: string; run: () => Promise<Answers | null | "open"> }[] = [
