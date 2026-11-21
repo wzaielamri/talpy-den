@@ -287,7 +287,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     Code's `healthy` stays true). A host's prompts reach Talpy Chat only at the host's next check (every 30
     s).
   - Test: WaitTests.test_a_session_file_wakes_it_at_once, test_first_answer_then_only_changes (test_live.py);
-    vscode/test/live.test.ts "the sessions folders to watch: each profile's, once", "the watcher: a session
+    core/test/live.test.ts "the sessions folders to watch: each profile's, once", "the watcher: a session
     file asks for a check at once, a live file is handed on".
 
 ## Jobs

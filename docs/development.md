@@ -21,7 +21,7 @@ VS Code extension (in `vscode/`; [In VS Code](vscode.md#development) says more):
 
 ```bash
 cd vscode && npm ci                             # once
-npm run check && npm test                       # type check, its tests
+npm run check && npm test                       # type check (the extension, its webview and ../core), all the tests
 npm run package                                 # build talpy-den-<version>.vsix
 ```
 
@@ -39,14 +39,21 @@ package/                  the Plasma widget (what install.sh installs)
     ├── ui/icons.mjs      the icon table: one icon per meaning for Plasma, VS Code and GNOME (tests/test_icons.py)
     └── pets/             Talpy's notification icons (made by tools/talpy_icons.mjs)
 gnome/                    the GNOME Shell extension: extension/ (GJS: indicator.js, logic.js, ui/, prefs.js), build.sh, tests/
-vscode/                   the VS Code extension (TypeScript: src/ the extension, webview/ its view); each build copies the
-                          backend, Talpy and the snippet into vscode/vendor/
+core/                     what runs Talpy Den, with no `vscode` import (TypeScript), so an app can run it too; the extension bundles it:
+│                         src/: host.ts (HostServices: what the host provides), ports.ts (terminals, editor, Talpy Chat's pages),
+│                         settings.ts, and the modules by area (dashboard, actions, accounts, notify, chatPanes, relay, dictation, …);
+│                         src/agents/claudeCode/ (Claude Code's files, the backend, SSH), src/platform/linux/ (desktop),
+│                         src/shared/ (the model and types shared with the view); test/: its tests, with FakeHost (a host for tests)
+vscode/                   the VS Code extension (TypeScript: src/ the host's side: VsCodeHost, the ports, the view; webview/ its view);
+                          each build copies the backend, Talpy and the snippet into vscode/vendor/
 statusline-snippet.sh     the snippet install.sh adds to your status line
 tests/                    unit tests: they build Claude Code's files in temporary folders
 tools/                    render_popup.sh (offscreen screenshots), talpy_icons.mjs (Talpy's still pictures), talpy_font.py (VS Code's
                           status bar icon font of them: needs potrace and python3-fontforge), gnome/ (headless GNOME Shell test),
                           check_public.py (nothing private gets committed), bench/ (Talpy Chat's timings, before and after a change)
 ```
+
+`npm test` builds the tests and runs `node --test "out/test/**/*.test.js"`: the extension's tests are in `vscode/test` (built to `out/test`), the core's in `core/test` (built to `out/test/core`).
 
 The tests build Claude Code's files (sessions, background jobs, transcripts, shared-chat links, a switched `~/.claude` link) in temporary folders. `tests/test_remote.py` drives the SSH code through a stand-in `ssh` that runs the command locally.
 

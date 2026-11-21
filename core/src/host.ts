@@ -85,7 +85,9 @@ export interface HostServices {
   statusMessage(text: string, ms: number): void;
   readonly settings: HostSettings;
   // inUse: interacted with recently, else focused (VS Code's window `active`, else `focused`); it can change
-  // without the focus doing so, hence onDidChangeUse (away's AwayWatch)
+  // without the focus doing so, hence onDidChangeUse (away's AwayWatch). An implementation must fire
+  // onDidChangeUse on every change of the window's focus too, not only when inUse changes: the dashboard's
+  // reaction to the focus (clearing what was seen) listens on it, not on onDidChange.
   readonly focus: {
     readonly focused: boolean; readonly onDidChange: Event<boolean>;
     readonly inUse: boolean; readonly onDidChangeUse: Event<boolean>;

@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // the changes view, the plan review's comments)
   const editor = new VsCodeEditor(review);
   const dash = new Dashboard(host, editor, backend, notifier);
-  const terminals = new Terminals((host, since) => dash.hostCheckedSince(host, since), (host, command) => backend.attachLine(host, command));
+  const terminals = new Terminals((sshHost, since) => dash.hostCheckedSince(sshHost, since), (sshHost, command) => backend.attachLine(sshHost, command));
   const statusBar = new StatusBar(); // (Talpy Den's one status bar item; the account it names comes from account)
   // (Add Account… and Claude Accounts… open the accounts, made below with this switch: found when clicked)
   const account: AccountSwitch = new AccountSwitch(host, editor, dash, { add: () => accounts.add(), manage: () => accounts.manage() }, backend);

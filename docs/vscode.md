@@ -260,13 +260,13 @@ What it reads, all of it written by Claude Code itself: its list of running chat
 
 ## Development
 
-The extension is the `vscode/` folder of the [Talpy Den repository](https://github.com/wzaielamri/talpy-den), next to the Plasma and GNOME code; these run in that folder:
+The extension is the `vscode/` folder of the [Talpy Den repository](https://github.com/wzaielamri/talpy-den), next to the Plasma and GNOME code. It bundles `../core`, the folder with the code that does not use VS Code (the dashboard, the actions, the accounts, the notifications, Talpy Chat's logic), so edit there for those; these run in `vscode/`:
 
 ```sh
 npm ci
 npm run build          # dist/: the extension and the webview
-npm run check          # type-check both
-npm test               # unit tests, and the backend on made-up homes
+npm run check          # type-check the extension, its webview and ../core
+npm test               # unit tests (vscode/test and core/test), and the backend on made-up homes
 npm run watch          # rebuild on change; F5 in VS Code starts a test window
 node esbuild.mjs --harness   # dev pages: look at the view with demo data in a browser
 ```
