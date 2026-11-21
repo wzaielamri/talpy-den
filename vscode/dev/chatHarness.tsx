@@ -1,4 +1,4 @@
-// Feeds the chat tab's page made-up data, the way src/chatPane.ts would: the
+// Feeds the chat tab's page made-up data, the way core/src/chatPanes.ts would: the
 // chat, its conversation, and its review when the page asks for it.
 
 import "../webview/chat";

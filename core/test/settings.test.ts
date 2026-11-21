@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { cacheDir, configDirArgs, setReopenIn, setSshHosts, settings, useSettingsHost } from "../src/settings";
+import { cacheDir, chatFont, configDirArgs, setReopenIn, setSshHosts, settings, useSettingsHost } from "../src/settings";
 import { FakeHost } from "./fakeHost";
 
 const make = () => {
@@ -16,6 +16,19 @@ test("a setting changed through the host is read at once", () => {
   assert.equal(settings.notifyWaiting(), true);
   fake.set("notifyWaiting", false);
   assert.equal(settings.notifyWaiting(), false);
+});
+
+test("chatFont: the terminal's font, else the editor's; editor: the editor's; ui: the host's own", () => {
+  const fake = make();
+  assert.equal(chatFont(), "var(--vscode-editor-font-family, monospace)", "none set: the editor's, as the page names it");
+  fake.setOther("editor.fontFamily", "Fira Code");
+  assert.equal(chatFont(), "Fira Code");
+  fake.setOther("terminal.integrated.fontFamily", "Iosevka Term");
+  assert.equal(chatFont(), "Iosevka Term");
+  fake.set("chatFont", "editor");
+  assert.equal(chatFont(), "Fira Code");
+  fake.set("chatFont", "ui");
+  assert.equal(chatFont(), "");
 });
 
 test("configDirArgs reads the extra config dirs", () => {

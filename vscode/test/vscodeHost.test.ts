@@ -404,6 +404,24 @@ test("choose with localOnly keeps only this computer's files", async () => {
   assert.equal(await make().choose({ kind: "file", localOnly: true }), undefined);
 });
 
+test("state reads and writes the Memento it's given (the extension's globalState), by key; none: nothing is kept", async () => {
+  const kept = new Map<string, unknown>([["talpyDen.sideQuestions.pick", "haiku"]]);
+  const memento = {
+    keys: () => [...kept.keys()],
+    get: (key: string, fallback?: unknown) => (kept.has(key) ? kept.get(key) : fallback),
+    update: async (key: string, value: unknown) => void kept.set(key, value),
+  };
+  const host = new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys, memento as unknown as vscode.Memento);
+  assert.equal(host.state.get("talpyDen.sideQuestions.pick", ""), "haiku");
+  assert.equal(host.state.get<boolean | undefined>("talpyDen.sideQuestions.open", undefined), undefined);
+  await host.state.update("talpyDen.sideQuestions.open", true);
+  assert.equal(kept.get("talpyDen.sideQuestions.open"), true);
+  assert.equal(host.state.get("talpyDen.sideQuestions.open", false), true);
+  const none = make();
+  await none.state.update("talpyDen.sideQuestions.open", true);
+  assert.equal(none.state.get("talpyDen.sideQuestions.open", false), false);
+});
+
 test("log writes to the output channel", () => {
   const host = make();
   host.log.info("a");

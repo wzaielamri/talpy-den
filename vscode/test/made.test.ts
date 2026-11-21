@@ -5,8 +5,10 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
-import { ChatPanes } from "../src/chatPane";
+import { host } from "./useHost";
+import { ChatPanes } from "../../core/src/chatPanes";
+import { ChatSurfaces } from "../src/chatPane";
+import { VsCodeEditor } from "../src/vscodeEditor";
 import { demoState } from "../../core/src/shared/demo";
 import { findParts, madeAsk, madeLine, madeOf, madeSize, newBelow, showsOn, type PaneItem } from "../../core/src/shared/pane";
 import { recorded } from "./vscode-stub";
@@ -69,7 +71,8 @@ test("the tab gets a made file only if the conversation shows it: a picture as a
   };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }),
                  onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = new ChatPanes(host, backend as never, dash as never, new ChatSurfaces(vscode.Uri.file("/ext") as never, host, dash as never), {} as never,
+                          { find: async () => undefined } as never, new VsCodeEditor());
   const tick = () => new Promise((r) => setTimeout(r, 10));
   p.open({ chatId: "c-made", sessionId: "c-made", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;

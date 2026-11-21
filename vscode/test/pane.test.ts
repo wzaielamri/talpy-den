@@ -7,8 +7,13 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
-import { ChatPanes } from "../src/chatPane";
+import { host, manifest } from "./useHost";
+import { ChatPanes } from "../../core/src/chatPanes";
+import type { HostServices } from "../../core/src/host";
+import { ChatSurfaces } from "../src/chatPane";
+import { settingNames } from "../src/legacySettings";
+import { VsCodeEditor } from "../src/vscodeEditor";
+import { VsCodeHost } from "../src/vscodeHost";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
@@ -33,6 +38,13 @@ function waitingState(answer: "hook" | "keys" | ""): ViewState {
 // (without the --config-dir of the folders this test runs with)
 const own = (args: string[]) => (args.includes("--config-dir") ? args.slice(0, args.indexOf("--config-dir")) : args);
 
+// Talpy Chat as extension.ts makes it: the core's ChatPanes on VS Code's surfaces (the stub's panels), on a
+// VsCodeHost (useHost's: settings from stub.overrides, nothing kept), with no terminal running a chat
+function chatPanes(backend: unknown, dash: unknown, actions: unknown = {}, terminals: unknown = { find: async () => undefined }, on: HostServices = host) {
+  return new ChatPanes(on, backend as never, dash as never, new ChatSurfaces(vscode.Uri.file("/ext") as never, on, dash as never), actions as never,
+                       terminals as never, new VsCodeEditor());
+}
+
 function panes(state: ViewState, answers: Record<string, unknown> = {}) {
   const calls: string[][] = [];
   const backend = { pane: async (args: string[]) => (calls.push(own(args)), { ok: true, message: "Allowed", ...answers }) };
@@ -40,7 +52,7 @@ function panes(state: ViewState, answers: Record<string, unknown> = {}) {
   const opened: unknown[] = [];
   const actions = { open: async (c: unknown) => void opened.push(c), unqueue: async () => undefined };
   const terminals = { find: async () => undefined };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, actions as never, terminals as never, {} as never);
+  const p = chatPanes(backend, dash, actions, terminals);
   return { p, calls, opened };
 }
 
@@ -110,7 +122,7 @@ test("a long reply goes to pane.py in a file of its own, removed after", async (
     },
   };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, setActionError() {}, setActionInfo() {} };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   const long = "語".repeat(60000);
   assert.equal((await p.send(chatRefOf(row), long, "auto", false)).ok, true);
   assert.deepEqual(seen, [["file", 0o600, long]]);
@@ -382,9 +394,8 @@ test("Stop on the working line: where Talpy Chat reaches a chat at work (Plasma'
   assert.deepEqual(calls, [["--interrupt", row.sessionId, ...(row.profileDir ? ["--profile", row.profileDir] : [])]]);
   const typed: string[] = [];
   Object.assign(row, { kind: "interactive", tmux: false, entrypoint: "cli", pid: 4242 });
-  const here = new ChatPanes(vscode.Uri.file("/ext") as never, { pane: async () => assert.fail("not pane.py") } as never,
-    { state: () => state, refresh: async () => undefined, pollHost: async () => undefined } as never, {} as never,
-    { find: async () => ({ sendText: (t: string) => typed.push(t) }) } as never, {} as never);
+  const here = chatPanes({ pane: async () => assert.fail("not pane.py") }, { state: () => state, refresh: async () => undefined, pollHost: async () => undefined }, {},
+    { find: async () => ({ sendText: (t: string) => typed.push(t) }) });
   assert.deepEqual(await here.interrupt(chatRefOf(row)), { ok: true, message: "Interrupted (Ctrl+C in its terminal)" });
   assert.deepEqual(typed, ["\x03"]);
   row.state = "idle";
@@ -467,8 +478,7 @@ test("Show earlier goes up to the most a tab shows, then the tab says only the l
   const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true }
     : (limits.push(args[args.indexOf("--limit") + 1]), { ok: true, items: [], more: true, stamp: `s${limits.length}` })) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const tick = () => new Promise((r) => setTimeout(r, 10));
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
@@ -533,7 +543,7 @@ test("a picture pasted in a chat's tab is saved, an SSH host's chat gets a copy 
     putImage: async (host: string, path: string) => (saved.push(["put", host, path]), host === "down" ? { message: "no route" } : { path: "/cache-there/talpy-den/images/20261026-101500.png", message: "" }),
   };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   let tabs = 0;
   const tab = async (host: string, m: unknown) => {
     const chatId = `chat-${++tabs}`; // (a tab of its own)
@@ -560,8 +570,7 @@ test("a chat's tab shown again reads its conversation at once", async () => {
   let reads = 0;
   const backend = { pane: async (args: string[]) => (args[0] === "--conversation" && reads++, { ok: true, unchanged: true }) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: true };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open({ chatId: "shown-again", sessionId: "shown-again", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   try {
@@ -592,8 +601,7 @@ test("a chat's tab shown again waits on its transcript again, one watcher at a t
     return args.includes("--if-changed") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "10:1/120" };
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
   p.open(chatRefOf(demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0]));
   const panel = recorded.panels.at(-1)!;
@@ -636,8 +644,7 @@ test("a new chat's tab starts it with its first message, then goes on with it", 
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }),
                  onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false, setActionError() {}, setActionInfo() {} };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
   const group = { id: "g", title: "work · Team", chatProfile: ".claude-work" } as never;
   p.openNew(group, { path: "/home/me/repos/app", short: "~/repos/app" }, "Fix the tests");
@@ -689,8 +696,7 @@ test("a new chat on an SSH host starts there, and its tab goes on with it under 
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async (host?: string) => void polled.push(host ?? ""), pollHost: async (host: string) => void polled.push(host),
                  onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false,
                  setActionError() {}, setActionInfo() {} };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
   p.openNew({ id: "lab/g", title: "main", chatProfile: ".claude", host: "lab" } as never, { path: "/srv/app", short: "~/app" });
   const panel = recorded.panels.at(-1)!;
@@ -727,8 +733,7 @@ test("a chat's tab follows the chat Claude moved to the background under a new i
   const changed: (() => void)[] = [];
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined,
                  onState: (l: () => void) => (changed.push(l), { dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: true };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open({ chatId: old, sessionId: old, profileDir: row.profileDir, name: row.name } as never);
   const panel = recorded.panels.at(-1)!;
   try {
@@ -766,7 +771,7 @@ test("a message waiting its turn goes to the chat's new id when Claude moved it 
     },
   };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   const ref = { chatId: old, sessionId: old, profileDir: row.profileDir, name: row.name } as never;
   const one = p.send(ref, "one", "background", false);
   const two = p.send(ref, "two", "background", false);
@@ -823,7 +828,7 @@ test("the microphone: recorded, then written down; a missing model or setup is o
       : args[0] === "--stop" ? { ok: true, text: "Fix the parser" } : { ok: true, message: "" }),
   };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open({ chatId: "mic-1", sessionId: "mic-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const say = async (action: string) => {
@@ -901,7 +906,7 @@ test("what a page says it showed is taken only in its shape; the chat tab's answ
   const calls: string[][] = [];
   const backend = { pane: async (args: string[]) => (calls.push(own(args)), args[0] === "--conversation" ? { ok: true, unchanged: true } : { ok: true, message: "Allowed" }) };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, setActionError() {}, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
   const results = () => panel.sent.filter((m) => (m as { type: string }).type === "result");
@@ -956,8 +961,7 @@ test("messages to a chat go one at a time, in the order sent: one sent while the
   };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, setActionError() {}, setActionInfo() {},
                  onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { open: async () => undefined } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { open: async () => undefined });
   const tick = () => new Promise((r) => setTimeout(r, 10));
   const first = p.send(chatRefOf(row), "fix the parser", "auto", false);
   const second = p.send(chatRefOf(row), "and the tests", "auto", false); // (sent while the first is on its way)
@@ -1003,8 +1007,7 @@ test("a held message goes when its moment is up, also when its tab closed first;
     ? (sent.push(args[args.indexOf("--text") + 1]), { ok: true, how: "background", message: "Sent" }) : { ok: true, unchanged: true } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, setActionError() {},
                  onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
   panel.show(true);
@@ -1047,8 +1050,7 @@ test("an SSH host's chat is read every second just after you sent it something, 
     : (reads++, fresh ? { ok: true, items: [], more: false, stamp: "20:2/120" } : { ok: true, unchanged: true }) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined,
                  onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
@@ -1215,7 +1217,7 @@ test("the microphone: no second recorder while one starts; one still starting wh
     },
   };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   const tick = () => new Promise((r) => setTimeout(r, 10));
   const tab = (id: string) => {
     p.open({ chatId: id, sessionId: id, profileDir: ".claude", name: "x" } as never);
@@ -1276,8 +1278,8 @@ test("a tab closed while it reads its chat, or looks up its row, does nothing mo
     const terminals = { find: () => (lookUp ? new Promise((r) => (found = r)) : Promise.resolve(undefined)) };
     const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
     const warnings: string[] = [];
-    const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                            terminals as never, { warn: (m: string) => void warnings.push(m) } as never);
+    const log = { info() {}, warn: (m: string) => void warnings.push(m), error() {} } as unknown as vscode.LogOutputChannel;
+    const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, terminals, new VsCodeHost(log, settingNames(manifest)));
     const tick = () => new Promise((r) => setTimeout(r, 10));
 
     // closed while its conversation is read
@@ -1566,8 +1568,7 @@ test("Continue in a new chat opens a new chat in the same account and folder wit
   const backend = { pane: async (args: string[]) => (calls.push(args), args[0] === "--conversation" ? { ok: true, unchanged: true } : { ok: true }) };
   const state = demoState(NOW);
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: true };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const row = state.status!.groups[0].sessions[0];
   p.open(chatRefOf(row));
   const old = recorded.panels.at(-1)!;
@@ -1604,8 +1605,7 @@ test("a chat's tab asks what the chat did since you last looked: when it first r
       : { ok: true, items, more: false, stamp: "10:1/120", ...(args.includes("--away") ? { away } : {}) };
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open({ chatId: "looked", sessionId: "looked", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const tick = (ms = 10) => new Promise((r) => setTimeout(r, ms));
@@ -1736,7 +1736,7 @@ test("a bookmark is written by pane.py --bookmark, a host's chat's with --host (
       : { ok: true, message: "", bookmarks: args.includes("--off") ? [] : [{ key: args[3], kind: "claude", at: 5, text: "Done", made: 6 }], bookmarksV: ++v };
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open({ chatId: "mark-1", sessionId: "mark-1", profileDir: ".claude-work", name: "x", host: "lab" } as never);
   const panel = recorded.panels.at(-1)!;
   const answers = () => panel.sent.filter((m) => (m as { type: string }).type === "bookmarks");
@@ -1777,8 +1777,7 @@ test("a bookmark further back than what's shown: the next read has --reach, and 
   };
   const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : (reads.push(own(args)), answer(args))) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open({ chatId: "reach-1", sessionId: "reach-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const tick = () => new Promise((r) => setTimeout(r, 10));
@@ -1866,8 +1865,7 @@ test("Esc does the nearest thing first, one thing a press: Stop only once nothin
 
 test("a key's command goes to the chat tab in front, and only to it", async () => {
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, { pane: async () => ({ ok: true, unchanged: true }) } as never, dash as never, {} as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes({ pane: async () => ({ ok: true, unchanged: true }) }, dash);
   p.open({ chatId: "k-1", sessionId: "k-1", profileDir: ".claude", name: "one" } as never);
   const one = recorded.panels.at(-1)!;
   p.open({ chatId: "k-2", sessionId: "k-2", profileDir: ".claude", name: "two" } as never);
@@ -1894,7 +1892,7 @@ test("Copy copies all of it: a reply shown cut is read whole first, and Copied i
   const calls: string[][] = [];
   const backend = { pane: async (args: string[]) => (calls.push(own(args)), args[0] === "--reply-text" ? answers : { ok: true, unchanged: true }) };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open({ chatId: "copy-1", sessionId: "copy-1", profileDir: ".claude-work", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const copied = () => panel.sent.filter((m) => (m as { type: string }).type === "copied");
@@ -2192,7 +2190,7 @@ test("Ask from here: --part read where the chat is (a host's with --host), a que
     return { ok: true, message: "", side: answer, sides: [answer], sidesV: 3 };
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open({ chatId: "from-1", sessionId: "from-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const sides = () => panel.sent.filter((m) => (m as { type: string }).type === "side") as Record<string, unknown>[];
@@ -2247,7 +2245,7 @@ test("a side question goes to pane.py --side-question (a host's with --host, in 
     return { ok: true, message: "", side: { ...item(q), junk: 1 }, sides: [item(q), { bad: 1 }], sidesV: ++v, extra: "x" };
   } };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, {} as never, { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash);
   p.open({ chatId: "side-1", sessionId: "side-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   const answers = () => panel.sent.filter((m) => (m as { type: string }).type === "side") as { kind: string; id: number; ok: boolean; message: string }[];
@@ -2282,14 +2280,16 @@ test("a side question goes to pane.py --side-question (a host's with --host, in 
 
 test("the side questions panel's pick and whether it's open are kept for every Talpy Chat; a chat's list comes with its conversation, only as what it can be", async () => {
   const kept = new Map<string, unknown>();
-  const memory = { get: (k: string) => kept.get(k), update: async (k: string, v: unknown) => void kept.set(k, v), keys: () => [...kept.keys()] };
+  const memory = { get: (k: string, fallback?: unknown) => (kept.has(k) ? kept.get(k) : fallback), update: async (k: string, v: unknown) => void kept.set(k, v),
+                   keys: () => [...kept.keys()] };
   const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true }
     : { ok: true, items: [], more: false, stamp: "s1", sides: [{ id: "0123456789ab", q: "Q", at: 5, pending: true, junk: 1 }, "x"], sidesV: 7 }) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
-  assert.deepEqual(p.sidePrefs(), { open: false, pick: "" });   // (nowhere to keep them: closed, the chat's own model)
-  p.memory = memory as never;
+  assert.deepEqual(chatPanes(backend, dash).sidePrefs(), { open: false, pick: "" });   // (nowhere to keep them: closed, the chat's own model)
+  // (kept in the extension's globalState, as its host's state)
+  const quiet = { info() {}, warn() {}, error() {} } as unknown as vscode.LogOutputChannel;
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, undefined, new VsCodeHost(quiet, settingNames(manifest), memory as never));
+  assert.deepEqual(p.sidePrefs(), { open: false, pick: "" });   // (nothing kept yet)
   p.open({ chatId: "pref-1", sessionId: "pref-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
   panel.receive({ type: "sidePrefs", open: true });
@@ -2297,6 +2297,7 @@ test("the side questions panel's pick and whether it's open are kept for every T
   panel.receive({ type: "sidePrefs", open: "yes", pick: "opus" });   // (neither is one: nothing kept)
   await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual(p.sidePrefs(), { open: true, pick: "haiku" });
+  assert.deepEqual([...kept], [["talpyDen.sideQuestions.open", true], ["talpyDen.sideQuestions.pick", "haiku"]], "by the keys they always had");
   // the next tab starts with them
   p.open({ chatId: "pref-2", sessionId: "pref-2", profileDir: ".claude", name: "y" } as never);
   const next = recorded.panels.at(-1)! as unknown as { webview: { html: string }; receive(m: unknown): void; sent: unknown[] };
@@ -2340,8 +2341,7 @@ test("opening a chat puts the cursor in its reply box, also when its tab is brou
   const row = demoState(NOW).status!.groups.flatMap((g) => g.sessions)[0];
   const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "s1" }) };
   const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   const tick = () => new Promise((r) => setTimeout(r, 10));
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
@@ -2366,8 +2366,7 @@ test("a chat that asks you something opens with the cursor out of its box: typin
   const row = state.status!.groups.flatMap((g) => g.sessions).find((x) => x.state === "waiting")!;
   const backend = { pane: async (args: string[]) => (args.includes("--wait") ? { ok: true, unchanged: true } : { ok: true, items: [], more: false, stamp: "s1" }) };
   const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
-  const p = new ChatPanes(vscode.Uri.file("/ext") as never, backend as never, dash as never, { canMoveToClaudeCode: () => false } as never,
-                          { find: async () => undefined } as never, {} as never);
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
   p.open(chatRefOf(row));
   const panel = recorded.panels.at(-1)!;
   panel.show(true);

@@ -20,8 +20,9 @@ export class VsCodeHost implements HostServices {
   private subscriptions: vscode.Disposable[];
 
   // settingKeys: the talpyDen.* settings the extension declares (without the prefix). VS Code says only whether
-  // a section changed, so these are asked one by one which of them did
-  constructor(private readonly output: vscode.LogOutputChannel, private readonly settingKeys: readonly string[]) {
+  // a section changed, so these are asked one by one which of them did. kept: where state is kept (the
+  // extension's globalState); none (a test's): nothing is, each value reads as its fallback
+  constructor(private readonly output: vscode.LogOutputChannel, private readonly settingKeys: readonly string[], private readonly kept?: vscode.Memento) {
     this.subscriptions = [
       vscode.workspace.onDidChangeConfiguration((e) => {
         const keys = this.settingKeys.filter((k) => e.affectsConfiguration(`talpyDen.${k}`));
@@ -182,6 +183,13 @@ export class VsCodeHost implements HostServices {
   }
 
   readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
+
+  readonly state = {
+    get: <T>(key: string, fallback: T): T => (this.kept ? this.kept.get<T>(key, fallback) : fallback),
+    update: async (key: string, value: unknown): Promise<void> => {
+      await this.kept?.update(key, value);
+    },
+  };
 
   get environment(): { readonly remoteName?: string; readonly remoteAuthority?: string; readonly web: boolean; readonly sessionId: string } {
     return {

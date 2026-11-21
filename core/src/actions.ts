@@ -117,8 +117,9 @@ export function typedFolder(typed: string, home: string | null): string | null {
 }
 
 // The folders this window has open on that machine, with each one's path there: this computer's (no host) in a
-// window of its own, a host's or a container's in a Remote-SSH or Dev Containers window on it (currentHost)
-function windowFolders(open: readonly WindowFolder[], host: string | undefined, currentHost: string | undefined): WindowFolder[] {
+// window of its own, a host's or a container's in a Remote-SSH or Dev Containers window on it (currentHost);
+// also the empty Talpy Chat view's "New chat in <folder>" (chatPane.ts)
+export function windowFolders(open: readonly WindowFolder[], host: string | undefined, currentHost: string | undefined): WindowFolder[] {
   if (!host) return open.filter((f) => !f.remote);
   return host === currentHost ? open.filter((f) => f.remote) : [];
 }

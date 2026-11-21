@@ -12,6 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { noLinks } from "../../core/src/notify";
+import { chatFont } from "../../core/src/settings";
 import { textScale } from "../../core/src/shared/pane";
 
 let extensionUri: vscode.Uri | undefined;
@@ -137,18 +138,7 @@ class DocView {
   }
 }
 
-// The conversation's font (talpyDen.chatFont): the terminal's, as Claude's
-// terminal shows a chat (terminal.integrated.fontFamily, which falls back to
-// the editor's), the editor's, or "" (VS Code's own); the chat tab's and this page's
-export function chatFont(): string {
-  const which = vscode.workspace.getConfiguration("talpyDen").get("chatFont");
-  if (which === "ui") return "";
-  const editor = vscode.workspace.getConfiguration("editor").get<string>("fontFamily") || "var(--vscode-editor-font-family, monospace)";
-  const terminal = which === "editor" ? "" : vscode.workspace.getConfiguration("terminal.integrated").get<string>("fontFamily") || "";
-  return terminal || editor;
-}
-
-// The chat tab's text size and font
+// The chat tab's text size and font (core's chatFont: the conversation's font, as Talpy Chat's)
 function look(): { scale: number; font: string } {
   return { scale: textScale(vscode.workspace.getConfiguration("talpyDen").get("chatTextScale")), font: chatFont() };
 }

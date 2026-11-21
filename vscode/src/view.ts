@@ -6,7 +6,7 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 import type { Actions } from "../../core/src/actions";
 import { AGENT_ID } from "../../core/src/agentRun";
-import type { ChatPanes } from "./chatPane";
+import type { ChatPanes } from "../../core/src/chatPanes";
 import { setReopenIn, settings } from "../../core/src/settings";
 import type { Dashboard } from "../../core/src/dashboard";
 import { badgeOf, findChatRef, findMemory, findPlan, findProjectMemory, findProjectPlan, goOnAt, keptChat, machineStatus, nextBest, shareAccounts } from "../../core/src/shared/model";

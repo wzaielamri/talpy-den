@@ -10,7 +10,8 @@ import { AccountSwitch } from "../../core/src/accountSwitch";
 import { Actions } from "../../core/src/actions";
 import { Backend } from "../../core/src/agents/claudeCode/backend";
 import { openChangesLink } from "./changes";
-import { CHAT_KEYS, ChatPanes } from "./chatPane";
+import { CHAT_KEYS, ChatSurfaces } from "./chatPane";
+import { ChatPanes } from "../../core/src/chatPanes";
 import { dictationModels } from "../../core/src/dictation";
 import { answerPermissionsHere, liveModeHere } from "../../core/src/relay";
 import { configDirArgs, extraConfigDirs, settings, useSettingsHost } from "../../core/src/settings";
@@ -50,7 +51,8 @@ async function carryOverOldSettings(context: vscode.ExtensionContext, log: vscod
 
 export function activate(context: vscode.ExtensionContext): void {
   const log = vscode.window.createOutputChannel("Talpy Den", { log: true });
-  const host = new VsCodeHost(log, settingNames(context.extension.packageJSON));
+  // (its state: the extension's globalState, for every window)
+  const host = new VsCodeHost(log, settingNames(context.extension.packageJSON), context.globalState);
   context.subscriptions.push(host);
   useSettingsHost(host); // (before anything reads a setting)
   void carryOverOldSettings(context, log);
@@ -122,10 +124,11 @@ export function activate(context: vscode.ExtensionContext): void {
   planFolders();
   context.subscriptions.push(vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("talpyDen.extraConfigDirs") && planFolders()));
   context.subscriptions.push(dash.onState(() => planFolders()));
-  // each chat's tab: its conversation, a reply box, what it asks, its review
-  const panes = new ChatPanes(context.extensionUri, backend, dash, actions, terminals, log);
-  panes.memory = context.globalState; // (the side questions panel's pick and whether it's open, kept)
-  context.subscriptions.push(panes.sideBar()); // (Talpy Chat's view in the secondary side bar: talpyDen.chatPlace)
+  // each chat's tab: its conversation, a reply box, what it asks, its review (the side questions panel's pick
+  // and whether it's open kept in the host's state)
+  const surfaces = new ChatSurfaces(context.extensionUri, host, dash);
+  const panes = new ChatPanes(host, backend, dash, surfaces, actions, terminals, editor);
+  context.subscriptions.push(surfaces.sideBar()); // (Talpy Chat's view in the secondary side bar: talpyDen.chatPlace)
   view.panes = panes;
   notifier.panes = panes;
   // Another program asked that a chat be brought up (jump.py --job: Talpy Den Display's tap) and no Plasma widget

@@ -1,10 +1,11 @@
 // What only one host can do, asked for through a port of its own (the rest goes through HostServices):
 // terminals, VS Code's own UI (its changes view, Talpy Den's doc tab, an editor tab, the plan review,
-// Claude Code's panel) and Talpy Chat's panes. Each has exactly the members the core calls; paths cross
-// as plain strings, never as a host's own types.
+// Claude Code's panel), Talpy Chat's panes (as the rest of the core uses them) and the surfaces they show
+// in. Each has exactly the members the core calls; paths cross as plain strings, never as a host's own types.
 
 import type { Comparison } from "./comparisons";
 import type { Event } from "./events";
+import type { PaneHostMessage, PaneMessage, SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem } from "./shared/types";
 import type { Place } from "./terminal";
 
@@ -71,7 +72,7 @@ export interface EditorPort {
   openPanelChat(prompt?: string): Promise<void>;
 }
 
-// Talpy Chat's panes, as notify.ts and actions.ts use them (VS Code: chatPane.ts ChatPanes)
+// Talpy Chat's panes, as notify.ts and actions.ts use them (chatPanes.ts ChatPanes)
 export interface ChatPanesPort {
   // The chat's pane, opened or brought up (notify's handle, askQuestions, told and openChat; actions' open and nextChat)
   open(chat: ChatRef, tab?: "chat" | "review"): void;
@@ -84,4 +85,44 @@ export interface ChatPanesPort {
   reply(chat: ChatRef, text: string): Promise<{ ok: boolean; message: string }>;
   // The chat's pane, open with text as its unsent reply (notify's notSent: a reply that didn't go)
   draft(chat: ChatRef, text: string): void;
+}
+
+// What a chat's page starts with (webview/chat.tsx's window.CLAUDE_CHAT, in this order): the tab it shows
+// first, whether its chat is this computer's (local), its text size, side by side changes, font and
+// suggested replies as the settings say, the side questions panel as kept (open, its pick), and whether
+// it's a new chat (fresh)
+export interface ChatPage {
+  tab: "chat" | "review";
+  local: boolean;
+  scale: number;
+  split: boolean;
+  font: string;
+  suggest: boolean;
+  side: { open: boolean; pick: SidePick };
+  fresh: boolean;
+}
+
+// One chat's page, where the host shows it (VS Code: an editor tab, or Talpy Chat's view in the side bar)
+export interface PaneSurface {
+  post(message: PaneHostMessage): void; // (ChatPanes posts nothing once it's closed)
+  reveal(): void; // brought to the front
+  readonly visible: boolean; // on screen (a hidden one's conversation isn't read)
+  readonly active: boolean; // in front, with the focus: Talpy Chat's keys go to it (ChatPanes.key)
+  title: string; // the chat's name, where the host shows one
+  // The address the page loads one of this computer's files at (the pictures in your messages, shown small)
+  resourceUri(path: string): string;
+  readonly onDidReceive: Event<PaneMessage>; // what the page says (as it says it: each is checked before use)
+  readonly onDidChangeView: Event<void>; // shown or hidden, or brought to the front or not (visible, active)
+  readonly onDidDispose: Event<void>; // closed: by you, by the host (another chat takes its place), or dispose()
+  dispose(): void;
+}
+
+// Where Talpy Chat's chats show (VS Code: chatPane.ts ChatSurfaces; an app: its windows)
+export interface PaneSurfaces {
+  // A chat's surface, its page loaded with page; key: the chat's "<host>|<chat id>" as it opens; title: its name
+  open(key: string, title: string, page: ChatPage): PaneSurface;
+  // Before a chat opens (ChatPanes' open and openNew): true when the host makes the place it shows in first
+  // (VS Code: Talpy Chat's view in the side bar, made once it's shown), run going again once it has; false:
+  // open it now
+  openLater(run: () => void): boolean;
 }

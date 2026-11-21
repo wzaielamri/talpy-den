@@ -102,6 +102,9 @@ export interface HostServices {
   reloadWindow(): Promise<void>;
   workspaceFolders(): readonly WindowFolder[];
   readonly onDidChangeWorkspaceFolders: Event<void>;
+  // Values kept for every window, over restarts, by key (VS Code: the extension's globalState); chatPanes keeps
+  // the side questions panel's pick and whether it's open. get: the value kept, else fallback
+  readonly state: { get<T>(key: string, fallback: T): T; update(key: string, value: unknown): Promise<void> };
   // remoteAuthority: the remote the window has open ("ssh-remote+lab", "dev-container+…"), as it is at
   // each read (dashboard: which host or container the window is on); sessionId: this window's own id, new
   // each time it starts (VS Code's env.sessionId; dashboard: the name its host watchers go by, watchName)

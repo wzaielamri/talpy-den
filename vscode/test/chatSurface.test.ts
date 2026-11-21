@@ -5,8 +5,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
-import "./useHost";
-import { ChatPanes } from "../src/chatPane";
+import { host } from "./useHost";
+import { ChatPanes } from "../../core/src/chatPanes";
+import { ChatSurfaces } from "../src/chatPane";
+import { VsCodeEditor } from "../src/vscodeEditor";
 import { emptyHtml, emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf } from "../../core/src/shared/model";
@@ -113,9 +115,10 @@ test("a chat opens in Talpy Chat's view in the side bar, one at a time; with Cha
     opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, setActionError() {}, setActionInfo() {},
     onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }),
   };
-  const panes = new ChatPanes(vscode.Uri.file("/ext") as never, { pane: async () => ({ ok: true, message: "" }) } as never, dash as never,
-                              {} as never, { find: async () => undefined } as never, {} as never);
-  const side = panes.sideBar();
+  const surfaces = new ChatSurfaces(vscode.Uri.file("/ext") as never, host, dash as never);
+  const panes = new ChatPanes(host, { pane: async () => ({ ok: true, message: "" }) } as never, dash as never, surfaces, {} as never,
+                              { find: async () => undefined } as never, new VsCodeEditor());
+  const side = surfaces.sideBar();
   const provider = recorded.viewProviders.get("talpyDen.chatView") as { resolveWebviewView(view: unknown): void };
   assert.ok(provider, "its view has a provider");
   const tabs = () => recorded.panels.length;

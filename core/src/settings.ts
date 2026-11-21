@@ -80,6 +80,19 @@ export const settings = {
   newChatMode: () => (cfg().get<string>("newChatMode", "") ?? "").trim(),
 };
 
+// The conversation's font (talpyDen.chatFont), as a CSS font-family: the terminal's, as Claude's terminal
+// shows a chat (terminal.integrated.fontFamily, which falls back to the editor's), the editor's, or "" (the
+// host's own); Talpy Chat's and the doc tab's
+export function chatFont(): string {
+  const which = cfg().get<string>("chatFont", "terminal");
+  if (which === "ui") return "";
+  const editor = cfg().other<string>("editor", "fontFamily", "") || "var(--vscode-editor-font-family, monospace)";
+  const terminal = which === "editor" ? "" : cfg().other<string>("terminal.integrated", "fontFamily", "") || "";
+  return terminal || editor;
+}
+// (the other settings it reads: a change to one is a new font, as a change to talpyDen.chatFont is)
+export const CHAT_FONT_KEYS = ["terminal.integrated.fontFamily", "editor.fontFamily"] as const;
+
 // claude's options for the model, effort and permission mode new chats start with (New Chat… picks them)
 export function chatOptionArgs(): string[] {
   const model = settings.newChatModel();

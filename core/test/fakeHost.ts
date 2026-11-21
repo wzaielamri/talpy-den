@@ -99,6 +99,7 @@ export class FakeHost implements HostServices {
   others = new Map<string, unknown>(); // "section.key" -> value
   clip = "";
   folders: WindowFolder[] = [];
+  kept = new Map<string, unknown>(); // what state keeps, by key
   environment: { remoteName?: string; remoteAuthority?: string; web: boolean; sessionId: string } = { web: false, sessionId: "fake-window" };
 
   private settingsChanged = new Emitter<string[]>();
@@ -250,6 +251,11 @@ export class FakeHost implements HostServices {
   }
 
   readonly onDidChangeWorkspaceFolders = this.foldersChanged.event;
+
+  readonly state = {
+    get: <T>(key: string, fallback: T) => (this.kept.has(key) ? (this.kept.get(key) as T) : fallback),
+    update: async (key: string, value: unknown) => void this.kept.set(key, value),
+  };
 
   readonly log = {
     info: (m: string) => void this.recorded.logs.push(`info ${m}`),

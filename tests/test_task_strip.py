@@ -109,7 +109,7 @@ class VsCodeStripTests(unittest.TestCase):
         return CHAT[CHAT.index("function TaskStrip("):CHAT.index("function gapOf(")]
 
     def test_the_tab_gets_the_rows_tasks(self):
-        pane_ts = (ROOT / "vscode/src/chatPane.ts").read_text()
+        pane_ts = (ROOT / "core/src/chatPanes.ts").read_text()   # (Talpy Chat's logic, in the core)
         self.assertIn("tasks: session?.tasks && session.tasks.total > 0 ? session.tasks : null", pane_ts)
         self.assertIn('tasks: Session["tasks"];', (ROOT / "core/src/shared/pane.ts").read_text())
 
@@ -154,7 +154,7 @@ class VsCodeStripTests(unittest.TestCase):
         self.assertNotIn('from "../env"', tree)          # (the chat tab has its own way back)
         self.assertNotIn("uiState", tree)
         self.assertIn("onOpenRun", tree)
-        pane_ts = (ROOT / "vscode/src/chatPane.ts").read_text()
+        pane_ts = (ROOT / "core/src/chatPanes.ts").read_text()   # (Talpy Chat's logic, in the core)
         self.assertIn('case "openAgentRun":', pane_ts)
         self.assertIn("AGENT_ID.test(m.agentId)", pane_ts)
 

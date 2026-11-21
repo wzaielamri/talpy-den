@@ -187,7 +187,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   `interactive` for ending a chat.
   - Used in: talpy_den.py SESSION_KINDS, live_row, find_chat_live, live_background, end_for_handover,
     background_work, wake_settle; chatpick.py set_now; core/src/shared/model.ts canEndChat, core/src/shared/pane.ts
-    chatWhere, replyAnswers, vscode/src/chatPane.ts windowTerminal, core/src/actions.ts stop; SessionRow.qml, ChatPane.qml,
+    chatWhere, replyAnswers, core/src/chatPanes.ts windowTerminal, core/src/actions.ts stop; SessionRow.qml, ChatPane.qml,
     main.qml; gnome/extension/ui/sessionRow.js, logic.js openHint.
   - Check: with a throwaway background chat running and `claude attach $SHORT` open,
     `jq -c '{kind,spare,parkedJobId,jobId}' $C/sessions/*.json; has parkedJobId`.
@@ -204,7 +204,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   find or type into, opens through the extension's link, can be stopped (its tab survives), can't be moved to
   the panel, isn't ended by a go-on or hand-over, and is tagged "Claude Code panel".
   - Used in: talpy_den.py reply_route, stop_chat, end_for_handover, background_work, kept_step, live_row,
-    add_remote_commands; core/src/actions.ts open, openSystem, stop, sendPlanFeedback; vscode/src/chatPane.ts
+    add_remote_commands; core/src/actions.ts open, openSystem, stop, sendPlanFeedback; core/src/chatPanes.ts
     windowTerminal; core/src/shared/pane.ts chatWhere; core/src/shared/model.ts canMoveToClaudeCode, handoverTarget, goOnAt;
     core/src/accountSwitch.ts switchTo; main.qml, SessionRow.qml, ChatPane.qml; gnome/extension/logic.js openHint,
     stopTip, stopQuestion, indicator.js remoteShow.
@@ -223,7 +223,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   message then).
   - Used in: jump.py jump, find_session, jump_job, jump_terminal, tmux_client_pids, tmux_pane_of; pane.py
     send_now, type_in, tmux_base; talpy_den.py live_row, reply_route, interrupt_chat, tmux_socket,
-    interrupt_background, find_chat_live; core/src/shared/pane.ts chatWhere, stopOf, chatPane.ts
+    interrupt_background, find_chat_live; core/src/shared/pane.ts chatWhere, stopOf, core/src/chatPanes.ts
     windowTerminal; ChatPane.qml where, canStop; SessionRow.qml bgInterrupt.
   - Check: in a throwaway chat inside tmux, compare `jq .tmux $C/sessions/<pid>.json` with
     `tmux display -p '#{session_name}:#{window_id}.#{pane_id}'`. Then read
@@ -869,7 +869,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   only while the chat works. The transcript notes `[Request interrupted`. VS Code terminals run the chat as
   `trap : INT; <command>; exec $SHELL`, so the shell stays after Claude exits.
   - Used in: talpy_den.py interrupt_chat, interrupt_chat_by_id; jump.py interrupt; pane.py interrupt;
-    core/src/actions.ts stop; vscode/src/chatPane.ts interrupt, terminals.ts run.
+    core/src/actions.ts stop; core/src/chatPanes.ts interrupt; vscode/src/terminals.ts run.
   - Check: in a throwaway chat in tmux, ask 'run: for i in $(seq 100); do sleep 1; done'. Then
     `tmux send-keys -t <pane> C-c`, `grep -c '\[Request interrupted' "$T"`, and
     `tmux display -pt <pane> '#{pane_current_command}'` should still say claude.
@@ -883,7 +883,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   Claude's prompt takes the paste as one message and runs no keys; type-in leaves out the Enter. While a
   dialog shows, typed text would answer the dialog, so Talpy Den refuses then.
   - Used in: pane.py tmux_type, as_typed, send_now, type_in, answer_with_keys; jump.py tmux_paste;
-    core/src/terminal.ts asPaste, actions.ts sendPlanFeedback; vscode/src/chatPane.ts sendNow, typeIn.
+    core/src/terminal.ts asPaste, actions.ts sendPlanFeedback, chatPanes.ts sendNow, typeIn.
   - Check: in a throwaway chat in tmux,
     `tmux send-keys -t <pane> -l $'\e[200~line 1\nline 2\e[201~'; sleep 0.3; tmux send-keys -t <pane> Enter`.
     The transcript's last prompt should hold both lines as one message.
@@ -1292,7 +1292,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   chat, which must not be ended (pane.py gets `--session <id>`). Stars, hides, Keep going and bookmarks follow
   the chat.
   - Used in: talpy_den.py LinkCache.moved_from, LinkCache.copied, chat_moves, moved_chat, continuation,
-    follow_moved, note_moved, go_on_with, list_kept, look_after_kept, bookmarks_moved; vscode/src/chatPane.ts
+    follow_moved, note_moved, go_on_with, list_kept, look_after_kept, bookmarks_moved; core/src/chatPanes.ts
     findPaneRow, ChatPanes.open, sendNow, typeIn; core/src/shared/model.ts handoverTarget, goOnAt; main.qml,
     ChatPane.qml.
   - Check: in a throwaway terminal chat, send one prompt and close the terminal window.
@@ -2235,7 +2235,7 @@ main="$ext/$(jq -r .main "$ext/package.json")"
   this prefix.
   - Used in: jump.py CLAUDE_CODE_LINK, VSCODE_NEW_CHAT, link_query, vscode_chat_link, vscode_task_link,
     jump_vscode, open_in_vscode, open_vscode_link, VSCODE_LINK_MAX; pane.py vscode_prompt_link,
-    host_vscode_link; core/src/actions.ts CHAT_LINK; vscode/src/chatPane.ts sendNow, typeIn; main.qml openVscodeLink.
+    host_vscode_link; core/src/actions.ts CHAT_LINK; core/src/chatPanes.ts sendNow, typeIn; main.qml openVscodeLink.
   - Check: `grep -c registerUriHandler "$main"; grep -oE 'get\("(session|prompt)"\)' "$main" | sort -u`. Then
     `code --open-url 'vscode://anthropic.claude-code/open?prompt=a%2526b%252Bc'`: the input should read
     `a&b+c` and not be sent. With `session=<id of a throwaway panel chat>`, its tab should come up, and a
@@ -2774,7 +2774,7 @@ item above holds there too. Run the quick reads against that Claude (`ssh HOST`,
 - [ ] **File mentions.** `@path`, or `@"path with spaces"` quoted, attaches a file. Dropped and completed
   files are put in that way.
   - Used in: core/src/shared/pane.ts fileMention, suggestFor; vscode/webview/chat.tsx;
-    vscode/src/chatPane.ts.
+    core/src/chatPanes.ts.
   - Check: `d=$(mktemp -d); echo 'the word is plum' > "$d/a b.txt"`. In a throwaway chat in `$d`, send
     `What word is in @"a b.txt"?`. It should answer plum without searching.
   - Breaks: dropped files with spaces aren't attached, and Claude sees the raw text.

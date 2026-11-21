@@ -1,4 +1,4 @@
-// The chat tab (src/chatPane.ts, webview/chat.tsx): one chat's conversation
+// The chat tab (core/src/chatPanes.ts, webview/chat.tsx): one chat's conversation
 // as the widget's pane.py reads it, a box to reply, what it asks while it
 // waits for a permission, and its review (what it changed, Undo, Commit,
 // Mark reviewed). Shared by the extension and the tab's page.

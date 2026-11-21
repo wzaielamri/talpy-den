@@ -72,14 +72,6 @@ export class ViewSurface implements vscode.WebviewPanel {
   }
 }
 
-// The folders this window has open on that machine, with each one's path there: this computer's (no host) in a
-// window of its own, a host's or a container's in a Remote-SSH or Dev Containers window on it (currentHost)
-export function windowFolders(host: string | undefined, currentHost: string | undefined): { folder: vscode.WorkspaceFolder; path: string }[] {
-  const open = vscode.workspace.workspaceFolders ?? [];
-  if (!host) return open.filter((f) => f.uri.scheme === "file").map((folder) => ({ folder, path: folder.uri.fsPath }));
-  return host === currentHost ? open.filter((f) => f.uri.scheme !== "file").map((folder) => ({ folder, path: folder.uri.path })) : [];
-}
-
 // The command the empty view's "New chat in <folder>" runs (a folder this window has open, by its URI)
 export const NEW_CHAT_HERE = "talpyDen.newChatHere";
 
