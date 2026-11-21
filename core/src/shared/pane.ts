@@ -278,7 +278,7 @@ export interface PaneChat {
   reviewPending: boolean;
   reviewed: boolean; // its changes since its last edit marked reviewed, whether it works now or not (the Reviewed ✓ button)
   review: Review | null;
-  queued: { id: string; prompt: string; error: string } | null; // a reply waiting for its turn to end
+  queued: { id: string; prompt: string; error: string; untilIdle?: string } | null; // a reply waiting for its turn to end (untilIdle: for its chat to be idle, why)
   canMove: boolean; // runs in a terminal, on the account Claude Code is on: it can move to a Claude Code panel
   where: ChatWhere;
   terminalApp: string; // the terminal it runs in, by name (Konsole, kitty…), or ""

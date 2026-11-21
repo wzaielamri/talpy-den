@@ -749,18 +749,29 @@ export class Dashboard implements Disposable {
       shared ??= shareUsage(status, this.shownHosts().map((name) => this.hosts.get(name)).filter((h): h is HostState => !!h), settings.sshUsage());
       return (host ? shared.hosts.find((h) => h.name === host)?.result?.groups : shared.status?.groups) ?? groupsOf(host);
     };
+    const firsts = new Set<string>();
     for (const t of status.queue ?? []) {
       if (t.afterTurn) {
+        // (only the first reply a chat has in the queue, a pass: they go in their order, one put
+        // back where it was before one queued meanwhile)
+        const chatKey = `${t.host || ""}|${t.chat}`;
+        if (firsts.has(chatKey)) continue;
+        firsts.add(chatKey);
         // a reply for when the chat's turn ends: now it has, though what it runs in
         // the background may go on (or the chat isn't listed: afterTurnWaits); a host
         // not heard from yet, or whose last check failed, waits
         const h = t.host ? this.hosts.get(t.host) : undefined;
         if (t.host && (!h?.result || h.error)) continue;
+        // (put back as its turn ran after all: a host's goes again once a check of it asked after
+        // that has answered, not on the row it was sent by, an ssh run each pass till then)
+        const held = this.heldBack.get(t.id);
+        if (held !== undefined && t.host && (this.hostAnswered.get(t.host) ?? 0) <= held) continue;
+        this.heldBack.delete(t.id);
         // (the chat's row on the task's account first, as the widget's listedRow)
         const rows = groupsOf(t.host || "").flatMap((g) =>
           g.sessions.filter((s) => s.chatId === t.chat || s.sessionId === t.chat).map((s) => ({ s, own: (g.profileKeys ?? []).includes(t.profile) })));
         const row = (rows.find((r) => r.own) ?? rows[0])?.s;
-        if (t.error || this.starting.has(t.id) || afterTurnWaits(row)) continue;
+        if (t.error || this.starting.has(t.id) || afterTurnWaits(row, !!t.untilIdle)) continue;
         if (t.startAt > Date.now()) continue; // (it waits for a usage limit to reset, as below)
       } else if (!t.due || this.starting.has(t.id)) continue;
       // (a reply too: on an account at its usage limit it would stop at once)
@@ -784,17 +795,20 @@ export class Dashboard implements Disposable {
   }
 
   private starting = new Set<string>();
+  private heldBack = new Map<string, number>(); // a reply put back as its chat's turn ran after all -> when
 
   // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so;
   // a reply for when a turn ends goes as it is, and never ends what the chat runs in the background).
-  // A reply whose chat's turn goes on after all is back in the queue as it was: its answer's message
-  // is empty, nothing to say (jump.py start_queued)
+  // A reply whose chat's turn goes on after all is back in the queue where it was ("turnRuns"; one
+  // that waits for its chat to be idle, "untilIdle", too): its answer's message is empty, nothing to
+  // say (jump.py start_queued); a host's waits for the host's next answer (startDueTasks)
   async startQueued(t: QueuedTask, now = false): Promise<void> {
     if (this.starting.has(t.id)) return;
     this.starting.add(t.id);
     this.emit();
     try {
       const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...(now ? ["--now"] : []), ...configDirArgs()], 120000);
+      if (t.afterTurn && t.host && (answer.turnRuns || answer.untilIdle)) this.heldBack.set(t.id, Date.now());
       const what = queuedWhat(t, machineStatus(this.state(), t.host)).split("\n")[0];
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended

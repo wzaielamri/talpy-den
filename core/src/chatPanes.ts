@@ -652,7 +652,7 @@ class Pane implements Disposable {
       reviewPending: item ? reviewPending(item, state.status, this.host || undefined) : false,
       reviewed: item ? reviewSeen(item, state.status, this.host || undefined) : true,
       review: session?.review ?? recent?.review ?? null,
-      queued: queued ? { id: queued.id, prompt: queued.prompt, error: queued.error } : null,
+      queued: queued ? { id: queued.id, prompt: queued.prompt, error: queued.error, untilIdle: queued.untilIdle ?? "" } : null,
       canMove: !!session && this.owner.ext.actions.canMoveToClaudeCode(this.chat),
       where: starting ? "background" : this.fresh ? "new" : chatWhere(session, this.terminalHere),
       terminalApp: session?.terminalApp ?? "",

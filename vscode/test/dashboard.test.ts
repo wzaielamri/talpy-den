@@ -125,6 +125,47 @@ test("a reply after a chat's turn goes once its turn is over, while its backgrou
   }
 });
 
+// Only the first reply a chat has in the queue goes in a pass (a /compact put back where it was, then
+// your follow-up); one put back as its turn ran after all goes again only once the host has answered
+// a check asked after that, not on the row it was sent by (an ssh run each pass till then). Plasma's
+// startDueTasks the same (tests/test_pane.py)
+test("a chat's replies go in their order, and one put back waits for the host's next answer", async () => {
+  const actions: string[][] = [];
+  let answer: Record<string, unknown> = { ok: true, message: "", turnRuns: true };
+  const backend = { action: async (_s: string, args: string[]) => (actions.push(args), answer), status: async () => ({ status: null }) } as unknown as Backend;
+  const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
+  const priv = dash as unknown as { hosts: Map<string, unknown>; hostAnswered: Map<string, number>; startDueTasks(s: Status): void;
+                                    starting: Set<string>; pollHost(h: string): Promise<void>; refresh(): Promise<void> };
+  priv.pollHost = async () => {}; // (no real check of lab)
+  priv.refresh = async () => {};
+  try {
+    const result = structuredClone(demoState(NOW).hosts[0].result!);
+    Object.assign(result.groups[0], { limits: null, accountLimits: null, cap: null });
+    for (const s of result.groups[0].sessions) s.stopped = null;
+    const [a, b] = result.groups[0].sessions;
+    Object.assign(a, { state: "idle" });
+    Object.assign(b, { state: "idle" });
+    const task = (id: string, chat: Session) => ({ id, afterTurn: true, chat: chat.chatId || chat.sessionId, host: "lab", profile: result.groups[0].profileKeys[0], prompt: id }) as never;
+    const status = { ...structuredClone(demoState(NOW).status!), queue: [task("q1", a), task("q2", a), task("q3", b)] };
+    priv.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result, updatedAt: NOW });
+    priv.hostAnswered.set("lab", Date.now() - 5000);
+    const pass = async (): Promise<string> => {
+      actions.length = 0;
+      priv.startDueTasks(status);
+      await new Promise((r) => setTimeout(r, 10)); // (its startQueued answers)
+      return actions.filter((x) => x[0] === "--start-queued").map((x) => x[1]).join(",");
+    };
+    assert.equal(await pass(), "q1,q3", "the first of each chat; q1 and q3 come back: their turn ran after all");
+    assert.equal(await pass(), "", "nothing again on the row they were sent by");
+    priv.hostAnswered.set("lab", Date.now() + 1); // (a check asked after the put-back answered)
+    answer = { ok: true, message: "Sent" };
+    assert.equal(await pass(), "q1,q3");
+  } finally {
+    priv.starting.clear();
+    dash.dispose();
+  }
+});
+
 test("a reply after a chat's turn waits for its account's usage limit to reset, as a queued task does", () => {
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;

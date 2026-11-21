@@ -138,10 +138,13 @@ export interface QueuedTask {
   model?: string | null; // a new chat's model and effort (claude --model, --effort)
   effort?: string | null;
   // a reply for when the chat's turn ends (pane.py --send --after-turn):
-  // sent once the chat isn't working any more, the way `how` says
+  // sent once Claude's turn is over (afterTurnWaits), the way `how` says
   afterTurn?: boolean;
   how?: string;
   session?: string | null;
+  // a reply whose chat's background service refused it while the chat ran something in the
+  // background: why; it's sent once the chat is idle (jump.py start_queued)
+  untilIdle?: string;
 }
 
 // A chat of this computer that keeps going until it's done: after each usage

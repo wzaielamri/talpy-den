@@ -75,6 +75,11 @@ export interface Answer {
   waits?: string;
   ended?: string[];
   notify?: boolean;
+  // --start-queued: a reply for when its chat's turn ends, back in the queue where it was: its turn
+  // ran after all (turnRuns), or its background service refused it while the chat ran something in
+  // the background (untilIdle: why; it's sent once the chat is idle)
+  turnRuns?: boolean;
+  untilIdle?: string;
 }
 
 // The environment for helpers: VS Code's own variables would leak into the

@@ -417,6 +417,61 @@ class StateMappingTests(unittest.TestCase):
         self.assertFalse(ended(user("<task-notification><task-id>b1</task-id></task-notification>")))
         self.assertFalse(ended(user([{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}])))
         self.assertFalse(ended(None))
+        # a finished local command (/compact, /model …): its output is the newest entry, and no turn runs
+        self.assertTrue(ended(user("<local-command-stdout>Compacted. ctrl+o to see full summary</local-command-stdout>")))
+        self.assertFalse(ended(dict(user("This session is being continued from a previous conversation…"),
+                                    isCompactSummary=True)))   # (Claude compacting mid-turn goes on)
+
+    def test_what_runs_in_the_background_ending_the_chat_would_end(self):
+        # a shell, its job's tasks in flight or fan, a recurring job; and "busy" with a transcript that
+        # says its turn ended: a delegated task works then (a subagent, or a remote agent, which
+        # Claude Code 2.1.330's inFlight leaves out: sK's m() filters remote_agent)
+        runs = td.runs_in_background
+        self.assertTrue(runs({"status": "shell"}))
+        self.assertTrue(runs({"status": "idle"}, {"inFlight": {"tasks": 1}}))
+        self.assertTrue(runs({"status": "busy"}, {"fan": [{"id": "b1", "kind": "shell"}]}))
+        self.assertTrue(runs({"status": "idle"}, {"state": "done", "tempo": "idle", "routine": {}}))
+        self.assertTrue(runs({"status": "busy"}, {"inFlight": {"tasks": 0}}, ended=True))
+        self.assertTrue(runs({"status": "busy"}, ended=True))
+        self.assertFalse(runs({"status": "busy"}, {"inFlight": {"tasks": 0}}))
+        self.assertFalse(runs({"status": "busy"}, {"fan": [{"id": "b1", "kind": "shell", "doneAt": 5}]}))
+        self.assertFalse(runs({"status": "idle"}, ended=True))
+        self.assertFalse(runs({"status": "idle"}))
+
+
+class TranscriptTurnEndedTests(unittest.TestCase):
+    """transcript_turn_ended: the newest entry of a transcript's main thread, whatever comes after the
+    final reply that isn't one (a subagent's, a queue operation, a local command's output)."""
+
+    def ended(self, *entries):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "chat.jsonl"
+            path.write_text("".join(json.dumps(e) + "\n" for e in entries))
+            return td.transcript_turn_ended(path)
+
+    def test_what_comes_after_the_final_reply(self):
+        ask = {"type": "user", "message": {"role": "user", "content": "rerun the six"}}
+        done = {"type": "assistant", "message": {"id": "m1", "role": "assistant", "stop_reason": "end_turn",
+                                                 "content": [{"type": "text", "text": "Started them."}]}}
+        self.assertTrue(self.ended(ask, done))
+        # a subagent's step (in the chat's own file for an older Claude Code): not the main thread
+        side = {"type": "assistant", "isSidechain": True, "message": {"id": "s1", "role": "assistant", "stop_reason": None,
+                "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]}}
+        self.assertTrue(self.ended(ask, done, side))
+        # a queue operation (a notification queued): not a message; its turn writes its prompt once it starts
+        queued = {"type": "queue-operation", "operation": "enqueue",
+                  "content": "<task-notification><task-id>a1</task-id></task-notification>"}
+        self.assertTrue(self.ended(ask, done, queued))
+        self.assertFalse(self.ended(ask, done, queued, {"type": "user", "message": {
+            "role": "user", "content": "<task-notification><task-id>a1</task-id></task-notification>"}}))
+        # a local command run after it (/compact, /model): its output is the newest entry, and no turn runs
+        command = [{"type": "user", "isMeta": True, "message": {"role": "user", "content": "<local-command-caveat>…</local-command-caveat>"}},
+                   {"type": "user", "message": {"role": "user", "content": "<command-name>/model</command-name>"}},
+                   {"type": "user", "message": {"role": "user", "content": "<local-command-stdout>Set model to Opus</local-command-stdout>"}}]
+        self.assertTrue(self.ended(ask, done, *command))
+        self.assertFalse(self.ended(ask, done, *command[:2]))   # (its output not in yet)
+        self.assertFalse(self.ended(ask))
+        self.assertFalse(self.ended())
 
 
 class ParkedJobTests(unittest.TestCase):
@@ -2092,11 +2147,11 @@ class SharedCopiesTests(Fixture):
 
 
 class OldPythonTests(unittest.TestCase):
-    """talpy_den.py, sharing.py, accounts.py, week.py and the live hook also run on SSH hosts, whose python3 may be as old as 3.7
+    """talpy_den.py, sharing.py, accounts.py, week.py, pane.py and the live hook also run on SSH hosts, whose python3 may be as old as 3.7
     (and dictate.py's tests run on the CI's Python 3.7 too)."""
 
     def test_no_syntax_or_calls_newer_than_37(self):
-        for name in ("talpy_den.py", "sharing.py", "accounts.py", "week.py", "live_hook.py", "live.py", "dictate.py"):
+        for name in ("talpy_den.py", "sharing.py", "accounts.py", "week.py", "live_hook.py", "live.py", "dictate.py", "pane.py"):
             source = (ROOT / "package/contents/code" / name).read_text()
             # no := or f"{x=}" (3.7 itself parses only what it supports)
             tree = ast.parse(source, feature_version=(3, 7)) if sys.version_info >= (3, 8) else ast.parse(source)

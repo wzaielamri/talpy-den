@@ -1101,6 +1101,7 @@ PlasmoidItem {
                                         && Hub.leaderId !== instanceId && !paneWindows.some(w => w.visible)
     property var heldAnswer: null
     property var heldRemote: ({})   // host -> its answer
+    property var hostRunAt: ({})    // host -> when its check that runs now (or ran last) was started
     onHoldAnswersChanged: if (!holdAnswers) Qt.callLater(applyHeld)
     function applyHeld(force) {
         if (holdAnswers && !force)
@@ -1135,15 +1136,18 @@ PlasmoidItem {
             } else if (command === root.command)
                 root.handleOutput(stdout, stderr)
             const host = root.hostOfCommand(command)
+            // (at: when the check that answers was asked: Hub runs one a command at a time, the one started last)
             if (host && root.holdAnswers && root.remote[host] && root.remote[host].result)
-                root.heldRemote[host] = { stdout: stdout, stderr: stderr }
+                root.heldRemote[host] = { stdout: stdout, stderr: stderr, at: root.hostRunAt[host] || 0 }
             else if (host)
-                root.handleRemote(host, { stdout: stdout, stderr: stderr })
+                root.handleRemote(host, { stdout: stdout, stderr: stderr, at: root.hostRunAt[host] || 0 })
         }
         function onStarted(command) {
             const host = root.hostOfCommand(command)
-            if (host)
+            if (host) {
+                root.hostRunAt[host] = Date.now()
                 root.setRemote(host, { loading: true })
+            }
         }
     }
 
@@ -2981,7 +2985,8 @@ PlasmoidItem {
             followMovedRows(host, result.groups)
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
-            setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
+            // (askedAt: when the check that answered was asked, for a reply put back meanwhile: heldBack)
+            setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(), askedAt: data.at || 0,
                               login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
                               stopped: false, gone: false, paused: false, cached: false })
             dropHidden(host, result)   // (after: see handleOutput)
@@ -4229,9 +4234,25 @@ PlasmoidItem {
     // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
     // in the background with your message only once its Claude is idle, and ending it sooner would end
     // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
-    // VS Code's shared/model.ts afterTurnWaits: the same.
-    function afterTurnWaits(s) {
-        return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")))
+    // untilIdle: its background service refused it while the chat ran something in the background
+    // (the task's untilIdle): it waits for all of that to end, as it did before turnOver. VS Code's
+    // shared/model.ts afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
+    function afterTurnWaits(s, untilIdle) {
+        if (!s)
+            return false
+        if (untilIdle)
+            return s.state === "working" || s.state === "waiting"
+        return s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal"))
+    }
+
+    // A reply put back as its chat's turn ran after all (jump.py --start-queued's "turnRuns"; one that
+    // waits for its chat to be idle, "untilIdle", too): a host's goes again only once a check of the
+    // host asked after that has answered (its askedAt), not on the row it was sent by, an ssh run each
+    // pass till then (startDueTasks). VS Code's dashboard heldBack: the same
+    property var heldBack: ({})   // task id -> when it was put back
+    function noteHeldBack(t, result) {
+        if (t && t.afterTurn && t.host && result && (result.turnRuns || result.untilIdle))
+            heldBack[t.id] = Date.now()
     }
 
     // (the copy that notifies starts them; a task whose account is at its
@@ -4239,13 +4260,25 @@ PlasmoidItem {
     function startDueTasks(queue) {
         if (!root.notifier)
             return
+        const firsts = {}
         for (const t of queue) {
             if (t.afterTurn) {   // a reply for when the chat's turn ends: now it has (or the chat isn't listed)
+                // (only the first reply a chat has in the queue, a pass: they go in their order, one put
+                // back where it was before one queued meanwhile)
+                const chatKey = (t.host || "") + "|" + t.chat
+                if (firsts[chatKey])
+                    continue
+                firsts[chatKey] = true
                 // (an SSH host's: by its last check, which worked; not while it waits for a usage limit;
                 // what the chat runs in the background may go on: afterTurnWaits)
                 const known = !t.host || (remote[t.host] && remote[t.host].result && !remote[t.host].error)
+                if (t.host && heldBack[t.id] !== undefined) {
+                    if (!known || (remote[t.host].askedAt || 0) <= heldBack[t.id])
+                        continue
+                    delete heldBack[t.id]
+                }
                 const s = known ? listedRow(t.chat, t.profile, t.host || "") : null
-                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s))
+                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s, !!t.untilIdle))
                     startOrWait(t)
                 continue
             }
@@ -4305,6 +4338,7 @@ PlasmoidItem {
                 const rest = Object.assign({}, root.startingTasks)
                 delete rest[t.id]
                 root.startingTasks = rest
+                root.noteHeldBack(t, result)   // (put back as its turn ran after all: a host's waits for its next answer)
             }
             if (result.ok && result.message && t && t.afterTurn) {   // your reply, sent as its turn ended
                 if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack() && !root.dashboardShown)

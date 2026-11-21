@@ -4716,9 +4716,18 @@ Window {
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
-                        text: pane.queued ? i18n("Sent when this turn ends: %1", pane.queued.prompt) : ""
+                        // (its background service refused it while the chat ran something in the background:
+                        // once that's over; why, on hover)
+                        text: !pane.queued ? ""
+                              : pane.queued.untilIdle ? i18n("Sent once the chat is idle: %1", pane.queued.prompt)
+                              : i18n("Sent when this turn ends: %1", pane.queued.prompt)
                         elide: Text.ElideRight
                         color: Kirigami.Theme.focusColor
+                        PlasmaComponents3.ToolTip.text: pane.queued && pane.queued.untilIdle ? pane.queued.untilIdle : ""
+                        PlasmaComponents3.ToolTip.visible: !!(pane.queued && pane.queued.untilIdle) && untilIdleHover.hovered
+                        HoverHandler {
+                            id: untilIdleHover
+                        }
                     }
                     PlasmaComponents3.ToolButton {
                         icon.name: Icons.plasma.cancel

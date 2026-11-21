@@ -1,0 +1,18 @@
+{
+  "about": "Whether a reply queued for when a chat's turn ends still waits (afterTurnWaits), by the chat's row and whether it waits for the chat to be idle (untilIdle: its background service refused it while the chat runs something in the background). Read by both front ends' tests: tests/test_pane.py runs Plasma's main.qml functions in node, vscode/test/queue.test.ts the TypeScript one (core/src/shared/model.ts).",
+  "cases": [
+    {"what": "its turn goes on", "row": {"state": "working", "turnOver": false, "reply": "background"}, "untilIdle": false, "waits": true},
+    {"what": "it asks you", "row": {"state": "waiting", "turnOver": false, "reply": "background"}, "untilIdle": false, "waits": true},
+    {"what": "a background chat whose turn is over, its background work going on", "row": {"state": "working", "turnOver": true, "reply": "background"}, "untilIdle": false, "waits": false},
+    {"what": "in tmux, its turn over", "row": {"state": "working", "turnOver": true, "reply": "tmux"}, "untilIdle": false, "waits": false},
+    {"what": "in its Claude Code panel, its turn over", "row": {"state": "working", "turnOver": true, "reply": "vscode"}, "untilIdle": false, "waits": false},
+    {"what": "a terminal that takes no text, its turn over", "row": {"state": "working", "turnOver": true, "reply": "terminal"}, "untilIdle": false, "waits": true},
+    {"what": "a terminal that takes no text, idle", "row": {"state": "idle", "turnOver": false, "reply": "terminal"}, "untilIdle": false, "waits": false},
+    {"what": "done", "row": {"state": "done", "turnOver": false, "reply": "background"}, "untilIdle": false, "waits": false},
+    {"what": "an older backend (no turnOver)", "row": {"state": "working", "reply": "background"}, "untilIdle": false, "waits": true},
+    {"what": "not listed", "row": null, "untilIdle": false, "waits": false},
+    {"what": "its service refused it: its turn over, its background work going on", "row": {"state": "working", "turnOver": true, "reply": "background"}, "untilIdle": true, "waits": true},
+    {"what": "its service refused it: it asks you", "row": {"state": "waiting", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": true},
+    {"what": "its service refused it: idle", "row": {"state": "idle", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": false}
+  ]
+}

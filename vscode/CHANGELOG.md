@@ -64,7 +64,11 @@
   chat's prompt or through Claude's background service, and what runs in the
   background goes on. A message never stops a background chat that runs
   commands or subagents in the background: when Claude's service doesn't
-  take it, it isn't sent, and you're told why.
+  take it, one for when the turn ends waits until the chat is idle (*Sent
+  once the chat is idle*, the service's reason on hover), and a plain Send
+  isn't sent, with the service's reason. A chat's replies go in their order,
+  and one for an SSH host's chat whose turn ran after all is tried again
+  after the host's next check, not at each refresh.
 
 ## 1.23.0
 

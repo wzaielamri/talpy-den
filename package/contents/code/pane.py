@@ -1605,7 +1605,9 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     it goes only once Claude's own turn is over (turn_runs: what runs in the
     background goes on), else {"ok": False, "turnRuns": True} and it waits
     on in the queue. A chat is never stopped to go on with a message while
-    it runs something in the background (td.runs_in_background)."""
+    it runs something in the background (td.runs_in_background), nor one
+    for when the turn ends unless it's idle: {"ok": False, "waitsIdle":
+    True}, with its background service's reason, and it waits for that."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1630,8 +1632,15 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
 
 
 TURN_RUNS = "Its turn isn't over yet: it's sent when it is"
-STOP_WOULD_END = ("Claude's background service didn't take it, and stopping the chat to go on with it would end "
-                  "what it runs in the background: send it again in a moment")
+# (why: what Claude's background service said; queued: a message for when the turn ends, which waits)
+STOP_WOULD_END = "{why}, and stopping the chat to go on with it would end what it runs in the background: {then}"
+
+
+def stop_would_end(why, queued=False):
+    """Why a message didn't go into a background chat that runs something
+    in the background, its service's own reason first."""
+    return STOP_WOULD_END.format(why=(why or "Claude's background service didn't take it").rstrip(". "),
+                                 then="it's sent once the chat is idle" if queued else "send it again in a moment")
 
 
 def turn_runs(entry, job, route, path):
@@ -1693,12 +1702,19 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
         runs_on = next((p for p in profiles if td.matches_profile(p, profile_key)), profile)
         # (its session takes it in where it is, as `claude agents` answers one, queued while it works: no
         # stop, so a terminal that shows it stays on it)
-        if td.reply_to_background(runs_on, job_id, text)[0]:
+        took, why = td.reply_to_background(runs_on, job_id, text)
+        if took:
             return {"ok": True, "how": "typed", "message": "Sent (typed into the background chat)"}
         # (its service didn't take it: stopped and woken with it only when that ends nothing it runs in the
-        # background, the commands and subagents it left running after its turn, a watch loop for hours say)
-        if td.runs_in_background(entry, job):
-            return {"ok": False, "message": STOP_WOULD_END}
+        # background, the commands and subagents it left running after its turn, a watch loop for hours say;
+        # "busy" with its turn ended is a delegated task at work. One for when the turn ends: only once the
+        # chat is idle (it got here as its turn was over: busy with Stop hooks, or a moment before a wake's
+        # prompt), and till then it waits for that, "waitsIdle", never "turnRuns": that would come again)
+        if if_turn_over and td.session_state(entry, job) != "idle":
+            return {"ok": False, "waitsIdle": True, "message": stop_would_end(why, queued=True)}
+        ended = entry.get("status") == "busy" and td.transcript_turn_ended(path)
+        if td.runs_in_background(entry, job, ended):
+            return {"ok": False, "message": stop_would_end(why)}
         ok, message = td.stop_background(runs_on, job_id, td.read_job([runs_on], job_id), home, claude)
         if not ok:
             return {"ok": False, "message": message}

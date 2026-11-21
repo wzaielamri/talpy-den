@@ -8,7 +8,7 @@ import { test } from "node:test";
 import "./useHost";
 import { markdownLinkFile } from "../../core/src/agentRun";
 import { demoState } from "../../core/src/shared/demo";
-import { findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../../core/src/shared/model";
+import { afterTurnWaits, findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../../core/src/shared/model";
 import type { Group, QueuedTask, Session } from "../../core/src/shared/types";
 import { TransitionTracker } from "../../core/src/transitions";
 import { planPath } from "../src/planReview";
@@ -170,4 +170,15 @@ test("the widgets' Markdown link opens only their runs and Claude's plans", () =
                      "relative/plans/x.md", "/etc/plans/x.md", "/home/me/.claude-work/x/plans/y.md"])
     assert.equal(markdownLinkFile(link(bad), home, [], root), null, bad);
   assert.equal(markdownLinkFile({ path: "/changes", query: "" }, home, [], root), null);
+});
+
+// A reply queued for when a chat's turn ends: the cases in tests/after_turn_cases.json, which
+// tests/test_pane.py runs through Plasma's own afterTurnWaits and startDueTasks (main.qml)
+test("a reply after a chat's turn waits by the same rule as Plasma's", () => {
+  const file = path.resolve(__dirname, "..", "..", "..", "tests", "after_turn_cases.json");
+  const { cases } = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    cases: { what: string; row: Pick<Session, "state" | "turnOver" | "reply"> | null; untilIdle: boolean; waits: boolean }[];
+  };
+  assert.ok(cases.length >= 10);
+  for (const c of cases) assert.equal(afterTurnWaits(c.row, c.untilIdle), c.waits, c.what);
 });

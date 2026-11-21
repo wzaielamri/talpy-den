@@ -594,13 +594,17 @@ def turn_ended(e):
     assistant), end Claude's turn: a finished reply that calls no tool
     (stop_reason end_turn or stop_sequence), an API error or Claude Code's
     stand-in reply, or Claude's note that you interrupted it? (turns.py
-    TurnSoFar.over's rule.) A reply that calls a tool or is still streaming,
-    a tool's result, a prompt or a task's notification goes on with one."""
+    TurnSoFar.over's rule.) Also the output of a local command run after it
+    (/compact, /model: <local-command-stdout>), which starts no turn. A reply
+    that calls a tool or is still streaming, a tool's result, a prompt, a
+    task's notification or the summary Claude compacts to mid-turn goes on
+    with one."""
     if not isinstance(e, dict):
         return False
     msg = e.get("message") if isinstance(e.get("message"), dict) else {}
     if e.get("type") == "user":
-        return interrupted_note(e)
+        return interrupted_note(e) or (not e.get("isMeta") and not e.get("isCompactSummary")
+                                       and message_text(msg).lstrip().startswith("<local-command-stdout>"))
     if e.get("type") != "assistant":
         return False
     if e.get("isApiErrorMessage") is True or msg.get("model") == "<synthetic>":
@@ -626,13 +630,16 @@ def transcript_turn_ended(path):
         nbytes *= 4
 
 
-def runs_in_background(entry, job=None):
+def runs_in_background(entry, job=None, ended=False):
     """Does a live session run something in the background that ending it
     would end: a shell (status "shell"; a shell its job's fan lists), its
     job's shells, subagents or monitors in flight (inFlight.tasks), or a
-    recurring job's next runs? (A message never stops such a session to go
-    on with it: pane.py send_now.)"""
-    if entry.get("status") == "shell":
+    recurring job's next runs? Also "busy" once its turn ended (ended: its
+    transcript says so, turn_ended): a delegated task works then (Claude
+    Code's MY()), a remote agent too, which its inFlight leaves out (2.1.330:
+    sK's m() filters remote_agent, dream and post_turn_memory). (A message
+    never stops such a session to go on with it: pane.py send_now.)"""
+    if entry.get("status") == "shell" or (entry.get("status") == "busy" and ended):
         return True
     if not isinstance(job, dict):
         return False
@@ -5076,11 +5083,14 @@ def load_queue(cache_root):
     return [t for t in tasks if isinstance(t, dict) and valid_id(t.get("id"))] if isinstance(tasks, list) else []
 
 
-def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None):
+def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None, where=None, at=None):
     """Change queue.json under a lock: add a task (once: unless a go-on of
     the same chat is queued already), take one out by its id (returned), or
     put one back (e.g. with the error it got); edit(tasks) changes the
-    tasks in place and says whether it did. The task taken out, or None."""
+    tasks in place and says whether it did. The task taken out, or None.
+    where (a list): gets the place the task taken out had; at: the place to
+    put one back at (where it was: a chat's replies for when its turn ends go
+    in their order, one queued meanwhile after it), else at the end."""
     state = state_dir(cache_root)
     private_dir(state)
     with open(state / "queue.lock", "a") as lock:
@@ -5090,10 +5100,15 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
         if edit is not None and edit(tasks):
             write_json_atomic(state / "queue.json", {"tasks": tasks})
         if take is not None:
-            taken = next((t for t in tasks if t["id"] == take), None)
-            tasks = [t for t in tasks if t["id"] != take]
+            place = next((i for i, t in enumerate(tasks) if t["id"] == take), None)
+            if place is not None:
+                taken = tasks.pop(place)
+                tasks = [t for t in tasks if t["id"] != take]
+                if where is not None:
+                    where.append(place)
         if put_back is not None:
-            tasks = [t for t in tasks if t["id"] != put_back["id"]] + [put_back]
+            tasks = [t for t in tasks if t["id"] != put_back["id"]]
+            tasks.insert(len(tasks) if at is None else max(0, min(at, len(tasks))), put_back)
         if add is not None and once and add.get("chat") and any(
                 t.get("chat") == add["chat"] and (t.get("host") or "") == (add.get("host") or "") for t in tasks):
             add = None
