@@ -95,6 +95,7 @@ function noAnsi(text) {
 // Your message as shown: each picture as [Image #1], [Image #2]… (shared/pane.ts numberedPictures,
 // ChatPane shownText); a shell command without its ! (also a bookmark's text: bookmarks.mjs)
 export function yoursShown(it) {
+    // (the fields it reads: lowOf's sameText compares them, keep the two in step)
     const text = it.text || "";
     if (it.command && it.command.shell)
         return text.replace(/^!\s*/, "");
@@ -109,6 +110,7 @@ export function yoursShown(it) {
 // A question or a plan Claude asked, once you answered it: shown as Claude's on both tabs (shared/pane.ts
 // askedShows); a call you denied with a note shows on the Chat tab too
 function askedShown(it) {
+    // (the fields it reads: lowOf's sameText compares them, keep the two in step)
     const a = it.asked;
     return !!a && (!!a.questions || a.plan !== undefined) && a.state !== "open" && a.state !== "failed" && a.state !== "denied";
 }
@@ -119,6 +121,7 @@ function askedShown(it) {
 // got (its change, for an edit), which show once it's opened. A long text: its first part, then the
 // rest (foldOf)
 export function findParts(it, steps) {
+    // (the fields it reads, kind by kind: lowOf's sameText compares them, keep the two in step)
     switch (it.kind) {
     case "you": {
         const text = yoursShown(it);
@@ -159,9 +162,10 @@ export function findParts(it, steps) {
 }
 
 // Each item's text, low case, as last searched (by its key). Each read of the chat brings new objects:
-// one whose text is what it was is the same one (findParts' fields compared), so a search open while
-// the chat is read again and again (Claude working, 2000 items after a bookmark further back) makes
-// only the changed ones again, not every item at each read
+// one whose text is what it was is the same one (sameText: the fields findParts, yoursShown and
+// askedShown read, compared), so a search open while the chat is read again and again (Claude
+// working, 2000 items after a bookmark further back) makes only the changed ones again, not every
+// item at each read
 const lowered = new Map();
 function sameList(a, b) {
     if (a === b)

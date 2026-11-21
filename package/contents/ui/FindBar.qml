@@ -144,6 +144,11 @@ Rectangle {
         interval: 30
         onTriggered: bar.goTo()
     }
+    // (back at the newest, pane.toEnd: a step's tries don't take the list back up)
+    function stopGoing() {
+        go.stop()
+        goTries = 0
+    }
     // To the one gone to, once it's drawn (unfolded, its details made): a third down the list if
     // it isn't in view
     function goTo() {

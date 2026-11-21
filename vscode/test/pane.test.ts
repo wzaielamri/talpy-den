@@ -1758,6 +1758,16 @@ test("bookmarks: where each one is, Alt+↑ / Alt+↓ from what you read, and wh
   assert.deepEqual(bookmarkStep(list, states, tops, 100, true), { reach: "e2" });   // (the newest further back; far and gone skipped)
   assert.equal(bookmarkStep(["f", "g", "a"].map(m), states, tops, 50, true), null);
   assert.deepEqual(bookmarkStep([], {}, {}, 0, false), { end: true });
+  // Plasma, its rows made a few at a time: one in the list whose row isn't made yet has no top; by its
+  // place in the list (order) against the row at the view's top (viewIndex), it's below or above, not past the end
+  const order = { a: 10, b: 50, c: 90 };
+  assert.deepEqual(bookmarkStep(list, states, { a: 100 }, 100, false, order, 10), { key: "b" });   // (b and c not made)
+  assert.deepEqual(bookmarkStep(list, states, {}, 100, false, order, 60), { key: "c" });
+  assert.deepEqual(bookmarkStep(list, states, {}, 100, false, order, 95), { end: true });          // (none later at all: the end)
+  assert.deepEqual(bookmarkStep(list, states, { c: 900 }, 900, true, order, 90), { key: "b" });    // (a and b not made)
+  assert.deepEqual(bookmarkStep(list, states, {}, 0, true, order, 40), { key: "a" });
+  assert.deepEqual(bookmarkStep(list, states, {}, 0, true, order, 5), { reach: "e2" });            // (none loaded above: further back)
+  assert.deepEqual(bookmarkStep(list, states, { b: 500 }, 0, false, order, 0), { key: "a" });     // (a not made, before b: a first)
 
   assert.equal(adoptable(5, false, 5), true);
   assert.equal(adoptable(5, false, 7), true);

@@ -9,10 +9,11 @@
   search's match, or scrolling up), a floating ↓ Latest over its bottom takes
   you back; ↓ 2 new when new messages came in meanwhile (it was "2 new ↓",
   shown only then). A chat read further back for a bookmark or with Show
-  earlier (up to 2000 items) is read as at first again once you're back, so
-  each later read is quick again (0.4 s → 0.15 s a read on a made-up chat
-  of 1,900 items), and with the find bar open a chat read again is searched
-  again only where it changed.
+  earlier (up to 2000 items) is read as at first again once the button, or
+  Ctrl+↓ or Alt+↓ past the last message or bookmark, takes you back (scrolling
+  back down by hand keeps what was read), so each later read is quick again
+  (0.4 s → 0.15 s a read on a made-up chat of 1,900 items), and with the find
+  bar open a chat read again is searched again only where it changed.
 
 - **The tasks and the subagents open on their own in Talpy Chat.** The line
   under a chat's header ("0/3 · what it's on") unfolded the tasks and the

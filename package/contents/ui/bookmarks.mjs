@@ -90,15 +90,31 @@ export function stateOf(mark, loaded, more, capped, settled) {
 // Alt+↓ (back false) / Alt+↑ (back true) from what you read (viewTop: the view's top, in the list's
 // coordinates; tops: {key: its row's top} for the loaded bookmarked rows): {key} the next / previous
 // one; down past the last: {end: true}; up past the first: the newest one further back as {reach: key}
-// (states: {key: stateOf}), else null. Those too far back or gone are skipped
-export function step(list, states, tops, viewTop, back) {
+// (states: {key: stateOf}), else null. Those too far back or gone are skipped. order, viewIndex
+// (Plasma, whose list makes the rows far from what you read a few at a time): {key: its row's index}
+// and the index of the row at the view's top. A loaded one whose row isn't made yet has no top: by its
+// index it's below or above, so it isn't taken for none (past the last only when none comes later at
+// all), and the next is the first after the view in the list's order
+export function step(list, states, tops, viewTop, back, order, viewIndex) {
+    const byIndex = !!order && typeof viewIndex === "number";
     let best = null;
     for (const m of list || []) {
-        const top = tops ? tops[m.key] : undefined;
-        if (typeof top !== "number" || (states && states[m.key] && states[m.key] !== "here"))
+        if (states && states[m.key] && states[m.key] !== "here")
             continue;
-        if (back ? top < viewTop - 4 && (best === null || top > best.top) : top > viewTop + 4 && (best === null || top < best.top))
-            best = { key: m.key, top };
+        const top = tops ? tops[m.key] : undefined;
+        const at = byIndex ? order[m.key] : undefined;
+        let past;
+        if (typeof top === "number")
+            past = back ? top < viewTop - 4 : top > viewTop + 4;
+        else if (typeof at === "number")
+            past = back ? at < viewIndex : at > viewIndex;
+        else
+            continue;
+        const rank = byIndex ? at : top;
+        if (!past || typeof rank !== "number")
+            continue;
+        if (best === null || (back ? rank > best.rank : rank < best.rank))
+            best = { key: m.key, rank };
     }
     if (best)
         return { key: best.key };

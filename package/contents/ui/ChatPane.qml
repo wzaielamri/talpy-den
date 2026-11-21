@@ -9,6 +9,7 @@ import "markdown.mjs" as Md
 import "codehtml.mjs" as Code
 import "icons.mjs" as Icons
 import "quote.mjs" as Quote
+import "fill.mjs" as Fill
 
 // A chat beside the popup (main.qml: openPane): its conversation, updating
 // while it works, drawn the way Claude's terminal draws it (a dot before each
@@ -1460,11 +1461,16 @@ Window {
     function toEnd() {
         seenKeys = null
         unseen = 0
+        // (a bookmark's jump or read, a search's step, or what you read held at the top: none takes the
+        // list back up after)
+        holdTop.stop()
+        if (bookmarkLogic.item)
+            bookmarkLogic.item.stop()
+        if (findBar.item)
+            findBar.item.stopGoing()
         if (limit > limitFirst || reachKey !== "") {
             limit = limitFirst
             reachKey = ""
-            if (bookmarkLogic.item)
-                bookmarkLogic.item.going = ""
             // (the rows above the newest part go at once, before the read: the list makes only those it
             // shows at the end first, a few at a time, then those above go, out of view; going back
             // from 1,900 made rows held the window up 3.5 s without, 0.3 s with)
@@ -1482,20 +1488,39 @@ Window {
         keepEnd()
     }
 
-    // Rows made a few at a time. The list makes every row once (cacheBuffer, so it doesn't jump while
-    // you scroll), and many that came in at once (a read further back for a bookmark, Show earlier: up to
-    // 2000) were all made in one go, rich text and all: 1,900 held the window up 12 s. Then the list makes
-    // only those near what you read (fillBuffer: px either way), more each moment, nearest first, as many
-    // as take a few ms, till it's every row again (-1). Nothing runs once they're all made
+    // The row at the top of what you read (its index), for keys that go by the list's order while rows
+    // far from it aren't made yet (Bookmarks.qml step, PaneKeys.qml jumpPrompt): -1 above the first
+    // row, items.count below the last
+    function viewIndex() {
+        for (const dy of [2, list.height / 2]) {
+            const i = list.indexAt(list.width / 2, list.contentY + dy)
+            if (i >= 0)
+                return i
+        }
+        return list.contentY + list.height / 2 < list.originY + list.contentHeight / 2 ? -1 : items.count
+    }
+
+    // Rows made a few at a time (fill.mjs). The list makes every row once (cacheBuffer, so it doesn't
+    // jump while you scroll), and many that came in at once (a read further back for a bookmark, Show
+    // earlier: up to 2000) were all made in one go, rich text and all: 1,900 held the window up 12 s.
+    // Then the list makes only those near what you read (fillBuffer: px either way), more each step,
+    // nearest first, as many as take a few ms, each wait at least twice what the step cost (plasmashell,
+    // which draws the panel too, keeps at least half of the time), till it's every row again (-1).
+    // Nothing runs once they're all made
     property real fillBuffer: -1
     readonly property int fillMin: 100   // (more new rows than that at once: a few at a time)
     function startFill() {
-        fillBuffer = Math.round(list.height)
-        filling.step = Math.max(list.height, fm.height * 12)
+        const f = Fill.fillStart(list.height, fm.height)
+        fillBuffer = f.buffer
+        filling.step = f.step
+        filling.interval = f.interval
         filling.last = 0
+        // (rows away from what you read went with the smaller buffer, their ribbons too: placed again)
+        if (bookmarkLogic.item)
+            bookmarkLogic.item.placeSoon()
     }
     // (going far from what's made meanwhile: only the rows near where it goes are made at once, not
-    // all a grown buffer holds there; Bookmarks.qml jumpNow, FindBar.qml goTo, toEnd)
+    // all a grown buffer holds there; Bookmarks.qml jumpNow, FindBar.qml goTo, PaneKeys.qml jumpPrompt)
     function fillNear() {
         if (fillBuffer >= 0)
             startFill()
@@ -1504,12 +1529,11 @@ Window {
         const t = Date.now()
         // (what the step before cost: rows made at once, or as the window was drawn since)
         const late = filling.last > 0 ? t - filling.last - filling.interval : 0
-        const next = fillBuffer + filling.step
-        fillBuffer = next >= 100000 ? -1 : next
-        const cost = Math.max(Date.now() - t, late)
+        fillBuffer = Fill.fillNext(fillBuffer, filling.step)
+        const pace = Fill.fillPace(filling.step, Math.max(Date.now() - t, late), fm.height)
         filling.last = Date.now()
-        filling.step = cost > 24 ? Math.max(fm.height * 6, filling.step / 2)
-                     : cost < 8 ? Math.min(20000, filling.step * 2) : filling.step
+        filling.step = pace.step
+        filling.interval = pace.interval
     }
     Timer {
         id: filling
@@ -1547,7 +1571,9 @@ Window {
                 return
             }
             pane.followEnd()
-            if (--left <= 0)
+            // (rows still made a few at a time, fillBuffer: it follows the end till they're all made, else
+            // back at the newest, ↓ Latest, it went 200 px out of view as they were; a scroll or a jump stops it)
+            if (--left <= 0 && pane.fillBuffer < 0)
                 stop()
         }
     }

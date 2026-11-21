@@ -180,28 +180,48 @@ QtObject {
         if (chip && chipsRow.item && chipsRow.item.shown[Number(chip[2]) - 1])
             pane.takeChip(chipsRow.item.shown[Number(chip[2]) - 1], chip[1] === "edit")
     }
-    // Ctrl+↑ / Ctrl+↓: your previous / next message at the list's top (past the last: the end)
+    // Ctrl+↑ / Ctrl+↓: your previous / next message at the list's top (past the last: the end). A row
+    // not made yet (the list making many a few at a time): below or above by its index against the row
+    // at the view's top, gone to as a bookmark is (only the rows near it made); the end only when
+    // none of yours comes later at all
     function jumpPrompt(down) {
         settle.stop()
         holdTop.stop()
-        const top = list.contentY
-        let to = null
+        const top = list.contentY, view = pane.viewIndex()
+        let to = null, toIndex = -1
         for (let i = 0; i < items.count; i++) {
             if (items.get(i).kind !== "you")
                 continue
             const it = list.itemAtIndex(i)
-            if (!it || !it.visible || it.height <= 0)
+            if (!it) {
+                if (down ? i > view : i < view) {
+                    to = null
+                    toIndex = i
+                    if (down)
+                        break
+                }
+                continue
+            }
+            if (!it.visible || it.height <= 0)
                 continue
             const at = it.y + (it.gap || 0) - fm.height * 0.5
             if (down ? at > top + 4 : at < top - 4) {
                 to = at
+                toIndex = i
                 if (down)
                     break
             }
         }
         if (to !== null)
             list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, to))
-        else if (down)
+        else if (toIndex >= 0) {
+            pane.fillNear()
+            list.positionViewAtIndex(toIndex, ListView.Beginning)
+            const it = list.itemAtIndex(toIndex)
+            if (it)
+                list.contentY = Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height,
+                                                                it.y + (it.gap || 0) - fm.height * 0.5))
+        } else if (down)
             pane.toEnd()
     }
 }

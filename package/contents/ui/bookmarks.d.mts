@@ -31,6 +31,6 @@ export function keysOf(list: readonly Bookmark[] | null | undefined): Record<str
 export function stateOf(mark: Bookmark, loaded: ReadonlyMap<string, unknown> | ReadonlySet<string> | Record<string, unknown> | null,
                         more: boolean, capped: boolean, settled?: Record<string, "far" | "gone"> | null): BookmarkState;
 export function step(list: readonly Bookmark[], states: Record<string, BookmarkState> | null, tops: Record<string, number>,
-                     viewTop: number, back: boolean): BookmarkStep;
+                     viewTop: number, back: boolean, order?: Record<string, number> | null, viewIndex?: number): BookmarkStep;
 export function adoptable(localV: number, busy: boolean, answerV: number | undefined | null): boolean;
 export function staysOpen(listWidth: number, cardWidth: number, beside: boolean): boolean;

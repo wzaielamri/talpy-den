@@ -352,17 +352,20 @@ Item {
 
     // Alt+↑ (back) / Alt+↓: the bookmark before / after what you read (past the last: the end; before
     // the first, the newest one further back, read first)
+    // (a row not made yet, the list making many a few at a time: below or above by its index against the
+    // row at the view's top, pane.viewIndex, not taken for none: Alt+↓ went to the end, the read thrown away)
     function step(back) {
-        const loaded = loadedKeys(), states = {}, tops = {}
+        const loaded = loadedKeys(), states = {}, tops = {}, order = {}
         for (const m of pane.bookmarks) {
             states[m.key] = stateOf(m, loaded)
             if (states[m.key] !== "here")
                 continue
+            order[m.key] = loaded.get(m.key)
             const row = list.itemAtIndex(loaded.get(m.key))
             if (row && row.listed && row.shows)
                 tops[m.key] = topOf(row)
         }
-        const r = Bm.step(pane.bookmarks, states, tops, list.contentY, back)
+        const r = Bm.step(pane.bookmarks, states, tops, list.contentY, back, order, pane.viewIndex())
         if (!r)
             return
         if (r.key)
@@ -371,6 +374,16 @@ Item {
             reach(r.reach, false)
         else if (r.end)
             pane.toEnd()
+    }
+
+    // (back at the newest, pane.toEnd: no read for one, nor a jump's try, left to take the list back up)
+    function stop() {
+        going = ""
+        jumpKey = ""
+        jumpDrawn = ""
+        jumpTries = 0
+        jumpRetry.stop()
+        closeAfter = false
     }
 
     // One further back than what's shown: the chat read as far back as it (as Show earlier reads more),
