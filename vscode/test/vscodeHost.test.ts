@@ -211,10 +211,11 @@ test("inUse is the window's `active` when VS Code says it, else its focus, and f
   assert.deepEqual(got, [true, false, true, true], "each window state told, the same one too");
 });
 
-// (dispose(): the extension's deactivate; a test's host, after it)
+// (dispose(): the extension's deactivate; a test's host, after it. make's: disposed after the test also when it
+// fails before its own dispose(); a second dispose() takes nothing more off)
 test("dispose takes the host off VS Code's events, and its listeners hear nothing more", () => {
   const before = stub.listening();
-  const host = new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys);
+  const host = make();
   assert.deepEqual(stub.listening(), { settings: before.settings + 1, windowState: before.windowState + 1, folders: before.folders + 1 });
   const heard: string[] = [];
   host.settings.onDidChange(() => heard.push("settings"));

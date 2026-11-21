@@ -5,7 +5,10 @@
 // into elements only (no link that runs anything).
 
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, mock, test } from "node:test";
 import * as vscode from "vscode";
 import { host, manifest } from "./useHost";
 import { ChatPanes } from "../../core/src/chatPanes";
@@ -37,6 +40,18 @@ function waitingState(answer: "hook" | "keys" | ""): ViewState {
 
 // (without the --config-dir of the folders this test runs with)
 const own = (args: string[]) => (args.includes("--config-dir") ? args.slice(0, args.indexOf("--config-dir")) : args);
+
+// A cache a test gives itself (XDG_CACHE_HOME, which the tests after it keep), removed once the file's tests are
+// done
+const caches: string[] = [];
+after(() => {
+  for (const dir of caches.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function ownCache(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  caches.push(dir);
+  return dir;
+}
 
 // Talpy Chat as extension.ts makes it: the core's ChatPanes on VS Code's surfaces (the stub's panels), on a
 // VsCodeHost (useHost's: settings from stub.overrides, nothing kept), with no terminal running a chat
@@ -108,9 +123,8 @@ test("nothing is answered for a chat that doesn't ask, or that only its own dial
 // you, which is gone after; one over 100,000 characters isn't sent
 test("a long reply goes to pane.py in a file of its own, removed after", async () => {
   const fs = await import("node:fs");
-  const os = await import("node:os");
   const path = await import("node:path");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-text-"));
+  process.env.XDG_CACHE_HOME = ownCache("talpy-den-text-");
   const state = demoState(NOW);
   const row = state.status!.groups.flatMap((g) => g.sessions)[0];
   const seen: [string, number, string][] = [];
@@ -2176,9 +2190,8 @@ test("Ask from here: one asked finds its own (asked from the same message); the 
 
 test("Ask from here: --part read where the chat is (a host's with --host), a question with --from; what isn't a message's key isn't run", async () => {
   const fs = await import("node:fs");
-  const os = await import("node:os");
   const path = await import("node:path");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-from-"));
+  process.env.XDG_CACHE_HOME = ownCache("talpy-den-from-");
   const calls: string[][] = [];
   const texts: string[] = [];
   const answer = { id: "0123456789ab", q: "Why?", at: NOW, pick: "haiku", model: "claude-haiku-4-5", a: "A", done: NOW + 5, since: "msg_2", from: PART };
@@ -2231,9 +2244,8 @@ test("Ask from here: --part read where the chat is (a host's with --host), a que
 
 test("a side question goes to pane.py --side-question (a host's with --host, in a file of its own), several at once; its answer only as what it can be", async () => {
   const fs = await import("node:fs");
-  const os = await import("node:os");
   const path = await import("node:path");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-side-"));
+  process.env.XDG_CACHE_HOME = ownCache("talpy-den-side-");
   const calls: string[][] = [];
   const texts: string[] = [];
   const item = (q: string) => ({ id: "0123456789ab", q, at: NOW, pick: "", model: "claude-opus-5-5", a: `About ${q}`, done: NOW + 5 });

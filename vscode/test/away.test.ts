@@ -79,12 +79,14 @@ test("long lists are cut short", () => {
   assert.deepEqual(away.back(NOW + 10 * MIN, 0, g, 5 * MIN)!.lines, ["Finished: a, b, c, d +1"]);
 });
 
-test("while you're away, finished chats wait for the digest; chats that need you still notify", async () => {
+test("while you're away, finished chats wait for the digest; chats that need you still notify", async (t) => {
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-away-"));
+  const cache = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-away-")); // (the lead's file: gone after the test)
+  process.env.XDG_CACHE_HOME = cache;
+  t.after(() => fs.rmSync(cache, { recursive: true, force: true }));
   const { Notifier } = await import("../../core/src/notify");
   const sounds: string[] = [];
   const backend = { sound: (s: string) => sounds.push(s) } as never;

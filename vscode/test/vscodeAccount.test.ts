@@ -5,12 +5,19 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import "./useHost";
 import { configDirFor, withConfigDir } from "../../core/src/agents/claudeCode/vscodeAccount";
 
+// (each made-up home is removed once the file's tests are done)
+const homes: string[] = [];
+after(() => {
+  for (const h of homes.splice(0)) fs.rmSync(h, { recursive: true, force: true });
+});
+
 function home(withLink: boolean): string {
   const h = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-test-")));
+  homes.push(h);
   fs.mkdirSync(path.join(h, ".claude-work"));
   fs.mkdirSync(path.join(h, ".claude-personal"));
   if (withLink) fs.symlinkSync(path.join(h, ".claude-work"), path.join(h, ".claude"));

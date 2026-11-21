@@ -75,7 +75,7 @@ Decisions taken during execution (details in the ledger):
 
 1. **A setting changed in VS Code's Settings editor reaches the core at once** (turning `talpyDen.notifyWaiting` off stops the next notification): Task 2 test `settings onDidChange fires with the changed talpyDen keys`; Task 4 test `a setting changed through the host is read at once`.
 2. **Several VS Code windows**: only the window that leads notifies, and focus changes hand over as before: Task 2 test `focus mirrors window state and fires on change`; Task 7 keeps `vscode/test/notify.test.ts` passing through `VsCodeHost`.
-3. **Destructive confirmations stay modal, and Escape cancels** (deleting a chat, a plan, a memory): Task 2 tests `message passes modal and detail` and `a cancelled message returns undefined`; Task 9 test `delete with no answer deletes nothing`.
+3. **Destructive confirmations stay modal, and Escape cancels** (deleting a chat, a plan, a memory): Task 2 tests `message passes modal and detail` and `a cancelled message returns undefined`; Task 9 test `a Delete only asks its question (the view's), deleting nothing; Keep Only on… with no answer unshares nothing`.
 4. **Remote-SSH windows**: "same machine" decisions (`env.remoteName`) and the folder dialog on the remote keep working: Task 2 tests `environment mirrors remoteName and web` and `choose on the remote uses the remote scheme`.
 5. **Quick picks with separators and icons** (accounts, hosts, new-chat folders) look and pick as before, and the picked item is the caller's own object (callers compare by identity): Task 2 test `pick maps separators and icons and returns the caller's item`.
 

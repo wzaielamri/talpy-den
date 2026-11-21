@@ -49,7 +49,8 @@ test("setSshHosts writes talpyDen.sshHosts", async () => {
   assert.deepEqual(fake.recorded.updates, [{ section: "talpyDen", key: "sshHosts", value: ["h1", "h2"], scope: "global" }]);
 });
 
-// (application settings: only your user settings hold them)
+// (application settings: only your user settings hold them; FakeHost records the scope as given, so "global"
+// is the one settings.ts names, not the host's default)
 test("setChatOptions writes the model, effort and mode new chats start with in your user settings", async () => {
   const fake = make();
   await setChatOptions("sonnet", "high", "plan");

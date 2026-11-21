@@ -26,9 +26,13 @@ export class Emitter<T> {
   // does: one unsubscribed meanwhile (by a listener before it) isn't called,
   // one subscribed meanwhile hears the next fire. A fire from inside a listener
   // first delivers the event being delivered to the rest of its listeners,
-  // then its own to every listener, before it returns: each listener hears
-  // the events in the order they were fired. A listener that throws is
-  // reported and doesn't stop the rest.
+  // then its own to every listener, before it returns. So one event reaches
+  // every listener before the next one starts, and all listeners hear the
+  // events in the same order, but not always in the order they were fired:
+  // when listeners A and B each fire during event 1 (A event 2, then B event
+  // 3), B's fire finishes 1 and delivers 3 before A's fire goes on to 2
+  // (A1 B1 C1 A3 B3 C3 A2 B2 C2, as VS Code's emitter has it). A listener that
+  // throws is reported and doesn't stop the rest.
   fire(value: T): void {
     if (this.delivering) this.deliver(this.delivering);
     const delivery = { value, to: [...this.listeners], next: 0 };

@@ -380,7 +380,7 @@ export class ChatPanes implements Disposable, ChatPanesPort {
     return { ok: true, message: r.how === "copy" ? `It's in the clipboard. ${String(r.message ?? "")}` : String(r.message ?? "") };
   }
 
-  // /permissions (commandRun "page"): Talpy Den's Permissions tab (extension.ts sets it)
+  // /permissions (commandRun "page"): Talpy Den's Permissions tab (set by what makes the panes, which has the view)
   openPermissions: () => Promise<void> = async () => undefined;
 
   // The side questions panel's pick and whether it's open, kept in the host's state (VS Code: the extension's

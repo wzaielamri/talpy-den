@@ -80,7 +80,8 @@ export class FakeHost implements HostServices {
     settingsOpened: [] as string[],
     views: 0,
     reloads: 0,
-    updates: [] as { section: string; key: string; value: unknown; scope: SettingScope }[], // section "talpyDen" or another
+    // section "talpyDen" or another; scope as the caller gave it (none: the host's default, global)
+    updates: [] as { section: string; key: string; value: unknown; scope?: SettingScope }[],
     status: [] as string[],
     logs: [] as string[],
   };
@@ -192,7 +193,7 @@ export class FakeHost implements HostServices {
 
   readonly settings: HostSettings = {
     get: <T>(key: string, fallback: T) => (this.values.has(key) ? (this.values.get(key) as T) : fallback),
-    update: async (key, value, scope = "global") => {
+    update: async (key, value, scope) => {
       this.recorded.updates.push({ section: "talpyDen", key, value, scope });
       this.set(key, value);
     },

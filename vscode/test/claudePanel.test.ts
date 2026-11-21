@@ -15,8 +15,9 @@ test("the panel's config dir: its own setting, else VS Code's, else ~/.claude", 
   assert.equal(panelConfigDir([null, "x", { name: "OTHER", value: "1" }], {}), path.join(home, ".claude"), "odd entries are skipped");
 });
 
-test("a profile is named by its real folder, like the backend does", () => {
+test("a profile is named by its real folder, like the backend does", (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-test-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.mkdirSync(path.join(dir, ".claude-personal"));
   fs.symlinkSync(path.join(dir, ".claude-personal"), path.join(dir, ".claude"));
   assert.equal(profileKey(path.join(dir, ".claude")), ".claude-personal", "a link names the profile it points to");

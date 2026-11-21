@@ -1,17 +1,28 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
 import { host } from "./useHost";
 import { demoState } from "../../core/src/shared/demo";
 import type { PermissionAsk, Session } from "../../core/src/shared/types";
 
+// A test's own cache (XDG_CACHE_HOME: the lead's file goes there), removed once the file's tests are done
+const caches: string[] = [];
+after(() => {
+  for (const dir of caches.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function ownCache(): string {
+  const dir = mkdtempSync(join(tmpdir(), "talpy-den-notify-"));
+  caches.push(dir);
+  return dir;
+}
+
 // A permission prompt's notification: its buttons in Claude's own order
 // (Yes, Yes and don't ask again, No), as in its row and its tab
 test("a permission prompt's notification lists Allow once, Always allow, Deny, Deny with a note…", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-"));
+  process.env.XDG_CACHE_HOME = ownCache();
   const { Notifier } = await import("../../core/src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: string[][] = [];
@@ -99,11 +110,8 @@ test("every notification with something in its words goes through noLinks", asyn
 // A plan (ExitPlanMode): Approve, accepting edits or not, or Keep planning
 // with what to change
 test("a plan's notification: Approve, accept edits / Approve / Keep planning…", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-"));
+  process.env.XDG_CACHE_HOME = ownCache();
   const { Notifier } = await import("../../core/src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: string[][] = [];
@@ -136,11 +144,8 @@ test("a plan's notification: Approve, accept edits / Approve / Keep planning…"
 // Claude's questions: one with one answer has its options as buttons, then
 // Other… (your own words); with more, Answer… goes through each in a picker
 test("a question's notification: its options, Other…; several questions: Answer… with pickers", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-"));
+  process.env.XDG_CACHE_HOME = ownCache();
   const { Notifier } = await import("../../core/src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: string[][] = [];
@@ -208,11 +213,8 @@ test("a question's notification: its options, Other…; several questions: Answe
 // Its buttons answer the prompt the notification shows: when the chat asks
 // something else by then, nothing is answered and it says so (Open shows it)
 test("a notification's buttons answer the prompt it shows; when the chat asks something else by then, it says so", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-"));
+  process.env.XDG_CACHE_HOME = ownCache();
   const { Notifier } = await import("../../core/src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: [string, string[]][] = [];
@@ -250,11 +252,8 @@ test("a notification's buttons answer the prompt it shows; when the chat asks so
 // first or a Reply… to it alone. A reply from a notification that isn't
 // sent says so, and Open shows the chat's tab with it as the draft.
 test("an overlap or limit reset notice has Open only; a reply that isn't sent says so", async () => {
-  const fs = await import("node:fs");
-  const os = await import("node:os");
-  const path = await import("node:path");
   const vscode = (await import("vscode")) as unknown as typeof import("./vscode-stub");
-  process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-"));
+  process.env.XDG_CACHE_HOME = ownCache();
   const { Notifier } = await import("../../core/src/notify");
   const window = vscode.window as unknown as Record<string, unknown>;
   const shown: [string, string[]][] = [];

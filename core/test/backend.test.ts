@@ -17,8 +17,19 @@ useSettingsHost(new FakeHost());
 const children: ChildProcess[] = [];
 after(() => children.forEach((c) => c.kill()));
 
+// A folder of a test's own (a made-up home, an extension's), removed once the file's tests are done
+const temps: string[] = [];
+after(() => {
+  for (const dir of temps.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+});
+function tempDir(prefix: string): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  temps.push(dir);
+  return dir;
+}
+
 function fakeHome(): string {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-test-"));
+  const home = tempDir("talpy-den-test-");
   process.env.HOME = home;
   process.env.XDG_CACHE_HOME = path.join(home, ".cache");
   delete process.env.CLAUDE_CONFIG_DIR;
@@ -139,7 +150,7 @@ test("a chat is shared between a stock ~/.claude and ~/.claude-work", async () =
 test("an action's answer keeps how plan feedback reaches the chat", async () => {
   // jump.py --plan-feedback --print-command: the command that reopens the
   // chat, or the text to type in or paste; without them nothing is sent
-  const ext = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-ext-"));
+  const ext = tempDir("talpy-den-ext-");
   fs.mkdirSync(path.join(ext, "vendor", "code"), { recursive: true });
   fs.writeFileSync(
     path.join(ext, "vendor", "code", "jump.py"),
@@ -155,7 +166,7 @@ test("an action's answer keeps how plan feedback reaches the chat", async () => 
 test("an action's answer keeps a folder's trust, what to ask first, and a go-on that waits", async () => {
   // (--pick-folder: a new chat in Talpy Chat in a folder Claude doesn't trust yet asks before it opens there,
   // instead of always going to a terminal; --remote-vscode's question; --start-queued's waits/ended/notify)
-  const ext = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-ext-"));
+  const ext = tempDir("talpy-den-ext-");
   fs.mkdirSync(path.join(ext, "vendor", "code"), { recursive: true });
   fs.writeFileSync(
     path.join(ext, "vendor", "code", "jump.py"),
