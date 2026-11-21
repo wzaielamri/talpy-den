@@ -1529,6 +1529,9 @@ def starts_a_run(e):
     return origin.get("kind") == "coordinator" or not (e.get("isMeta") or text.startswith("<"))
 
 
+AGENT_PENDING_MAX = 64
+
+
 def agent_runs(path, state=None, offset=0):
     """(first ts, start of its current run, state, offset) of a subagent
     transcript, read from byte offset on with the state of the read before
@@ -1567,16 +1570,28 @@ def agent_runs(path, state=None, offset=0):
                 blocks = [c for c in content if isinstance(c, dict)] if isinstance(content, list) else []
                 if e.get("type") == "assistant":
                     if state["run"] is not None:  # (before its first prompt: a fork's copy of the call that started it)
-                        pending.update(c.get("id") for c in blocks if c.get("type") == "tool_use")
+                        pending.update(c["id"] for c in blocks if c.get("type") == "tool_use" and isinstance(c.get("id"), str))
                         state["idle"] = not pending
                 elif e.get("type") == "user":
                     pending.difference_update(c.get("tool_use_id") for c in blocks if c.get("type") == "tool_result")
-                    if starts_a_run(e) and ts is not None and (state["run"] is None or (state["idle"] and not pending)):
+                    origin = e.get("origin") if isinstance(e.get("origin"), dict) else {}
+                    # (a message from its chat is an explicit go-on, even after a call that never got its result:
+                    # the agent was killed on it. A plain prompt only counts once the agent has stopped.)
+                    if starts_a_run(e) and ts is not None and (
+                            state["run"] is None or origin.get("kind") == "coordinator" or (state["idle"] and not pending)):
                         state["run"], state["idle"] = ts, False
+                        if origin.get("kind") == "coordinator":
+                            pending.clear()
     except OSError:
         pass
-    state["pending"] = sorted(p for p in pending if isinstance(p, str))
+    state["pending"] = sorted(pending)[-AGENT_PENDING_MAX:]  # (a real agent never has so many calls waiting)
     return state["first"], state["run"] if state["run"] is not None else state["first"], state, offset
+
+
+def first_start(a):
+    """When an agent row first started: where it sits among its siblings, so a
+    resumed agent's row doesn't jump (its "started" is its current run's)."""
+    return a.get("firstStarted") or a["started"] or 0
 
 
 class AgentCache:
@@ -1627,6 +1642,7 @@ class AgentCache:
         if model is None and old and len(old) == 10:
             model = old[6]  # its newest entries are tool results; the model came earlier
         # what it read of the transcript before, if it only grew (a resume adds a prompt at its end)
+        # (transcripts only grow: a file replaced by a larger one at the same path isn't noticed)
         state, offset = (old[9], old[8]) if old and len(old) == 10 and isinstance(old[9], dict) and old[8] <= st.st_size else (None, 0)
         first, started, state, offset = agent_runs(transcript, state, offset)
         known = old_detail[2] if isinstance(old_detail, list) and len(old_detail) == 3 and isinstance(old_detail[2], dict) else {}
@@ -1719,7 +1735,7 @@ class AgentCache:
         # Display order: depth-first from the session's own agents, oldest first.
         children = {}
         ids = {a["id"] for a in agents}
-        for a in sorted(agents, key=lambda a: (a["started"] or 0, a["id"])):
+        for a in sorted(agents, key=lambda a: (first_start(a), a["id"])):
             children.setdefault(a["parent"] if a["parent"] in ids else None, []).append(a)
         tree = []
 
@@ -1730,7 +1746,7 @@ class AgentCache:
         walk(None, 0)
         if len(tree) > AGENT_TREE_LIMIT:  # keep every running one, then the newest
             keep = {a["id"] for a in tree if a["status"] == "running"}
-            for a in sorted(tree, key=lambda a: -(a["started"] or 0)):
+            for a in sorted(tree, key=lambda a: -first_start(a)):
                 if len(keep) >= AGENT_TREE_LIMIT:
                     break
                 keep.add(a["id"])

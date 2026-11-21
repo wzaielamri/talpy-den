@@ -946,6 +946,62 @@ class AgentTests(Fixture):
         row = self.agent_row("r5")
         self.assertEqual((row["started"], row["firstStarted"]), (td.to_ms(iso(self.now - 100)), td.to_ms(iso(self.now - 600))))
 
+    def test_a_message_from_its_chat_resumes_an_agent_killed_on_a_call(self):
+        tool = {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "make"}}
+        again = self.timed("user", "Go on", 100, isMeta=True, origin={"kind": "coordinator"})
+        self.agent("busy", "r6", [self.timed("user", "go", 600), self.timed("assistant", [tool], 590), again])
+        self.assertEqual(self.agent_row("r6")["started"], td.to_ms(iso(self.now - 100)))
+
+    def test_a_plain_prompt_inside_an_unfinished_call_doesnt_restart_a_run(self):
+        tool = {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "make"}}
+        self.agent("busy", "r7", [self.timed("user", "go", 600), self.timed("assistant", [tool], 590),
+                                  self.timed("user", "and this", 100)])
+        self.assertEqual(self.agent_row("r7")["started"], td.to_ms(iso(self.now - 600)))
+
+    def test_calls_without_an_id_and_the_waiting_ones_kept_are_bounded(self):
+        calls = [{"type": "tool_use", "name": "Read", "input": {}}] + \
+                [{"type": "tool_use", "id": "t%03d" % i, "name": "Read", "input": {}} for i in range(100)]
+        d = self.agent("busy", "r8", [self.timed("user", "go", 600), self.timed("assistant", calls, 590)])
+        first, started, state, offset = td.agent_runs(d / "agent-r8.jsonl")
+        self.assertEqual(len(state["pending"]), td.AGENT_PENDING_MAX)
+        self.assertTrue(all(isinstance(p, str) for p in state["pending"]))
+
+    def test_a_resumed_agent_keeps_its_place_among_its_siblings(self):
+        text = [{"type": "text", "text": "Done"}]
+        again = self.timed("user", "Go on", 10, isMeta=True, origin={"kind": "coordinator"})
+        self.agent("busy", "r9", [self.timed("user", "look", 900), self.timed("assistant", text, 890), again])
+        self.agent("busy", "r10", [self.timed("user", "look", 500)])
+        ids = [t["id"] for t in self.agents_of_busy()[0]["tree"]]
+        self.assertLess(ids.index("r9"), ids.index("r10"))
+
+    def test_a_transcript_that_shrank_is_read_from_its_start(self):
+        text = [{"type": "text", "text": "Done"}]
+        self.agent("busy", "r11", [self.timed("user", "first", 600), self.timed("assistant", text, 590),
+                                   self.timed("user", "again", 100, isMeta=True, origin={"kind": "coordinator"})])
+        self.assertEqual(self.agent_row("r11")["started"], td.to_ms(iso(self.now - 100)))
+        self.agent("busy", "r11", [self.timed("user", "new", 300)])  # replaced by a shorter one
+        self.assertEqual(self.agent_row("r11")["started"], td.to_ms(iso(self.now - 300)))
+
+    def test_a_half_written_last_line_is_read_again_on_the_next_poll(self):
+        d = self.agent("busy", "r12", [self.timed("user", "go", 600)])
+        path = d / "agent-r12.jsonl"
+        text = [{"type": "text", "text": "Done"}]
+        again = json.dumps(self.timed("user", "Go on", 100, isMeta=True, origin={"kind": "coordinator"}))
+        with open(path, "a") as f:
+            f.write(json.dumps(self.timed("assistant", text, 590)) + "\n" + again[:40])
+        self.assertEqual(self.agent_row("r12")["started"], td.to_ms(iso(self.now - 600)))
+        with open(path, "a") as f:
+            f.write(again[40:] + "\n")
+        self.assertEqual(self.agent_row("r12")["started"], td.to_ms(iso(self.now - 100)))
+
+    def test_a_cache_file_of_an_older_version_is_discarded(self):
+        self.agent("busy", "r13", [self.timed("user", "go", 600)])
+        write(self.cache / "agents.json", {"version": td.AGENT_CACHE_VERSION - 1,
+              "files": {"x": [1, 2, "running", "", None, 5, None]}, "parents": {}})
+        cache = td.AgentCache(self.cache / "agents.json")
+        self.assertEqual(cache.old_files, {})
+        self.assertEqual(self.agent_row("r13")["started"], td.to_ms(iso(self.now - 600)))
+
     def test_a_parent_not_found_isnt_looked_for_on_every_check(self):
         self.agent("busy", "n1", [self.line("user", "nested")], depth=2, tool_use_id="toolu_nowhere")
         self.collect(with_tokens=False)
