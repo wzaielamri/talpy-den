@@ -21,7 +21,7 @@ import { LiveWatch } from "./agents/claudeCode/live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./agents/claudeCode/remoteHost";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { afterTurnWaits, allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./agents/claudeCode/oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
@@ -751,15 +751,16 @@ export class Dashboard implements Disposable {
     };
     for (const t of status.queue ?? []) {
       if (t.afterTurn) {
-        // a reply for when the chat's turn ends: now it has (or the chat isn't
-        // listed); a host not heard from yet, or whose last check failed, waits
+        // a reply for when the chat's turn ends: now it has, though what it runs in
+        // the background may go on (or the chat isn't listed: afterTurnWaits); a host
+        // not heard from yet, or whose last check failed, waits
         const h = t.host ? this.hosts.get(t.host) : undefined;
         if (t.host && (!h?.result || h.error)) continue;
         // (the chat's row on the task's account first, as the widget's listedRow)
         const rows = groupsOf(t.host || "").flatMap((g) =>
           g.sessions.filter((s) => s.chatId === t.chat || s.sessionId === t.chat).map((s) => ({ s, own: (g.profileKeys ?? []).includes(t.profile) })));
         const row = (rows.find((r) => r.own) ?? rows[0])?.s;
-        if (t.error || this.starting.has(t.id) || (row && (row.state === "working" || row.state === "waiting"))) continue;
+        if (t.error || this.starting.has(t.id) || afterTurnWaits(row)) continue;
         if (t.startAt > Date.now()) continue; // (it waits for a usage limit to reset, as below)
       } else if (!t.due || this.starting.has(t.id)) continue;
       // (a reply too: on an account at its usage limit it would stop at once)
@@ -784,7 +785,10 @@ export class Dashboard implements Disposable {
 
   private starting = new Set<string>();
 
-  // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so)
+  // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so;
+  // a reply for when a turn ends goes as it is, and never ends what the chat runs in the background).
+  // A reply whose chat's turn goes on after all is back in the queue as it was: its answer's message
+  // is empty, nothing to say (jump.py start_queued)
   async startQueued(t: QueuedTask, now = false): Promise<void> {
     if (this.starting.has(t.id)) return;
     this.starting.add(t.id);

@@ -980,6 +980,18 @@ export function queuedChat(status: Pick<Status, "queue"> | null, chatId: string,
   return (status?.queue ?? []).find((t) => !!t.chat && t.chat === chatId && !t.afterTurn && (t.host || "") === (host || "")) ?? null;
 }
 
+// Whether a reply queued for when a chat's turn ends still waits (s: the chat's row; none: not
+// listed, it goes): while Claude's turn goes on, or it asks you something. Not while only what it
+// runs in the background goes on after its turn (turnOver: commands, subagents, monitors,
+// talpy_den.turn_over): Claude takes a message in at its prompt then, as Claude Code's own queue
+// does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
+// in the background with your message only once its Claude is idle, and ending it sooner would end
+// them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
+// Plasma's main.qml afterTurnWaits: the same.
+export function afterTurnWaits(s: Pick<Session, "state" | "turnOver" | "reply"> | null | undefined): boolean {
+  return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")));
+}
+
 // Whether a queued task's line would only repeat a row: a chat's go-on whose
 // chat is one of the account's rows, which says Goes on at … (SessionRow's
 // goingOn); not one that failed (its line says why) nor a reply for when a

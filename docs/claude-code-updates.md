@@ -152,6 +152,27 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Breaks: chats show as idle while working, or the reverse. Interrupt sends Ctrl+C at an idle prompt, which
     quits Claude.
   - Test: StateMappingTests.test_interactive, NewClaudeValuesTests (test_talpy_den.py).
+- [ ] **busy also while a background subagent works.** Claude Code writes `busy` while a turn runs and also
+  while a background subagent works after the turn, `shell` when it's otherwise idle but a background shell
+  runs (2.1.330: `MY()` gives `busy` for `isLoading || delegatedActive`, `delegatedActive` any `local_agent`,
+  `remote_agent`, `in_process_teammate` or `local_workflow` task not completed, failed or killed; `shell` is
+  `idle` while a `local_bash` task runs). Its own queue sends what you typed once the turn is over
+  (`RWe`: the turn guard, not the background tasks), so a message for when the turn ends goes while those
+  run: for `busy`, Talpy Den reads the transcript's newest entry of the main thread (a finished reply with
+  no tool call ends the turn).
+  - Used in: talpy_den.py turn_over, turn_ended, transcript_turn_ended, live_row (the row's `turnOver`),
+    peek_from (`turnEnded`); pane.py turn_runs; main.qml and shared/model.ts afterTurnWaits.
+  - Check: `has delegatedActive`, then find `MY(` with
+    `grep -a -o 'status:[a-zA-Z.]*isLoading||[a-zA-Z.]*delegatedActive?"busy":"idle"' $BIN`. In a throwaway
+    chat, have Claude start a background subagent that sleeps 60 s and end its turn: `jq .status` on its
+    session file stays `busy` till the subagent ends.
+  - Breaks: a message or `/compact` for when the turn ends waits until every background subagent and shell
+    of the chat has ended, hours for a watch loop.
+  - Test: StateMappingTests.test_its_turn_is_over_while_only_its_background_work_goes_on,
+    test_whether_the_newest_entry_ends_claudes_turn, SessionTests.test_a_chat_at_work_only_on_its_background_work_says_its_turn_is_over
+    (test_talpy_den.py); SendTests.test_a_message_for_when_the_turn_ends_goes_once_claudes_turn_is_over
+    (test_pane.py); vscode/test/dashboard.test.ts "a reply after a chat's turn goes once its turn is over,
+    while its background work goes on".
 - [ ] **waitingFor reasons.** `permission prompt`, `goal proposal`, `sandbox request`, `worker request`,
   `input needed` (a question, MCP elicitation too) and `dialog open` (a dialog you opened yourself,
   deliberately not counted as waiting).

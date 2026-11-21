@@ -218,6 +218,36 @@ class SessionTests(Fixture):
         self.assertEqual((rows["busy"]["workingOn"], rows["bgdone"]["workingOn"]), ("", ""))
         self.assertEqual(rows["bgworking"]["detail"], "")  # (detail stays what it needs or its result)
 
+    def test_a_chat_at_work_only_on_its_background_work_says_its_turn_is_over(self):
+        # A background chat whose turn ended with two commands and a subagent still running in the
+        # background, and one in a terminal whose turn ended with a shell running: working, and
+        # turnOver (a message for when the turn ends goes then); one whose turn goes on, or that asks
+        # you, doesn't say so
+        w = self.home / ".claude-work"
+        write(w / "sessions/21.json", session("bgbackground", kind="bg", status="idle", jobId="job6"))
+        write(w / "jobs/job6/state.json", {"state": "working", "tempo": "idle", "updatedAt": iso(self.now - 60),
+                                           "inFlight": {"tasks": 3, "kinds": ["local_bash", "local_agent"]}})
+        write(w / "sessions/22.json", session("shellafter", status="shell"))
+        # "busy" while a background subagent works after its turn: its transcript says the turn ended
+        # (a finished reply, nothing after it); one whose newest entry calls a tool is at work on its turn
+        agents = {"state": "working", "tempo": "idle", "updatedAt": iso(self.now - 60),
+                  "inFlight": {"tasks": 1, "kinds": ["local_agent"]}}
+        ask = {"type": "user", "timestamp": iso(self.now - 90), "message": {"role": "user", "content": "rerun the six"}}
+        said = lambda stop, content: {"type": "assistant", "timestamp": iso(self.now - 80), "message": {
+            "id": "m1", "role": "assistant", "stop_reason": stop, "content": content}}
+        for sid, job, last in (("bgagents", "job7", said("end_turn", [{"type": "text", "text": "Two of six run."}])),
+                               ("bgturn", "job8", said("tool_use", [{"type": "tool_use", "id": "t1", "name": "Agent",
+                                                                     "input": {}}]))):
+            write(w / f"sessions/{23 if sid == 'bgagents' else 24}.json", session(sid, kind="bg", status="busy", jobId=job))
+            write(w / f"jobs/{job}/state.json", agents)
+            write(w / f"projects/-tmp-proj-{sid}/{sid}.jsonl", json.dumps(ask) + "\n" + json.dumps(last) + "\n")
+        rows = {s["sessionId"]: s for s in self.group(self.collect(with_tokens=False), "work")["sessions"]}
+        for sid in ("bgbackground", "shellafter", "bgagents"):
+            self.assertEqual(rows[sid]["state"], "working", sid)
+            self.assertIs(rows[sid]["turnOver"], True, sid)
+        for sid in ("bgturn", "busy", "bgworking", "bgstale", "bgperm", "waiting", "dialog", "bgdone"):
+            self.assertIs(rows[sid]["turnOver"], False, sid)
+
     def test_cache_dir_is_private(self):
         self.cache.mkdir(mode=0o755)
         self.collect(with_tokens=False)
@@ -336,6 +366,57 @@ class StateMappingTests(unittest.TestCase):
         # a background task just ended: idle for 15-100 ms before its notification wakes the session
         self.assertEqual(self.state(idle, {"state": "working", "tempo": "idle",
                                            "inFlight": {"tasks": 1, "queued": 0, "kinds": ["local_bash"]}}), "working")
+
+    def test_its_turn_is_over_while_only_its_background_work_goes_on(self):
+        # Claude's own turn is over (a message goes in at its prompt, as in a terminal), though the
+        # chat counts as at work. Claude Code 2.1.330 writes "busy" while a turn runs and also while
+        # a background subagent works after it (MY(): isLoading || delegatedActive), "shell" when
+        # it's idle but a background shell runs: so a shell, or an idle session whose job has tasks
+        # in flight, says so itself, and "busy" says so only with its transcript (ended: the newest
+        # entry of the main thread ends the turn)
+        over = td.turn_over
+        idle, busy = {"status": "idle"}, {"status": "busy"}
+        tasks = {"state": "working", "tempo": "idle", "inFlight": {"tasks": 3, "kinds": ["local_bash", "local_agent"]}}
+        agents = {"state": "working", "tempo": "idle", "inFlight": {"tasks": 1, "kinds": ["local_agent"]}}
+        self.assertTrue(over({"status": "shell"}))
+        self.assertTrue(over({"status": "shell"}, tasks))
+        self.assertTrue(over(idle, tasks))
+        self.assertTrue(over(idle, {"state": "done", "tempo": "idle", "routine": {}}))
+        self.assertTrue(over(idle, {"state": "working", "inFlight": {"tasks": 1}}))   # (no tempo: an older Claude Code)
+        self.assertTrue(over(busy, agents, ended=True))   # (a subagent at work after its turn)
+        self.assertTrue(over(busy, ended=True))
+        self.assertTrue(over(idle, dict(tasks, tempo="active"), ended=True))   # (its last words read as at work)
+        # its turn goes on (or its Stop hooks), it asks you, it was just woken (tempo active, its
+        # transcript not ended), or it's idle or done: nothing to tell
+        self.assertFalse(over(busy))
+        self.assertFalse(over(busy, agents))
+        self.assertFalse(over(idle, dict(tasks, tempo="active")))
+        self.assertFalse(over({"status": "waiting", "waitingFor": "permission prompt"}, tasks, ended=True))
+        self.assertFalse(over(idle, dict(tasks, tempo="blocked"), ended=True))
+        self.assertFalse(over({"status": "waiting", "waitingFor": "dialog open"}, tasks, ended=True))
+        self.assertFalse(over(idle, ended=True))
+        self.assertFalse(over(idle, dict(tasks, inFlight={"tasks": 0}), ended=True))
+        self.assertFalse(over(idle, {"state": "done", "tempo": "idle"}, ended=True))
+
+    def test_whether_the_newest_entry_ends_claudes_turn(self):
+        # turns.TurnSoFar.over's rule, on the newest entry of the main thread: a finished reply with no
+        # tool call, an API error or Claude Code's stand-in reply, your interruption; not a reply that
+        # calls a tool or is still streaming, a tool's result, a prompt or a task's notification
+        ended = td.turn_ended
+        reply = lambda stop, content=None: {"type": "assistant", "message": {
+            "stop_reason": stop, "content": content or [{"type": "text", "text": "Done."}]}}
+        user = lambda content: {"type": "user", "message": {"role": "user", "content": content}}
+        self.assertTrue(ended(reply("end_turn")))
+        self.assertTrue(ended(reply("stop_sequence")))
+        self.assertTrue(ended(dict(reply("stop_sequence"), isApiErrorMessage=True)))
+        self.assertTrue(ended(user([{"type": "text", "text": "[Request interrupted by user]"}])))
+        self.assertFalse(ended(reply(None)))
+        self.assertFalse(ended(reply("tool_use", [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}])))
+        self.assertFalse(ended(reply("end_turn", [{"type": "tool_use", "id": "t1", "name": "Agent", "input": {}}])))
+        self.assertFalse(ended(user("go on")))
+        self.assertFalse(ended(user("<task-notification><task-id>b1</task-id></task-notification>")))
+        self.assertFalse(ended(user([{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}])))
+        self.assertFalse(ended(None))
 
 
 class ParkedJobTests(unittest.TestCase):

@@ -2030,7 +2030,11 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     commands (go_on_waits) goes back too, and out (a dict) gets "waits" and
     "notify"; one that ended them to go on gets "ended" and "notify".
     now (Start it now, --now): a chat's go-on doesn't wait for its
-    background commands, it ends them at once (and says so)."""
+    background commands, it ends them at once (and says so). A message for
+    when a chat's turn ends goes only once Claude's own turn is over there
+    (pane.send's if_turn_over: what the chat runs in the background goes on,
+    never ended for it); while its turn goes on after all it's back in the
+    queue as it was, and the message is empty. now: it goes as it is."""
     out = {} if out is None else out
     cache_root = td.cache_dir(home)
     entry = td.change_queue(cache_root, take=task_id)
@@ -2050,6 +2054,10 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             args = ["--send", entry["chat"], "--profile", entry["profile"], "--text", task.text, "--how", how]
             if entry.get("session"):
                 args += ["--session", entry["session"]]
+            # (only once Claude's own turn is over, there and then: the status it was sent by is a moment
+            # old; what it runs in the background goes on. Start it now: as it is)
+            if not now:
+                args.append("--if-turn-over")
             import pane
             if entry.get("host"):
                 import remote
@@ -2057,7 +2065,10 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                                                (entry.get("session"), entry["chat"]), task.text)
             else:
                 answer = pane.send(home, extra_dirs, entry["profile"], entry["chat"], task.text, entry.get("session"),
-                                   how, claude_path(home))
+                                   how, claude_path(home), if_turn_over=not now)
+            if answer.get("turnRuns"):  # (its turn goes on after all, or it asks you: it waits on, as it was)
+                td.change_queue(cache_root, put_back=entry)
+                return True, ""
             ok, message = bool(answer.get("ok")) and answer.get("how") != "ask", answer.get("message") or ""
             if answer.get("how") == "vscode" and isinstance(answer.get("link"), str):
                 open_vscode_link(home, extra_dirs, entry.get("session") or entry["chat"], answer["link"])

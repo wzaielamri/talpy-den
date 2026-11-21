@@ -249,6 +249,9 @@ export interface Session {
   jobId: string | null;
   jobSessionId: string | null;
   tmux?: boolean; // runs in a tmux pane: a working one can be interrupted (Ctrl+C)
+  // working on what it runs in the background alone, Claude's own turn over (talpy_den.turn_over):
+  // a reply queued for when the turn ends goes now (afterTurnWaits); older backends leave it out
+  turnOver?: boolean;
   bgStop?: boolean; // a live background session Talpy Chat's Stop can interrupt (Esc through Claude's background service)
   remoteControl?: string | null; // the claude.ai/code page of a live chat with Remote Control on (talpy_den.remote_control_link)
   remoteSwitch?: boolean; // a live background session Talpy Den can turn Remote Control on and off in

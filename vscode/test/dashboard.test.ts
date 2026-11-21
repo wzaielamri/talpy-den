@@ -87,6 +87,44 @@ test("a reply after a host chat's turn waits while the host's check fails", () =
   }
 });
 
+// A reply (or /compact) queued for when a chat's turn ends goes once Claude's own turn is over,
+// though the chat still counts as working on what it runs in the background (turnOver: commands, a
+// subagent), as Claude Code's own queue takes it at its prompt; not while its turn goes on or it
+// asks you, nor, for a terminal that takes no text, while anything of it runs (going on in the
+// background would end that)
+test("a reply after a chat's turn goes once its turn is over, while its background work goes on", () => {
+  const actions: string[][] = [];
+  const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
+  const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
+  const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string> };
+  try {
+    const result = structuredClone(demoState(NOW).hosts[0].result!);
+    Object.assign(result.groups[0], { limits: null, accountLimits: null, cap: null });
+    for (const s of result.groups[0].sessions) s.stopped = null;
+    const chat = result.groups[0].sessions[0];
+    const status = { ...structuredClone(demoState(NOW).status!), queue: [
+      { id: "q3", afterTurn: true, chat: chat.chatId || chat.sessionId, host: "lab", profile: result.groups[0].profileKeys[0], prompt: "/compact" } as never] };
+    priv.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result, updatedAt: NOW });
+    const goes = (row: Partial<Session>): boolean => {
+      Object.assign(chat, row);
+      actions.length = 0;
+      priv.starting.clear();
+      priv.startDueTasks(status);
+      return actions.some((a) => a[0] === "--start-queued" && a[1] === "q3");
+    };
+    assert.equal(goes({ state: "working", turnOver: false, reply: "background" }), false, "its turn goes on");
+    assert.equal(goes({ state: "waiting", turnOver: false, reply: "background" }), false, "it asks you");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "background" }), true, "a background chat");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "tmux" }), true, "in tmux");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "terminal" }), false, "a terminal that takes no text");
+    assert.equal(goes({ state: "idle", turnOver: false, reply: "terminal" }), true, "idle");
+    assert.equal(goes({ state: "working", turnOver: undefined, reply: "background" }), false, "an older backend");
+  } finally {
+    priv.starting.clear();
+    dash.dispose();
+  }
+});
+
 test("a reply after a chat's turn waits for its account's usage limit to reset, as a queued task does", () => {
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;

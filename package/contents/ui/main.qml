@@ -4222,6 +4222,18 @@ PlasmoidItem {
                                                                          && group.profileKeys.indexOf(t.profile) >= 0)
     }
 
+    // Whether a reply queued for when a chat's turn ends still waits (s: the chat's row; none: not
+    // listed, it goes): while Claude's turn goes on, or it asks you something. Not while only what it
+    // runs in the background goes on after its turn (turnOver: commands, subagents, monitors,
+    // talpy_den.turn_over): Claude takes a message in at its prompt then, as Claude Code's own queue
+    // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
+    // in the background with your message only once its Claude is idle, and ending it sooner would end
+    // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
+    // VS Code's shared/model.ts afterTurnWaits: the same.
+    function afterTurnWaits(s) {
+        return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")))
+    }
+
     // (the copy that notifies starts them; a task whose account is at its
     // usage limit right now waits on until that resets: jump.py --requeue)
     function startDueTasks(queue) {
@@ -4229,11 +4241,11 @@ PlasmoidItem {
             return
         for (const t of queue) {
             if (t.afterTurn) {   // a reply for when the chat's turn ends: now it has (or the chat isn't listed)
-                // (an SSH host's: by its last check, which worked; not while it waits for a usage limit)
+                // (an SSH host's: by its last check, which worked; not while it waits for a usage limit;
+                // what the chat runs in the background may go on: afterTurnWaits)
                 const known = !t.host || (remote[t.host] && remote[t.host].result && !remote[t.host].error)
                 const s = known ? listedRow(t.chat, t.profile, t.host || "") : null
-                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now())
-                        && (!s || (s.state !== "working" && s.state !== "waiting")))
+                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s))
                     startOrWait(t)
                 continue
             }
@@ -4262,7 +4274,10 @@ PlasmoidItem {
         stopper.connectSource(cmd)
     }
 
-    // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so)
+    // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so;
+    // a reply for when a turn ends goes as it is, and never ends what the chat runs in the background).
+    // A reply whose chat's turn goes on after all is back in the queue as it was: its answer's message
+    // is empty, nothing to say (jump.py start_queued)
     function startQueued(t, now) {
         startingTasks = Object.assign({}, startingTasks, { [t.id]: Date.now() })
         const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --start-queued " + shellQuote(t.id) + (now ? " --now" : "") + configDirArgs

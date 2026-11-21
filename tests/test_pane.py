@@ -1327,6 +1327,99 @@ class SendTests(SendFixture):
             self.assertEqual(self.send(), {"ok": False, "message": "It's asking you something: answer that first"})
         self.assertEqual((stopped.call_count, went_on.call_count, len(service.ops("reply"))), (0, 0, 1))
 
+    def queued(self, how="auto", text="/compact"):
+        """A message queued for when the chat's turn ends, sent as jump.py --start-queued sends it."""
+        return pane.send(self.home, [], ".claude-work", SID, text, None, how, str(self.bin / "claude"), if_turn_over=True)
+
+    def test_a_message_for_when_the_turn_ends_goes_once_claudes_turn_is_over(self):
+        # Its turn ended with two commands and a subagent still running in the background: it goes in
+        # through Claude's service at once, as at its prompt in a terminal, and they go on (nothing is
+        # stopped); while its turn goes on, or it asks you, it waits ("turnRuns": back in the queue)
+        from test_tasks import FakeService
+        profile = next(p for p in td.discover_profiles(self.home) if p.key == ".claude-work")
+        service = FakeService(self, profile, lambda r: {"ok": True, "op": r["op"]})
+        job = self.home / ".claude-work/jobs/bgjob1/state.json"
+        write(job, {"state": "working", "tempo": "idle", "sessionId": SID,
+                    "inFlight": {"tasks": 3, "kinds": ["local_bash", "local_agent"]}})
+        ended = [prompt("rerun the six", self.now - 100), text_reply("Two of six run; I'll check back.", self.now - 90, "m1", "end_turn")]
+        sent = 0
+        # idle with its tasks in flight; "busy" with a subagent at work after its turn (Claude Code
+        # 2.1.330 says busy then too: the transcript tells, its turn ended); a shell after it
+        for status in ("idle", "busy", "shell"):
+            self.chat(*ended)
+            self.live(kind="bg", status=status, jobId="bgjob1")
+            with mock.patch.object(td, "stop_background") as stopped:
+                self.assertEqual(self.queued()["how"], "typed", status)
+            sent += 1
+            self.assertEqual((len(service.ops("reply")), stopped.call_count), (sent, 0), status)
+        # its turn goes on (it calls a tool; a notification woke it), or it asks you
+        for status, last in (("busy", tool_use("t9", "Agent", {"prompt": "check"}, self.now - 80, msg="m2")),
+                             ("busy", prompt("<task-notification><task-id>a1</task-id></task-notification>", self.now - 80)),
+                             ("waiting", None)):
+            self.chat(*ended + ([last] if last else []))
+            self.live(kind="bg", status=status, jobId="bgjob1", **({"waitingFor": "permission prompt"} if status == "waiting" else {}))
+            with mock.patch.object(td, "stop_background") as stopped:
+                answer = self.queued()
+            self.assertIs(answer.get("turnRuns"), True, status)
+            self.assertFalse(answer["ok"], status)
+            self.assertEqual((len(service.ops("reply")), stopped.call_count, self.calls()), (sent, 0, []), status)
+        # just woken (tempo active, its prompt not in yet): its turn is about to start
+        write(job, {"state": "working", "tempo": "active", "sessionId": SID, "inFlight": {"tasks": 3}})
+        self.chat(*ended + [prompt("and the docs", self.now - 10)])
+        self.live(kind="bg", status="idle", jobId="bgjob1")
+        self.assertIs(self.queued().get("turnRuns"), True)
+        # sent at once (Start it now, a plain Send): as before, into Claude's own queue
+        self.live(kind="bg", status="busy", jobId="bgjob1")
+        self.assertEqual(self.send()["how"], "typed")
+        self.assertEqual(len(service.ops("reply")), sent + 1)
+
+    def test_a_message_for_when_the_turn_ends_in_tmux_goes_once_its_turn_is_over(self):
+        self.chat(prompt("rerun the six", self.now - 100), tool_use("t1", "Bash", {"command": "make"}, self.now - 90))
+        self.live(tmux="main:1.%3", status="busy")
+        with mock.patch.object(pane, "tmux_type", return_value=(True, "")) as typed:
+            self.assertIs(self.queued().get("turnRuns"), True)
+            typed.assert_not_called()
+            self.live(tmux="main:1.%3", status="shell")   # (its turn is over, a background shell runs on)
+            self.assertEqual(self.queued()["how"], "typed")
+            # busy with a subagent at work after its turn: the transcript says it ended
+            self.chat(prompt("rerun the six", self.now - 100), text_reply("Started them.", self.now - 90, "m1", "end_turn"))
+            self.live(tmux="main:1.%3", status="busy")
+            self.assertEqual(self.queued()["how"], "typed")
+        self.assertEqual((typed.call_count, typed.call_args[0][1]), (2, "/compact"))
+
+    def test_a_message_for_when_the_turn_ends_never_ends_a_terminals_background_work(self):
+        # A terminal that takes no text: it goes on in the background with it only once its Claude is
+        # idle (ending it sooner would end the shell it runs); till then it waits, nothing stopped
+        self.live(status="shell")
+        with mock.patch.object(td, "stop_chat", return_value=(True, "Stopped")) as stopped, \
+                mock.patch.object(td, "continue_chat", return_value={"ok": True}) as went_on:
+            self.assertIs(self.queued("background").get("turnRuns"), True)
+            self.assertEqual((stopped.call_count, went_on.call_count), (0, 0))
+            self.live()
+            self.assertEqual(self.queued("background")["how"], "background")
+        self.assertEqual((stopped.call_count, went_on.call_count), (1, 1))
+
+    def test_a_background_chat_running_things_in_the_background_is_never_stopped_for_a_message(self):
+        # Its service doesn't take the message (there's none here): stopping it to wake it with the
+        # message would end the commands and subagents it runs in the background, so it isn't sent
+        job = self.home / ".claude-work/jobs/bgjob1/state.json"
+        cases = (("idle", {"state": "working", "tempo": "idle", "inFlight": {"tasks": 2, "kinds": ["local_bash"]}}),
+                 ("shell", {"state": "working", "tempo": "idle"}),
+                 ("busy", {"state": "working", "tempo": "active", "inFlight": {"tasks": 1, "kinds": ["local_agent"]}}),
+                 ("busy", {"state": "working", "tempo": "active",
+                           "fan": [{"id": "b1", "kind": "shell", "label": "watch_cluster.sh 600"}]}))
+        for status, record in cases:
+            write(job, dict(record, sessionId=SID))
+            self.live(kind="bg", status=status, jobId="bgjob1")
+            for send in (self.send, self.queued):
+                with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped, \
+                        mock.patch.object(td, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}) as went_on:
+                    answer = send()
+                self.assertFalse(answer["ok"], status)
+                if not answer.get("turnRuns"):   # (one for when the turn ends waits while its turn goes on)
+                    self.assertIn("would end what it runs in the background", answer["message"])
+                self.assertEqual((stopped.call_count, went_on.call_count), (0, 0), status)
+
     def test_a_background_session_stops_first(self):
         # (one whose service doesn't take it in: there's none here)
         self.live(kind="bg", status="busy", jobId="bgjob1")
@@ -1477,6 +1570,64 @@ class SendTests(SendFixture):
             self.assertEqual(jump.start_queued(self.home, [], task["id"]), (True, "Sent"))
         self.assertEqual(sent.call_args[0][1:6], ([], ".claude-work", SID, "next: the docs", None))
         self.assertEqual(td.load_queue(self.cache), [])
+
+    def test_a_reply_after_the_turn_waits_on_while_claudes_turn_goes_on(self):
+        # Sent only once Claude's own turn is over (pane.send's if_turn_over, on a host --if-turn-over):
+        # one whose turn goes on after all (the status it was sent by was a moment old) is back in the
+        # queue as it was, no error, and says nothing; Start it now sends it as it is
+        import jump
+        runs = {"ok": False, "turnRuns": True, "message": "Its turn isn't over yet: it's sent when it is"}
+        for host in ("", "lab"):
+            self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn",
+                     *(["--host", host] if host else []))
+            (task,) = td.load_queue(self.cache)
+            with mock.patch.object(pane, "send", return_value=runs) as sent, \
+                    mock.patch("remote.host_answer", return_value=runs) as there, \
+                    mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
+                    mock.patch.object(jump, "claude_path", return_value="claude"):
+                self.assertEqual(jump.start_queued(self.home, [], task["id"]), (True, ""))
+                (back,) = td.load_queue(self.cache)
+                self.assertEqual((back["id"], back["prompt"], back.get("error") or ""), (task["id"], "/compact", ""))
+                if host:
+                    self.assertIn("--if-turn-over", there.call_args[0][1])
+                else:
+                    self.assertIs(sent.call_args[1]["if_turn_over"], True)
+                jump.start_queued(self.home, [], task["id"], now=True)
+                if host:
+                    self.assertNotIn("--if-turn-over", there.call_args[0][1])
+                else:
+                    self.assertIs(sent.call_args[1]["if_turn_over"], False)
+            td.change_queue(self.cache, take=task["id"])
+
+    @unittest.skipUnless(shutil.which("node"), "node isn't installed")
+    def test_plasma_sends_a_reply_after_the_turn_by_the_same_rule_as_vscode(self):
+        # main.qml's startDueTasks, run in node with the rows of vscode/test/dashboard.test.ts's "a reply
+        # after a chat's turn goes once its turn is over, while its background work goes on"
+        import re
+        qml = (Path(__file__).resolve().parent.parent / "package/contents/ui/main.qml").read_text()
+        functions = "".join(re.search(r"\n    (function %s\(.*?\n    \})\n" % f, qml, re.S).group(1) + "\n"
+                            for f in ("afterTurnWaits", "startDueTasks"))
+        rows = [{"state": "working", "turnOver": False, "reply": "background"},
+                {"state": "waiting", "turnOver": False, "reply": "background"},
+                {"state": "working", "turnOver": True, "reply": "background"},
+                {"state": "working", "turnOver": True, "reply": "tmux"},
+                {"state": "working", "turnOver": True, "reply": "terminal"},
+                {"state": "idle", "turnOver": False, "reply": "terminal"},
+                {"state": "working", "reply": "background"}]   # (an older backend: no turnOver)
+        script = ("const root = { notifier: true }; const remote = { lab: { result: {}, error: '' } };\n"
+                  "let row = null; const started = [];\n"
+                  "function listedRow() { return row } function isStarting() { return false }\n"
+                  "function startOrWait(t) { started.push(t.id) }\n" + functions +
+                  "console.log(JSON.stringify(%s.map(r => { row = r; started.length = 0;\n"
+                  "  startDueTasks([{ id: 'q3', afterTurn: true, chat: 'c', host: 'lab', profile: '.claude' }]);\n"
+                  "  return started.length === 1 })))" % json.dumps(rows))
+        out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(out.returncode, 0, out.stderr[-300:])
+        goes = json.loads(out.stdout)
+        for row, expected, what in zip(rows, (False, False, True, True, False, True, False),
+                                       ("its turn goes on", "it asks you", "a background chat", "in tmux",
+                                        "a terminal that takes no text", "idle", "an older backend")):
+            self.assertIs(goes.pop(0), expected, what)
 
     def test_a_reply_after_the_turn_leaves_keep_going_alone(self):
         # cancelling it, or turning Keep going off meanwhile, is about the reply only

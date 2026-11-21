@@ -53,6 +53,19 @@
   uplink takes 1.4 s instead of 3.6 s; on a fast network it's as quick as
   before.
 
+### Fixed
+
+- **A message or /compact for when the turn ends goes once Claude's turn is
+  over.** It waited while the chat counted as at work, and Claude Code counts
+  a chat as at work while a background subagent or shell it started runs: a
+  chat waiting on its subagents, with watch loops running for hours, kept
+  *Sent when this turn ends: /compact* for hours, where Claude Code's own
+  queue runs it as soon as the turn is over. Now it goes then, into the
+  chat's prompt or through Claude's background service, and what runs in the
+  background goes on. A message never stops a background chat that runs
+  commands or subagents in the background: when Claude's service doesn't
+  take it, it isn't sent, and you're told why.
+
 ## 1.23.0
 
 ### New
