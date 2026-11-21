@@ -1,18 +1,21 @@
 // Talpy Chat in the secondary side bar (talpyDen.chatPlace: sideBar): its
 // view holds one chat at a time, the next one opened takes its place, and a
 // chat's tab stays a tab where the setting says so or VS Code has no such bar.
+// And what a chat's page says that's VS Code's alone (its paste), done once.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import { host } from "./useHost";
 import { ChatPanes } from "../../core/src/chatPanes";
+import type { HostServices } from "../../core/src/host";
+import type { ChatPage } from "../../core/src/ports";
 import { ChatSurfaces } from "../src/chatPane";
 import { VsCodeEditor } from "../src/vscodeEditor";
 import { emptyHtml, emptyView, sideBarSupported, ViewSurface } from "../src/chatSurface";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf } from "../../core/src/shared/model";
-import { changeSettings, overrides, recorded, setVersion } from "./vscode-stub";
+import { answers, calls, changeSettings, overrides, recorded, setVersion } from "./vscode-stub";
 
 const NOW = 1_800_000_000_000;
 
@@ -180,4 +183,42 @@ test("a chat opens in Talpy Chat's view in the side bar, one at a time; with Cha
     side.dispose();
     panes.dispose();
   }
+});
+
+// The reply box's right-click Paste: what Ctrl+V runs there (a picture on the clipboard comes in as a pasted
+// one), run once by the chat's surface however many listen to it, never passed on to the core; one that
+// fails is logged. The rest of what the page says is passed on, to each listener, until the chat closes
+test("a chat page's paste runs VS Code's paste once and isn't passed on; the rest of what it says is", async () => {
+  const warned: string[] = [];
+  const logged = { log: { info() {}, warn: (m: string) => void warned.push(m), error() {} } } as unknown as HostServices;
+  const surfaces = new ChatSurfaces(vscode.Uri.file("/ext") as never, logged, {} as never);
+  const page: ChatPage = { tab: "chat", local: true, scale: 1, split: false, font: "", suggest: true, side: { open: false, pick: "" }, fresh: false };
+  const surface = surfaces.open("|c1", "fix the tests", page);
+  const panel = recorded.panels.at(-1)!;
+  const heard: unknown[][] = [[], []];
+  surface.onDidReceive((m) => heard[0].push(m));
+  surface.onDidReceive((m) => heard[1].push(m));
+  const pasting = () => calls.filter((c) => c.method === "executeCommand" && c.args[0] === "editor.action.clipboardPasteAction").length;
+  const before = pasting();
+  const pastes = () => pasting() - before;
+  const settle = () => new Promise((r) => setImmediate(r));
+  try {
+    panel.receive({ type: "paste" });
+    await settle();
+    assert.equal(pastes(), 1, "once");
+    panel.receive({ type: "focus", on: true }); // (a tab's: VS Code says which tab is in front)
+    panel.receive({ type: "ready" });
+    assert.deepEqual(heard, [[{ type: "ready" }], [{ type: "ready" }]]);
+    answers.set("executeCommand", (id: string) => (id === "editor.action.clipboardPasteAction" ? Promise.reject(new Error("no editor")) : undefined));
+    panel.receive({ type: "paste" });
+    await settle();
+    assert.deepEqual([pastes(), warned], [2, ["Talpy Chat's request failed: no editor"]]);
+  } finally {
+    answers.delete("executeCommand");
+    surface.dispose();
+  }
+  panel.receive({ type: "paste" });
+  panel.receive({ type: "ready" });
+  await settle();
+  assert.deepEqual([pastes(), heard[0].length, heard[1].length], [2, 1, 1], "closed: nothing more");
 });

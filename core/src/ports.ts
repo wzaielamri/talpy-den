@@ -106,8 +106,9 @@ export interface ChatPage {
 }
 
 // One chat's page, where the host shows it (VS Code: an editor tab, or Talpy Chat's view in the side bar).
-// The surface handles the page's "focus" and "paste" messages itself, so they never reach the core: "focus"
-// is what `active` rests on, "paste" reads the clipboard for the page. onDidReceive delivers the rest.
+// The surface handles the page's "focus" and "paste" messages itself, once however many listen, so they never
+// reach the core: "focus" is what `active` rests on, "paste" reads the clipboard for the page. onDidReceive
+// delivers the rest, to each listener.
 export interface PaneSurface {
   post(message: PaneHostMessage): void; // (ChatPanes posts nothing once it's closed)
   reveal(): void; // brought to the front

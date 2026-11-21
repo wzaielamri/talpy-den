@@ -220,7 +220,7 @@ export const window = {
   // title and visible throw.
   createWebviewPanel: (_viewType?: string, initialTitle = "") => {
     const sent: unknown[] = [];
-    let onMessage: (m: unknown) => void = () => undefined;
+    const messages = listeners<unknown>(); // (each listener hears what the page says, as VS Code's)
     const viewState = listeners<unknown>();
     const closed = listeners<void>();
     let disposed = false;
@@ -235,7 +235,7 @@ export const window = {
       cspSource: "vscode-webview:",
       asWebviewUri: (u: unknown) => u,
       postMessage: async (m: unknown) => (disposed ? false : (sent.push(m), true)),
-      onDidReceiveMessage: (l: (m: unknown) => void) => ((onMessage = l), disposable()),
+      onDidReceiveMessage: messages.on,
     };
     const panel = {
       get title() {
@@ -263,7 +263,7 @@ export const window = {
         return webview;
       },
       sent,
-      receive: (m: unknown) => onMessage(m),
+      receive: (m: unknown) => messages.fire(m),
       show(v: boolean) {
         visible = v;
         viewState.fire(undefined);

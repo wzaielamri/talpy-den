@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import { windowFolders } from "../../core/src/actions";
 import { picturesDir } from "../../core/src/chatPanes";
 import type { Dashboard } from "../../core/src/dashboard";
-import type { Event } from "../../core/src/events";
+import { Emitter, type Event } from "../../core/src/events";
 import type { HostServices } from "../../core/src/host";
 import type { ChatPage, PaneSurface, PaneSurfaces } from "../../core/src/ports";
 import { settings } from "../../core/src/settings";
@@ -163,11 +163,22 @@ function chatWebviewOptions(uri: vscode.Uri): vscode.WebviewOptions {
 }
 
 // A chat's page in its panel (an editor tab, or the side bar's view as one), as the core's ChatPanes uses it.
-// Two things the page says are VS Code's alone, done here and not passed on: "focus" (the side bar's view:
-// whether its keys are this chat's, as VS Code doesn't say which view has the focus) and "paste"
+// Two things the page says are VS Code's alone, done here once (whoever listens) and not passed on: "focus"
+// (the side bar's view: whether its keys are this chat's, as VS Code doesn't say which view has the focus) and
+// "paste"; onDidReceive passes on the rest, until the panel closes
 class ChatSurface implements PaneSurface {
+  private received = new Emitter<PaneMessage>();
+  readonly onDidReceive: Event<PaneMessage> = this.received.event;
+
   // sideFocused: the side bar's chat has the focus, so a tab's keys aren't its own though it's the editor in front
-  constructor(private panel: vscode.WebviewPanel, private host: HostServices, private sideFocused: () => boolean) {}
+  constructor(private panel: vscode.WebviewPanel, private host: HostServices, private sideFocused: () => boolean) {
+    // (the side bar's view outlives its chat: the next one listens to its page, this one no more)
+    const listening = panel.webview.onDidReceiveMessage((m: unknown) => this.receive(m));
+    panel.onDidDispose(() => {
+      listening.dispose();
+      this.received.dispose();
+    });
+  }
 
   post(message: PaneHostMessage): void {
     void this.panel.webview.postMessage(message);
@@ -191,18 +202,17 @@ class ChatSurface implements PaneSurface {
     return this.panel.webview.asWebviewUri(vscode.Uri.file(path)).toString();
   }
 
-  readonly onDidReceive: Event<PaneMessage> = (listener) =>
-    this.panel.webview.onDidReceiveMessage((m: unknown) => {
-      const type = m && typeof m === "object" ? (m as { type?: unknown }).type : undefined;
-      if (type === "focus") {
-        if (this.panel instanceof ViewSurface) this.panel.focus((m as { on?: unknown }).on === true);
-      } else if (type === "paste") {
-        // (the right-click menu's Paste in the reply box: what Ctrl+V runs there, so a picture on the
-        // clipboard comes in as a pasted one)
-        Promise.resolve(vscode.commands.executeCommand("editor.action.clipboardPasteAction"))
-          .catch((e) => this.host.log.warn(`Talpy Chat's request failed: ${e instanceof Error ? e.message : String(e)}`));
-      } else listener(m as PaneMessage);
-    });
+  private receive(m: unknown): void {
+    const type = m && typeof m === "object" ? (m as { type?: unknown }).type : undefined;
+    if (type === "focus") {
+      if (this.panel instanceof ViewSurface) this.panel.focus((m as { on?: unknown }).on === true);
+    } else if (type === "paste") {
+      // (the right-click menu's Paste in the reply box: what Ctrl+V runs there, so a picture on the
+      // clipboard comes in as a pasted one)
+      Promise.resolve(vscode.commands.executeCommand("editor.action.clipboardPasteAction"))
+        .catch((e) => this.host.log.warn(`Talpy Chat's request failed: ${e instanceof Error ? e.message : String(e)}`));
+    } else this.received.fire(m as PaneMessage);
+  }
   // (focus moving between editors too: the core goes by visible)
   readonly onDidChangeView: Event<void> = (listener) => this.panel.onDidChangeViewState(() => listener(undefined));
   readonly onDidDispose: Event<void> = (listener) => this.panel.onDidDispose(() => listener(undefined));
