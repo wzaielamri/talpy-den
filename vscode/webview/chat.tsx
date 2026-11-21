@@ -1853,11 +1853,17 @@ function ChatApp() {
     setInfo({ ok: true, message: "The handoff note is in a new chat's box: read it, then send it" });
   }, [handoff, items, chat?.state]);
 
+  // Back to the newest (↓ Latest, a key past the last message or bookmark): at once, and the host reads
+  // the chat as at first again when it was read further back (a bookmark's, Show earlier: "latest"), so
+  // each read after is as quick as before; a read further back on its way is given up
   const toEnd = () => {
     const el = list.current;
     follow.current = true;
     seenNow.current = null;
     setSeen(null);
+    setGoing("");
+    setPendingJump(null);
+    post({ type: "latest" });
     if (el) el.scrollTop = el.scrollHeight;
   };
   // Since you last looked's click: to where you left (on Steps, the first step since), read further back
@@ -2662,11 +2668,12 @@ function ChatApp() {
             {chat?.state === "working" && soFar.shells.length ? <ShellLines shells={soFar.shells} steps={tab === "steps"} /> : null}
             <HoverBar list={list} itemOf={(key) => shownNow.current.find((it) => it.key === key)} copied={copiedKey} onCopy={(it) => copyItem(it, true)}
               marked={(key) => !!markedKeys[key]} onMark={toggleMark} hovered={hoverKey} />
-            {/* (at the list's bottom, over it: it moves nothing; gone at the end) */}
-            {unseen > 0 ? (
+            {/* (↓ Latest whenever it isn't at its newest, ↓ 3 new once something came in below: at the list's
+                bottom, over it, so it moves nothing; gone at the end. Nothing in it moves) */}
+            {seen && loaded && shownItems.length ? (
               <div class="pane-below-at">
                 <button type="button" class="pane-below" title={newHint(unseen)} onClick={toEnd}>
-                  {newText(unseen)}<span aria-hidden="true"> ↓</span>
+                  <span aria-hidden="true">↓ </span>{newText(unseen)}
                 </button>
               </div>
             ) : null}

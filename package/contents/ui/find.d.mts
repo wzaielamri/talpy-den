@@ -31,6 +31,8 @@ export function foldOf(text: string | undefined | null, how?: "markdown" | "plai
 export function plainOf(md: string | undefined | null): string;
 export function yoursShown(it: FindItem): string;
 export function findParts(it: FindItem, steps: boolean): [string, string];
+// (an item's text as searched, low case: the one made before for the same text, read again or not)
+export function lowOf(it: FindItem, steps: boolean): { it: FindItem; low: string; cut: number };
 export function findIn(items: readonly FindItem[], query: string, steps: boolean, from?: number, budget?: number, hits?: FindHit[]): { hits: FindHit[]; next: number };
 export function findCount(total: number, at: number, done: boolean): string;
 export function findStep(hits: readonly FindHit[], at: number, back: boolean, view: { first: number; last: number; order: ReadonlyMap<string, number> }): number;

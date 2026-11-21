@@ -2228,8 +2228,8 @@ class NewChatTests(unittest.TestCase):
             self.assertIn(f'"{words}"', chat)
 
     def test_times_copy_and_new_below_add_nothing_per_message(self):
-        # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "3 new ↓"
-        # (A2): each in a file of its own, read and made only when there's one to show (a day line is the
+        # Talpy Chat's lines between days (A5), a message's time and Copy on hover (A4, A5) and "↓ Latest" /
+        # "↓ 3 new" (A2): each in a file of its own, read and made only when there's one to show (a day line is the
         # list's section header, the hovered message's tools one for the list, moved to the one
         # hovered), "Today" moves on with one timer that runs only while the window shows; nothing
         # takes the list's hover from it (no MouseArea); the same words as VS Code's
@@ -2238,7 +2238,7 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('source: active ? "DayLine.qml" : ""', pane)
         self.assertIn('source: active ? "MessageTools.qml" : ""', pane)
         self.assertIn("onHoverRowChanged: if (hoverRow !== null) messageTools.active = true", pane)
-        self.assertIn("active: pane.unseen > 0 && pane.conversationTab\n", pane)
+        self.assertIn("active: !pane.endKept && pane.loaded && items.count > 0 && pane.conversationTab\n", pane)
         self.assertIn('source: active ? "NewBelow.qml" : ""', pane)
         self.assertRegex(pane, r"id: midnight\n\s+interval: 3600000\n\s+repeat: true\n\s+running: pane\.shown\n")
         delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
@@ -2253,8 +2253,8 @@ class NewChatTests(unittest.TestCase):
             self.assertIn(words, tools)
             self.assertIn(words, chat)
         below = (ROOT / "ui/NewBelow.qml").read_text()
-        self.assertIn("%1 new items below, since you scrolled up. Click to go to the end.", below)
-        self.assertIn("new items`} below, since you scrolled up. Click to go to the end.", shared)
+        self.assertIn("%1 new items below, since you scrolled up. Click to go back to the latest.", below)
+        self.assertIn("new items`} below, since you scrolled up. Click to go back to the latest.", shared)
         for words in ('i18n("Today")', 'i18n("Yesterday")', '"ddd d MMM"'):
             self.assertIn(words, pane)
         for words in ('"Today"', '"Yesterday"', 'weekday: "short", day: "numeric", month: "short"'):

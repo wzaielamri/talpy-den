@@ -661,6 +661,7 @@ Window {
 
     property string stamp: ""
     property int limit: 120
+    readonly property int limitFirst: 120   // (what a window reads first; back at the newest, only that again: toEnd)
     readonly property int limitMax: 2000   // (pane.py's PANE_ITEMS_MAX: Show earlier goes no further)
     property bool more: false
     property bool loaded: false
@@ -843,7 +844,8 @@ Window {
         if (compactMenu.item)
             compactMenu.item.close()
         stamp = ""
-        limit = 120
+        limit = limitFirst
+        fillBuffer = -1   // (the chat before's rows a few at a time: this one's are made as a window makes them)
         more = false
         loaded = false
         loadError = ""
@@ -1157,12 +1159,12 @@ Window {
     // earlier meanwhile), isn't taken
     function takeConversation(result) {
         loadError = ""
-        // (a read as far back as a bookmark's message: at the length it read, which the next ones read too)
-        const reach = !!result.reach && result.limit > 0
+        // (a read as far back as a bookmark's message: at the length it read, which the next ones read too;
+        // not one given up since, back at the newest, toEnd: that one's length isn't taken)
+        const reach = !!result.reach && result.limit > 0 && result.reach === reachKey
         if (reach) {
             limit = result.limit
-            if (result.reach === reachKey)
-                reachKey = ""
+            reachKey = ""
         }
         if (result.unchanged || !fresher(result.stamp)) {
             if (reach && bookmarkLogic.item)
@@ -1225,7 +1227,7 @@ Window {
         if (turnEnded !== "" && usual === null)
             usualSoon.restart()
         loaded = true
-        if (following)
+        if (following && !(reach && result.reached === "here"))   // (read for a bookmark: it's gone to, not the end)
             keepEnd()
         Qt.callLater(watchNow)
     }
@@ -1263,10 +1265,19 @@ Window {
                     items.setProperty(at, "key", key)
             }
         }
+        // (those gone, a run at a time: back at the newest after a read further back, 1900 go at once)
         for (let i = items.count - 1; i >= 0; i--) {
-            if (!wanted[items.get(i).key])
-                items.remove(i)
+            if (wanted[items.get(i).key])
+                continue
+            let from = i
+            while (from > 0 && !wanted[items.get(from - 1).key])
+                from--
+            items.remove(from, i - from + 1)
+            i = from
         }
+        // (many new at once to a list that has rows, a read further back: made a few at a time, fillBuffer)
+        if (items.count > 0 && list.length - items.count > fillMin)
+            startFill()
         for (let i = 0; i < list.length; i++) {
             const it = list[i]
             if (it.at && it.at >= dayEnd) {
@@ -1360,7 +1371,7 @@ Window {
         onTriggered: pane.newDay()
     }
 
-    // What came in below while you're scrolled up ("3 new ↓" over the list's bottom: NewBelow.qml):
+    // What came in below while you're scrolled up ("↓ 3 new" over the list's bottom: NewBelow.qml):
     // the keys there when you left the end, till you're back at it (VS Code shared/pane.ts newBelow)
     property var seenKeys: null
     property int unseen: 0
@@ -1442,10 +1453,72 @@ Window {
         }
         unseen = 0   // (none of those there then: nothing to tell)
     }
+    // Back to the newest (↓ Latest, NewBelow.qml; a key past the last message or bookmark): read further
+    // back (a bookmark's, Show earlier), the chat is read as a window reads it first again, so each read
+    // after is as quick as before (one of 1,900 items took 0.75 s, each time Claude wrote a line); the rows
+    // above go, the end stays. A read further back still on its way is given up (takeConversation)
     function toEnd() {
         seenKeys = null
         unseen = 0
+        if (limit > limitFirst || reachKey !== "") {
+            limit = limitFirst
+            reachKey = ""
+            if (bookmarkLogic.item)
+                bookmarkLogic.item.going = ""
+            // (the rows above the newest part go at once, before the read: the list makes only those it
+            // shows at the end first, a few at a time, then those above go, out of view; going back
+            // from 1,900 made rows held the window up 3.5 s without, 0.3 s with)
+            if (lastItems.length > limitFirst) {
+                startFill()
+                followEnd()
+                lastItems = lastItems.slice(-limitFirst)
+                const handoff = {}
+                merge(withPending(lastItems, handoff), handoff)
+                more = true
+            }
+            stamp = ""
+            load()
+        }
         keepEnd()
+    }
+
+    // Rows made a few at a time. The list makes every row once (cacheBuffer, so it doesn't jump while
+    // you scroll), and many that came in at once (a read further back for a bookmark, Show earlier: up to
+    // 2000) were all made in one go, rich text and all: 1,900 held the window up 12 s. Then the list makes
+    // only those near what you read (fillBuffer: px either way), more each moment, nearest first, as many
+    // as take a few ms, till it's every row again (-1). Nothing runs once they're all made
+    property real fillBuffer: -1
+    readonly property int fillMin: 100   // (more new rows than that at once: a few at a time)
+    function startFill() {
+        fillBuffer = Math.round(list.height)
+        filling.step = Math.max(list.height, fm.height * 12)
+        filling.last = 0
+    }
+    // (going far from what's made meanwhile: only the rows near where it goes are made at once, not
+    // all a grown buffer holds there; Bookmarks.qml jumpNow, FindBar.qml goTo, toEnd)
+    function fillNear() {
+        if (fillBuffer >= 0)
+            startFill()
+    }
+    function fillMore() {
+        const t = Date.now()
+        // (what the step before cost: rows made at once, or as the window was drawn since)
+        const late = filling.last > 0 ? t - filling.last - filling.interval : 0
+        const next = fillBuffer + filling.step
+        fillBuffer = next >= 100000 ? -1 : next
+        const cost = Math.max(Date.now() - t, late)
+        filling.last = Date.now()
+        filling.step = cost > 24 ? Math.max(fm.height * 6, filling.step / 2)
+                     : cost < 8 ? Math.min(20000, filling.step * 2) : filling.step
+    }
+    Timer {
+        id: filling
+        property real step: 0
+        property real last: 0
+        interval: 32
+        repeat: true
+        running: pane.fillBuffer >= 0 && pane.shown
+        onTriggered: pane.fillMore()
     }
 
     // The end of the conversation in view, with its working line, when you
@@ -3775,8 +3848,9 @@ Window {
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
                     // every item made and laid out once (not as it scrolls in), so the
-                    // list doesn't jump while you scroll
-                    cacheBuffer: 100000
+                    // list doesn't jump while you scroll; many come in at once, a few at a
+                    // time (fillBuffer)
+                    cacheBuffer: pane.fillBuffer >= 0 ? pane.fillBuffer : 100000
                     onMovementStarted: {   // (you scroll: it doesn't pull you back)
                         settle.stop()
                         holdTop.stop()
@@ -4528,15 +4602,17 @@ Window {
                 active: pane.bookmarksOn && pane.conversationTab
                 source: active ? "BookmarkList.qml" : ""
             }
-            // "3 new ↓" at the list's bottom while you're scrolled up and something came in below (NewBelow.qml:
-            // made only then); over the list, so it moves nothing; a click goes to the end
+            // "↓ Latest" at the list's bottom whenever it isn't at its newest (a bookmark gone to, a search's
+            // match, scrolled up), "↓ 3 new" once something came in below meanwhile (NewBelow.qml: made only
+            // then; endKept, noted once the list has moved, so a read that keeps the end makes none); over the
+            // list, so it moves nothing; a click goes back to the newest (toEnd). Nothing in it moves
             Loader {
                 parent: scroll
                 z: 11
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: Kirigami.Units.largeSpacing
-                active: pane.unseen > 0 && pane.conversationTab
+                active: !pane.endKept && pane.loaded && items.count > 0 && pane.conversationTab
                 source: active ? "NewBelow.qml" : ""
             }
             // Since you last looked (AwayLine.qml: made only when there's one): a line under the list, above

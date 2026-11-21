@@ -158,13 +158,43 @@ export function findParts(it, steps) {
     return ["", ""];
 }
 
-// Each item's text, low case, as last searched (by its key: an item read again is the same text)
+// Each item's text, low case, as last searched (by its key). Each read of the chat brings new objects:
+// one whose text is what it was is the same one (findParts' fields compared), so a search open while
+// the chat is read again and again (Claude working, 2000 items after a bookmark further back) makes
+// only the changed ones again, not every item at each read
 const lowered = new Map();
-function lowOf(it, steps) {
+function sameList(a, b) {
+    if (a === b)
+        return true;
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length)
+        return false;
+    for (let i = 0; i < a.length; i++)
+        if (a[i] !== b[i])
+            return false;
+    return true;
+}
+function sameText(a, b) {
+    if (a === b)
+        return true;
+    if (a.kind !== b.kind || a.text !== b.text)
+        return false;
+    if (a.kind === "you") {
+        const x = a.command || {}, y = b.command || {};
+        return !!x.shell === !!y.shell && (x.output || "") === (y.output || "");
+    }
+    if (a.kind !== "tool")
+        return true;
+    return a.line === b.line && a.name === b.name && a.summary === b.summary && a.status === b.status
+        && a.input === b.input && a.output === b.output && sameList(a.diff, b.diff)
+        && (a.asked === b.asked || JSON.stringify(a.asked) === JSON.stringify(b.asked));
+}
+export function lowOf(it, steps) {
     const key = String(it.key) + (steps ? "\u0001s" : "\u0001c");
     const was = lowered.get(key);
-    if (was && was.it === it)
+    if (was && sameText(was.it, it)) {
+        was.it = it;   // (the next look: at once)
         return was;
+    }
     const [shown, rest] = findParts(it, steps);
     const found = { it, low: (shown + "\u0000" + rest).toLowerCase(), cut: shown.length };
     lowered.delete(key);   // (the newest last: the oldest go first)

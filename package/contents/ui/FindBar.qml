@@ -149,6 +149,14 @@ Rectangle {
     function goTo() {
         const place = placeOf(hit)
         if (!place && --goTries > 0) {
+            // (its row not made yet, the list making many a few at a time: there first, those near it made)
+            const i = hit && order.has(hit.key) ? order.get(hit.key) : -1
+            if (i >= 0 && !list.itemAtIndex(i)) {
+                settle.stop()
+                holdTop.stop()
+                pane.fillNear()
+                list.positionViewAtIndex(i, ListView.Center)
+            }
             go.restart()
             return
         }

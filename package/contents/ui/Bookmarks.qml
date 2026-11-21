@@ -320,17 +320,19 @@ Item {
         const i = loaded.has(jumpKey) ? loaded.get(jumpKey) : -1
         if (i < 0)
             return
+        // (not following the end any more, first: it took the list back there between tries)
+        settle.stop()
+        holdTop.stop()
         list.forceLayout()
         const row = list.itemAtIndex(i)
         if (!row || !row.listed || !row.shows) {
             if (--jumpTries > 0) {
+                pane.fillNear()   // (rows still made a few at a time: only those near it now)
                 list.positionViewAtIndex(i, ListView.Beginning)
                 jumpRetry.restart()
             }
             return
         }
-        settle.stop()
-        holdTop.stop()
         list.contentY = topOf(row)
         // (rows above it still getting their height, read just now: it stays at the top meanwhile, till you
         // scroll; without, it drifted a screen away)

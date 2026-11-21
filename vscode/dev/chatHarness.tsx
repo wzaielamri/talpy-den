@@ -477,12 +477,13 @@ if (hover)
     if (params.get("copy") === "1") setTimeout(() => document.querySelector<HTMLButtonElement>(".pane-hoverbar button")?.click(), 1600);
   }, 700);
 
-// ?below=1: scrolled up to the top, then Claude goes on: "N new ↓" at the list's bottom
-if (params.get("below") === "1")
+// ?below=1: scrolled up to the top, then Claude goes on: "↓ 3 new" at the list's bottom; ?below=latest:
+// only scrolled up, "↓ Latest"
+if (params.get("below") === "1" || params.get("below") === "latest")
   setTimeout(() => {
     const list = document.querySelector<HTMLElement>(".pane-list");
     if (list) list.scrollTop = 0;
-    setTimeout(() => send({ type: "conversation", answer: { ok: true, more: true, stamp: "2", items: [...items,
+    if (params.get("below") === "1") setTimeout(() => send({ type: "conversation", answer: { ok: true, more: true, stamp: "2", items: [...items,
       { kind: "claude", key: "b1", text: "The parser tests pass now: **14 passed**.", at: Date.now() },
       { kind: "tool", key: "b2", name: "Bash", line: "Bash: npm test", status: "ok", summary: "120 passed", at: Date.now() },
       { kind: "claude", key: "b3", text: "And the whole suite too. Shall I commit?", at: Date.now() }] } }), 300);

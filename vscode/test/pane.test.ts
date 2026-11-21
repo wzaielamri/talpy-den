@@ -19,7 +19,7 @@ import { VsCodeEditor } from "../src/vscodeEditor";
 import { VsCodeHost } from "../src/vscodeHost";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";
-import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
+import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
 import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../../core/src/shared/pane";
 import type { ViewState } from "../../core/src/shared/types";
 import { ViewHost } from "../src/view";
@@ -1487,9 +1487,57 @@ test("the new-messages badge: what came in below since you scrolled up, as its t
   assert.equal(newBelow(seen, [...earlier, ...items], false), 4);
   assert.equal(newBelow(seen, [...earlier, ...items.slice(0, 3)], false), 0);
   assert.equal(newBelow(seen, earlier, true), 0);   // (none of those there then: nothing to tell)
+  // (the button says so, after its ↓; with nothing new below, it's there all the same: Latest)
   assert.equal(newText(3), "3 new");
-  assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go to the end.");
-  assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go to the end.");
+  assert.equal(newText(0), "Latest");
+  assert.equal(newHint(1), "One new item below, since you scrolled up. Click to go back to the latest.");
+  assert.equal(newHint(4), "4 new items below, since you scrolled up. Click to go back to the latest.");
+  assert.equal(newHint(0), "Back to the latest point of the chat");
+});
+
+test("back at the newest after a read further back: the chat is read as at first again, a reach on its way is given up", async () => {
+  const reads: string[][] = [];
+  let release: (() => void) | null = null;
+  const answer = (args: string[]) => {
+    const limit = args[args.indexOf("--limit") + 1];
+    if (args.includes("--reach")) return { ok: true, items: [{ kind: "you", key: "u0", text: "old", at: 1 }], more: true, stamp: "900:5/1920", limit: 1920, reach: args[args.indexOf("--reach") + 1], reached: "here" };
+    return { ok: true, items: [], more: true, stamp: `800:4/${limit}` };
+  };
+  const backend = { pane: async (args: string[]) => {
+    if (args.includes("--wait")) return { ok: true, unchanged: true };
+    reads.push(own(args));
+    if (args.includes("u5")) await new Promise<void>((r) => (release = r));   // (a reach that takes its time)
+    return answer(args);
+  } };
+  const dash = { opened() {}, state: () => demoState(NOW), refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false });
+  p.open({ chatId: "latest-1", sessionId: "latest-1", profileDir: ".claude", name: "x" } as never);
+  const panel = recorded.panels.at(-1)!;
+  const tick = () => new Promise((r) => setTimeout(r, 10));
+  const limits = () => reads.map((a) => a[a.indexOf("--limit") + 1] + (a.includes("--reach") ? ` --reach ${a[a.indexOf("--reach") + 1]}` : ""));
+  panel.show(true);
+  panel.receive({ type: "ready" });
+  await tick();
+  panel.receive({ type: "latest" });   // (at the first read's length: nothing to read)
+  await tick();
+  assert.deepEqual(limits(), ["120"]);
+  panel.receive({ type: "reach", key: "u0" });
+  await tick();
+  panel.receive({ type: "latest" });
+  await tick();
+  assert.deepEqual(limits(), ["120", "120 --reach u0", "120"]);
+  // a reach still on its way when you go back: its length isn't taken, the newest is read after it
+  panel.receive({ type: "reach", key: "u5" });
+  await tick();
+  panel.receive({ type: "latest" });
+  await tick();
+  release!();
+  await tick();
+  await tick();
+  panel.dispose();
+  assert.deepEqual(limits(), ["120", "120 --reach u0", "120", "120 --reach u5", "120"]);
+  const conv = panel.sent.filter((m) => (m as { type: string }).type === "conversation").map((m) => (m as { answer: Record<string, unknown> }).answer);
+  assert.deepEqual(conv.map((a) => a.stamp), ["800:4/120", "900:5/1920", "800:4/120", "800:4/120"], "the reach given up isn't shown");
 });
 
 // Since you last looked (A9): a chat that went on without you, as one line when its window shows it
@@ -2029,6 +2077,28 @@ test("search goes a slice at a time and finds the same; a chat read again is sea
   assert.deepEqual(got.hits, whole);
   const again = many.map((it) => (it.key === "k3" ? { ...it, text: "no longer" } : it));
   assert.equal(findIn(again, "needle", true).hits.length, 798);
+});
+
+test("a chat read again isn't made low case again: only the items whose text changed are", () => {
+  // (each read brings new objects: a search open while Claude works searched every item anew at each)
+  const step: PaneItem = { kind: "tool", key: "t1", name: "Bash", line: "Bash: npm test", status: "ok", summary: "3 passed",
+                           input: "npm test", output: "ok", diff: ["+a"], at: 1, asked: undefined };
+  const reply: PaneItem = { kind: "claude", key: "m1", text: "The **parser** works", at: 2 };
+  const yours: PaneItem = { kind: "you", key: "u1", text: "!ls", command: { shell: true, output: "a.txt" }, at: 3 };
+  for (const it of [step, reply, yours])
+    for (const steps of [false, true]) {
+      const first = lowOf(it, steps);
+      assert.equal(lowOf(structuredClone(it), steps), first, `${it.key}: the same text, read again`);
+    }
+  const was = lowOf(reply, false);
+  for (const changed of [{ ...reply, text: "The parser" }, { ...reply, kind: "note" as const }]) assert.notEqual(lowOf(changed, false), was);
+  const tool = lowOf(step, true);
+  for (const changed of [{ status: "error" }, { summary: "1 failed" }, { output: "no" }, { input: "npm t" }, { line: "Bash: x" },
+                         { diff: ["+b"] }, { asked: { state: "answered", plan: "P" } }])
+    assert.notEqual(lowOf({ ...step, ...changed }, true), tool, JSON.stringify(changed));
+  const mine = lowOf(yours, false);
+  assert.notEqual(lowOf({ ...yours, command: { shell: true, output: "b.txt" } }, false), mine);
+  assert.equal(lowOf({ ...yours, command: { shell: true, output: "b.txt" } }, false).low.includes("b.txt"), true);
 });
 
 test("the find bar's count and its steps: from what you read, then one after another, round", () => {

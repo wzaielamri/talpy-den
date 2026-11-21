@@ -455,6 +455,7 @@ export type PaneMessage =
   // bookmarks (id); kind, at and text: what the bookmark keeps of it (entryOf)
   | { type: "bookmark"; id: number; key: string; on: boolean; kind: "you" | "claude"; at: number; text: string }
   | { type: "reach"; key: string } // the chat read far enough back to show that message (a bookmark further back than what's shown)
+  | { type: "latest" } // back at the newest (↓ Latest): read further back, it's read as at first again
   // a side question about the chat (pane.py --side-question, answered with side, id): several at once,
   // each on its own (from: about the part from that message's turn on, --from); one removed, or all of them
   // ("all"); where a part from a message starts (--part, Ask from here); the panel's pick and whether it's open, kept
@@ -1220,7 +1221,7 @@ export function lastReply(items: readonly PaneItem[]): PaneItem | null {
 
 // Search (Ctrl+F) and folding (Show more / Show less, Ctrl+O): the widget's find.mjs, so Plasma's
 // Talpy Chat counts the same matches and folds the same texts (see there)
-export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, nthIn, plainOf, type FindHit, type Fold } from "../../../vscode/vendor/find.mjs";
+export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, plainOf, type FindHit, type Fold } from "../../../vscode/vendor/find.mjs";
 
 // Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
 // bookmarks the same messages and goes to the same one (see there)
@@ -1355,10 +1356,11 @@ export function sidePartAnswerOf(id: number, chatId: string, r: Record<string, u
 export function showsOn(it: PaneItem, steps: boolean): boolean {
   return steps || it.kind !== "tool" || askedShows(it) || it.asked?.state === "denied";
 }
-// The "3 new" badge at the list's bottom while you're scrolled up: what came in below since you
-// left its end (seen: the keys there then), after the last of those, that its tab shows (earlier
-// ones, Show earlier's, are above; none of them left: nothing to tell). A click goes to the end;
-// it's gone once you're there
+// "↓ Latest" at the list's bottom whenever it isn't at its newest (a bookmark gone to, a search's
+// match, scrolled up), "↓ 3 new" once something came in below meanwhile: what came in since you left
+// its end (seen: the keys there then), after the last of those, that its tab shows (earlier ones, Show
+// earlier's, are above; none of them left: nothing to tell). A click goes back to the newest, the
+// chat read as at first (the host's "latest"); it's gone once you're there. Plasma NewBelow.qml
 export function newBelow(seen: ReadonlySet<string>, items: readonly PaneItem[], steps: boolean): number {
   let n = 0;
   for (let i = items.length - 1; i >= 0; i--) {
@@ -1368,10 +1370,11 @@ export function newBelow(seen: ReadonlySet<string>, items: readonly PaneItem[], 
   return 0;
 }
 export function newText(n: number): string {
-  return `${n} new`;
+  return n > 0 ? `${n} new` : "Latest";
 }
 export function newHint(n: number): string {
-  return `${n === 1 ? "One new item" : `${n} new items`} below, since you scrolled up. Click to go to the end.`;
+  return n > 0 ? `${n === 1 ? "One new item" : `${n} new items`} below, since you scrolled up. Click to go back to the latest.`
+    : "Back to the latest point of the chat";
 }
 
 // Suggested replies (Plasma ChatPane, the same rules and words): small chips above the box once

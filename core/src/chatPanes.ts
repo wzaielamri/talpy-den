@@ -748,8 +748,9 @@ class Pane implements Disposable {
 
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
   private take(r: Record<string, any>): boolean {
-    // (a reach's answer was read for the limit it needed: taken first, so its stamp is one to show)
-    if (r.ok && typeof r.reach === "string" && typeof r.limit === "number" && r.limit > 0) {
+    // (a reach's answer was read for the limit it needed: taken first, so its stamp is one to show; not
+    // one given up since, back at the newest: "latest")
+    if (r.ok && typeof r.reach === "string" && r.reach === this.reachKey && typeof r.limit === "number" && r.limit > 0) {
       this.limit = Math.min(LIMIT_MAX, r.limit);
       this.reachKey = "";
     }
@@ -937,6 +938,16 @@ class Pane implements Disposable {
         // a bookmark further back than what's shown: read back far enough to show it (pane.py --reach)
         if (typeof m.key !== "string" || !canBookmark({ kind: "you", key: m.key, at: null }) || this.fresh) break;
         this.reachKey = m.key;
+        this.stamp = "";
+        await this.load();
+        break;
+      case "latest":
+        // back at the newest (the tab's ↓ Latest, or a key past the last message): read further back
+        // (a bookmark's, Show earlier), it's read as at first again, so each read after is as quick as
+        // before (2000 items took 0.4 s a read, each time Claude wrote a line); one on its way is given up
+        if (this.limit <= LIMIT && !this.reachKey) break;
+        this.limit = LIMIT;
+        this.reachKey = "";
         this.stamp = "";
         await this.load();
         break;
