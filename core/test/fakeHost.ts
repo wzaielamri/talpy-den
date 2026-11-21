@@ -125,6 +125,7 @@ export class FakeHost implements HostServices {
     }
   }
 
+  // (the focus told before the use, as VS Code's host tells them: host.ts)
   setFocused(focused: boolean): void {
     this.isFocused = focused;
     this.focusChanged.fire(focused);

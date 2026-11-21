@@ -1,5 +1,6 @@
 // The dashboard on its host alone (no vscode): the state it builds names each chat's and account's agent,
-// and the pace of this computer's checks follows the window's focus as the host tells it.
+// the pace of this computer's checks follows the window's focus as the host tells it, and so do what it
+// clears when you look and what it sums up when you come back.
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -12,6 +13,10 @@ import type { Notifier } from "../src/notify";
 import type { EditorPort } from "../src/ports";
 import { useSettingsHost } from "../src/settings";
 import { demoState } from "../src/shared/demo";
+import { petKeyOf } from "../src/shared/model";
+import type { Session, Status } from "../src/shared/types";
+import type { Changes } from "../src/transitions";
+import { comingBack } from "./comingBack";
 import { FakeHost } from "./fakeHost";
 
 const NOW = 1_800_000_000_000;
@@ -87,4 +92,40 @@ test("an unfocused window polls at the working interval", async () => {
     dash.dispose();
     mock.timers.reset();
   }
+});
+
+// The dashboard's reaction to the focus: a chat that finished while you weren't looking stays unseen until the
+// window has the focus with the view open
+test("what finished unseen is cleared once the window has the focus with the view open", () => {
+  const { fake, editor, notifier } = setup();
+  const dash = new Dashboard(fake, editor, {} as Backend, notifier);
+  const priv = dash as unknown as { status: Status; noteUnseen(c: Pick<Changes, "finished">): void };
+  try {
+    const status = structuredClone(demoState(NOW).status!);
+    const done: Session = { ...status.groups[0].sessions[0], key: "fin", chatId: "fin", sessionId: "fin", state: "idle", stopped: null };
+    status.groups[0].sessions.push(done);
+    priv.status = status;
+    priv.noteUnseen({ finished: [{ id: petKeyOf(done), session: done, took: 600_000, at: NOW, stop: "" }] });
+    assert.equal(dash.unseenCount(), 1);
+    fake.setFocused(true);
+    assert.equal(dash.unseenCount(), 1, "the view closed: not seen");
+    fake.setFocused(false);
+    dash.setVisible(true);
+    assert.equal(dash.unseenCount(), 1, "the view open in a window without the focus: not seen");
+    fake.setFocused(true);
+    assert.equal(dash.unseenCount(), 0, "seen");
+  } finally {
+    dash.dispose();
+  }
+});
+
+// For one change of the window's state, FakeHost tells the focus before the use, as VS Code's host does
+// (host.ts): coming back, the window claims the lead before away's onBack asks for it, so "While you were
+// away" shows; then what finished unseen is cleared (comingBack.ts)
+test("coming back to the window: it claims the lead, away's digest shows, then what finished unseen is cleared", () => {
+  const fake = new FakeHost();
+  const { order, digest, unseen } = comingBack(fake, (focused) => fake.setFocused(focused));
+  assert.deepEqual(order, ["claim", "back", "digest", "unseen cleared"]);
+  assert.match(digest, /^While you were away \(10m\): Needs you: /);
+  assert.deepEqual(unseen, [1, 0]);
 });

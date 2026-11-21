@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
 import * as fs from "node:fs";
 import type { PickItem } from "../../core/src/host";
+import { comingBack } from "../../core/test/comingBack";
 import { settingNames } from "../src/legacySettings";
 import { VsCodeHost } from "../src/vscodeHost";
 
@@ -188,6 +189,26 @@ test("inUse is the window's `active` when VS Code says it, else its focus, and f
   assert.equal(host.focus.inUse, false, "focused but not used lately");
   delete (stub.window.state as { active?: boolean }).active;
   assert.deepEqual(got, [true]);
+});
+
+// One change of the window's state: the focus is told before the use, whichever was listened to first (host.ts)
+test("for one window state change, onDidChange fires before onDidChangeUse", () => {
+  const host = make();
+  const heard: string[] = [];
+  host.focus.onDidChangeUse((u) => heard.push(`use ${u}`));
+  host.focus.onDidChange((f) => heard.push(`focus ${f}`));
+  stub.setWindowFocused(true);
+  stub.setWindowFocused(false);
+  assert.deepEqual(heard, ["focus true", "use true", "focus false", "use false"]);
+});
+
+// (comingBack.ts: a real Notifier and Dashboard on this host)
+test("coming back to the window: it claims the lead, away's digest shows, then what finished unseen is cleared", () => {
+  const host = make();
+  const { order, digest, unseen } = comingBack(host, (focused) => stub.setWindowFocused(focused));
+  assert.deepEqual(order, ["claim", "back", "digest", "unseen cleared"]);
+  assert.match(digest, /^While you were away \(10m\): Needs you: /);
+  assert.deepEqual(unseen, [1, 0]);
 });
 
 test("message gives back the very item clicked, or the string clicked", async () => {

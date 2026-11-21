@@ -28,6 +28,7 @@ export class VsCodeHost implements HostServices {
         const keys = this.settingKeys.filter((k) => e.affectsConfiguration(`talpyDen.${k}`));
         if (keys.length) this.settingsChanged.fire(keys);
       }),
+      // (the focus before the use: the window claims the lead before coming back asks who leads, host.ts)
       vscode.window.onDidChangeWindowState((s) => {
         this.focusChanged.fire(s.focused);
         this.useChanged.fire(inUse(s));

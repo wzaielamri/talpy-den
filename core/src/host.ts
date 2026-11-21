@@ -87,7 +87,10 @@ export interface HostServices {
   // inUse: interacted with recently, else focused (VS Code's window `active`, else `focused`); it can change
   // without the focus doing so, hence onDidChangeUse (away's AwayWatch). An implementation must fire
   // onDidChangeUse on every change of the window's focus too, not only when inUse changes: the dashboard's
-  // reaction to the focus (clearing what was seen) listens on it, not on onDidChange.
+  // reaction to the focus (clearing what was seen) listens on it, not on onDidChange. For one change of the
+  // window's state, onDidChange fires before onDidChangeUse: the window claims the lead on the focus (Notifier),
+  // and coming back (AwayWatch -> Dashboard.cameBack -> Notifier.digest) shows "While you were away" only in
+  // the window that leads.
   readonly focus: {
     readonly focused: boolean; readonly onDidChange: Event<boolean>;
     readonly inUse: boolean; readonly onDidChangeUse: Event<boolean>;
