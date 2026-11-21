@@ -11,7 +11,8 @@ it renders never acts on a chat, and its popup holds still.
   replies, a whole reply for Copy, the review, the terminal's font, what Claude
   made, unfolded, one further back than what's shown: --reach) run as they are,
   and a bookmark is kept (--bookmark: in the render's own cache folder, as every
-  write of the render is).
+  write of the render is), as is how far a window showed a chat (--seen; --away
+  reads what it did since).
 - The pets are off (showPet, chatPets 0): offscreen, every window is drawn on
   the one thread, and a pet's animation in the popup would be in each number.
 """
@@ -36,7 +37,8 @@ patch(pkg / "contents/code/pane.py", "def main(argv=None):\n    args = sys.argv[
         "--conversation", "--complete", "--review", "--terminal-font", "--limit", "--if-changed", "--wait",
         "--suggest", "--replies", "--reply-text", "--key", "--cwd", "--profile", "--host", "--config-dir", "--remote", "--pretty",
         "--made", "--path", "--step", "--as-file",
-        "--reach", "--bookmark", "--kind", "--at", "--text", "--off")]   # (a bookmark: kept in the render's own cache)
+        "--reach", "--bookmark", "--kind", "--at", "--text", "--off",   # (a bookmark: kept in the render's own cache)
+        "--seen", "--away")]   # (a window's later reads: how far it showed the chat, kept in the render's own cache too)
     if "--send" in args:
         print(json.dumps({"ok": True, "how": "background", "message": "bench: not sent"}))
         return
