@@ -8,6 +8,15 @@ export const QUOTE_BUTTON = "Reply to this";
 export const QUOTE_MENU = "Quote in reply";
 export const QUOTE_CHARS = 4000;   // (a selection longer than this is cut, with …: a quote, not a copy of the chat)
 
+// Where the selection's bar sits (y), the same in Plasma and VS Code: under the end of the selection (endY),
+// gap below it, kept above limit; null (hidden) while that end is out of view (above top or below bottom),
+// so the bar goes with the selection through a scroll and is back when the selection is. Same coordinates all round.
+export function barY(endY, top, bottom, gap, limit) {
+    if (!(endY >= top && endY <= bottom))
+        return null;
+    return Math.min(endY + gap, limit);
+}
+
 // The selection as a quote: each line after "> ", blank lines at its ends gone and runs of them one
 export function quoteOf(selected) {
     let text = String(selected || "").replace(/\r\n?/g, "\n").replace(/[\u2028\u2029]/g, "\n");

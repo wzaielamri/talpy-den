@@ -3011,10 +3011,10 @@ Window {
     // Quote in reply: what you selected, as a Markdown quote at the top of the box, the cursor under it
     // (quote.mjs withQuote; VS Code chat.tsx the same); offered by a "Reply to this" button where a drag
     // that selected something ended (gone with a new press, a scroll or another chat) and the right-click menu
-    property var quoteAt: null   // {x, y} in the scroll view, or null
+    property var quoteAt: null   // {x, cy}: x in the scroll view, cy where the drag ended in the list's content (it scrolls with it), or null
     function offerQuote(p) {
         quoteAt = selectionText().trim() !== "" ? { x: Math.max(0, Math.min(p.x, scroll.width - Kirigami.Units.gridUnit * 7)),
-                                                    y: Math.min(p.y + Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) } : null
+                                                    cy: p.y + list.contentY } : null
     }
     function quoteIn(selected) {
         const q = Quote.withQuote(replyBox.text, selected)
@@ -4594,7 +4594,12 @@ Window {
                 parent: scroll
                 z: 13
                 x: pane.quoteAt ? Math.max(0, Math.min(pane.quoteAt.x, scroll.width - width - Kirigami.Units.smallSpacing)) : 0
-                y: pane.quoteAt ? pane.quoteAt.y : 0
+                // (bound to the list's scroll and the drag's place, quote.mjs barY: it goes with the selection, hidden
+                // while that is out of view; nothing runs while nothing scrolls)
+                readonly property var barY: pane.quoteAt ? Quote.barY(pane.quoteAt.cy - list.contentY, 0, scroll.height,
+                                                                      Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) : null
+                y: barY !== null ? barY : 0
+                visible: barY !== null
                 active: pane.quoteAt !== null && pane.conversationTab
                 sourceComponent: Row {
                     spacing: Kirigami.Units.smallSpacing

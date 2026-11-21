@@ -2494,6 +2494,20 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Sides.explainQuestion(selected)", explain)
         self.assertIn("pane.showSides(true, true, key)", explain)
 
+    def test_selection_bar_follows_the_list_scroll_and_hides_out_of_view(self):
+        # The bar by a selection is bound to the list's scroll (contentY) and where the drag ended (in the list's
+        # content, so it scrolls with it): quote.mjs barY places it and says null (hidden) out of view; no timer
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("cy: p.y + list.contentY", pane)
+        offer = pane[pane.index("text: Quote.QUOTE_BUTTON"):]
+        bar = pane[pane.rindex("Loader {", 0, pane.index("text: Quote.QUOTE_BUTTON")):pane.index("text: Quote.QUOTE_BUTTON")]
+        self.assertIn("Quote.barY(pane.quoteAt.cy - list.contentY, 0, scroll.height,", bar)
+        self.assertIn("visible: barY !== null", bar)
+        self.assertNotIn("Timer", bar)
+        self.assertNotIn("Animation", bar)
+        self.assertNotIn("Behavior", bar)
+        self.assertIn("export function barY(", (ROOT / "ui/quote.mjs").read_text())
+
     def test_side_questions_ask_take_and_say_it_as_sides_mjs_does(self):
         # The words are sides.mjs's (VS Code's the same), never written again in the QML; asking runs pane.py
         # --side-question (the model picked: sideQuestionModel, every copy's), a removal its --remove; an answer's

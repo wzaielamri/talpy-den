@@ -4,6 +4,13 @@
 
 ### Better
 
+- **The Reply to this / Explain this bar in Talpy Chat goes with the
+  selection.** Scrolling with text still selected closed the bar (and in Plasma
+  left it where it was, with the text scrolled away from under it). Now it moves with the end of the
+  selection, hides while that is out of view and comes back with it, kept
+  inside the visible area as before. It updates on the scroll event, once a
+  frame at most, and does nothing while nothing scrolls.
+
 - **↓ Latest in Talpy Chat, and a chat read far back stays quick.** Whenever
   the conversation isn't at its newest part (after going to a bookmark, a
   search's match, or scrolling up), a floating ↓ Latest over its bottom takes

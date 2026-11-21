@@ -6,7 +6,7 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, remoteSwitchTitle } from "../../core/src/shared/pane";
+import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, barY, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, remoteSwitchTitle } from "../../core/src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
@@ -2172,7 +2172,7 @@ function ChatApp() {
   };
   // Quote in reply: what you selected in the conversation, as a Markdown quote at the top of the box, the
   // cursor under it (quote.mjs withQuote); offered by a "Reply to this" button by the selection (it goes
-  // with the selection, a scroll or a click elsewhere) and the right-click menu
+  // with the selection or a click elsewhere, and follows it through a scroll) and the right-click menu
   const [quoteAt, setQuoteAt] = useState<{ x: number; y: number; text: string } | null>(null);
   const quoteIn = (selected: string) => {
     const q = withQuote(text, selected);
@@ -2223,17 +2223,35 @@ function ChatApp() {
     const wide = sideCan ? 250 : 130;
     setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
   };
+  // A scroll moves the bar with the selection (hidden while its end is out of the list's view): once a frame
+  // at most, straight on the bar's style (no render), and nothing runs while nothing scrolls
+  const quoteBar = useRef<HTMLDivElement>(null);
+  const placeQuote = () => {
+    const el = list.current, bar = quoteBar.current, sel = window.getSelection();
+    if (!el || !bar || !sel || sel.isCollapsed || !sel.rangeCount) return;
+    const view = el.getBoundingClientRect();
+    const y = barY(sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect().bottom, view.top, view.bottom, 6, window.innerHeight - 40);
+    bar.style.visibility = y === null ? "hidden" : "visible";
+    if (y !== null) bar.style.top = `${y}px`;
+  };
   useEffect(() => {
     if (!quoteAt) return undefined;
     const gone = () => { const sel = window.getSelection(); if (!sel || sel.isCollapsed) setQuoteAt(null); };
     const away = () => setQuoteAt(null);
+    let frame = 0;
+    const follow = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => { frame = 0; placeQuote(); });
+    };
+    placeQuote();   // (a new selection's bar shows, whatever the last one's was)
     document.addEventListener("selectionchange", gone);
-    window.addEventListener("scroll", away, true);
+    window.addEventListener("scroll", follow, true);
     window.addEventListener("blur", away);
     return () => {
       document.removeEventListener("selectionchange", gone);
-      window.removeEventListener("scroll", away, true);
+      window.removeEventListener("scroll", follow, true);
       window.removeEventListener("blur", away);
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, [quoteAt]);
 
@@ -2749,7 +2767,7 @@ function ChatApp() {
           ) : null}
           {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} explain={sideCan} onDo={editDo} /> : null}
           {quoteAt ? (
-            <div class="pane-quote-at" style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
+            <div class="pane-quote-at" ref={quoteBar} style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
               <button type="button" class="pane-quote-btn"
                 title={`${QUOTE_BUTTON}: what you selected, as a quote at the top of your reply`}
