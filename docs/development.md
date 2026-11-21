@@ -53,7 +53,7 @@ tools/                    render_popup.sh (offscreen screenshots), talpy_icons.m
                           check_public.py (nothing private gets committed), bench/ (Talpy Chat's timings, before and after a change)
 ```
 
-`npm test` builds the tests and runs `node --test "out/test/**/*.test.js"`: the extension's tests are in `vscode/test` (built to `out/test`), the core's in `core/test` (built to `out/test/core`).
+`npm test` builds the tests and runs `node --test "out/test/**/*.test.js"`: the extension's tests are in `vscode/test` (built to `out/test`), the core's in `core/test` (built to `out/test/core`). The quoted glob is expanded by Node's test runner, which needs Node 21 or newer (CI uses 22).
 
 The tests build Claude Code's files (sessions, background jobs, transcripts, shared-chat links, a switched `~/.claude` link) in temporary folders. `tests/test_remote.py` drives the SSH code through a stand-in `ssh` that runs the command locally.
 

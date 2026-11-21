@@ -1306,7 +1306,7 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     test_its_row_star_bookmarks_keep_and_queued_go_on_follow_it (test_tasks.py);
     BookmarkStoreTests.test_a_moved_chats_bookmarks_follow_it (test_talpy_den.py); vscode/test/pane.test.ts "a
     chat's tab follows the chat Claude moved to the background under a new id", "a message waiting its turn
-    goes to the chat's new id when Claude moved it meanwhile"; vscode/test/model.test.ts "a chat Claude moved
+    goes to the chat's new id when Claude moved it meanwhile"; core/test/model.test.ts "a chat Claude moved
     to the background says so where it runs".
 - [ ] **The continued-in record.** A shared (hard-linked) transcript gets
   `{type:'continued-in', continuedInSessionId}` when its chat moves on. A chat has moved on when its last
@@ -2197,9 +2197,9 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
     the wrong window.
   - Test: LimitTests.test_limits_and_context, test_a_weekly_window_missing_after_its_reset_shows_as_reset,
     test_an_idle_chats_status_line_drawn_again_is_an_old_reading, test_when_a_snapshots_numbers_were_read
-    (test_talpy_den.py); vscode/test/model.test.ts "the status bar shows the 5-hour usage of the account with
-    an active chat"; vscode/test/week.test.ts "a plan window's fill, from its start to its reset", "advanced
-    analyses: how a plan's limits changed, in words"; gnome/tests/test_logic.js 'plan usage shows once per
+    (test_talpy_den.py); core/test/model.test.ts "the status bar shows the 5-hour usage of the account with
+    an active chat"; vscode/test/week.test.ts "a plan window's fill, from its start to its reset", "your
+    plan's limits over time, in words"; gnome/tests/test_logic.js 'plan usage shows once per
     account, with the newest numbers'.
 - [ ] **What a chat runs on now.** For the check marks in Talpy Chat's /model and /effort lists, Talpy Den
   takes the job's `respawnFlags` first (chatpick.py options_now), else the newest snapshot's `model.id` and
