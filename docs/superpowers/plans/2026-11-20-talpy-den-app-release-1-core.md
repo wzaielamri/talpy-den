@@ -4,7 +4,7 @@
 
 **Goal:** Move Talpy Den's host logic out of the VS Code extension into a `core/` that imports nothing from VS Code and asks its host for UI and settings through one interface, with agent-neutral types, so the app (release 3) can run the same core; VS Code runs it in-process and its users see no change.
 
-**Architecture:** `core/src` holds the logic and the shared types. It reaches its host only through `HostServices` (messages, pickers, inputs, dialogs, progress, settings, focus, clipboard, links, log) and through small ports for what only one host can do (terminals, VS Code's changes view, doc tab, plan review, Claude's own VS Code panel, chat panels). `vscode/src/vscodeHost.ts` implements `HostServices` with VS Code's API; the VS Code-only classes implement the ports; `vscode/src/extension.ts` wires them. The existing esbuild build bundles `core/src` into the extension through relative imports; `core/` gets its own `tsconfig.json` with Node types only, which proves it doesn't touch VS Code.
+**Architecture:** `core/src` holds the logic and the shared types. It reaches its host only through `HostServices` (messages, pickers, inputs, dialogs, progress, settings, focus, clipboard, links, log) and through small ports for what only one host can do (terminals, VS Code's changes view, doc tab, plan review, Claude's own VS Code panel, chat panels). `vscode/src/vscodeHost.ts` implements `HostServices` with VS Code's API; the VS Code-only classes implement the ports; `vscode/src/extension.ts` wires them. The existing esbuild build bundles `core/src` into the extension through relative imports; `core/` gets its own `tsconfig.json` with Node types only, which proves it doesn't touch VS Code (as first written it didn't: its `typeRoots` pointed at `../vscode/node_modules/@types`, where tsc also found `@types/vscode`; the final fixes made it a real guard, see Global Constraints).
 
 **Tech Stack:** TypeScript (strict, ES2022), esbuild, `node:test`, Preact webview (unchanged), Python backend (unchanged), CI on Node 22.
 
@@ -62,7 +62,7 @@ Decisions taken during execution (details in the ledger):
 ## Global Constraints
 
 - Release 1 changes nothing VS Code users see: no setting, command, message, view or behaviour changes; every existing test keeps passing, with at least as many tests as before (Task 1 records the count).
-- Nothing under `core/src` imports `vscode` (or `electron`): `tsc -p ../core` with Node types only, and `core/test/noVscode.test.ts`.
+- Nothing under `core/src` imports `vscode` (or `electron`). What guards it: `tsc -p ../core` (`npm run check`), whose `core/tsconfig.json` takes Node's types as a file of its own (`files`) with `typeRoots: []` and `types: []`, so tsc has nowhere to find `@types/vscode`, and `noUncheckedSideEffectImports`: every import form tsc reads (`import … from`, `import "…"`, `import(…)`, `typeof import(…)`, `import … = require(…)`) fails with "Cannot find module"; and `core/test/noVscode.test.ts`, whose pattern also catches a plain `require(…)` and is tested on each form. (Until the final fixes, `typeRoots` pointed at `../vscode/node_modules/@types`, where tsc found `@types/vscode`: tsc caught nothing, and the test's pattern only `from "…"` and `require("…")`.)
 - Core code runs on Node 18 or newer (esbuild `target: "node18"`), TypeScript strict, ES2022, CommonJS output as today.
 - The Python backend (`package/contents/code`) is not changed.
 - Checks: `cd vscode && npm ci --ignore-scripts && npm run check && npm test`, and `python3 -m unittest discover -s tests` from the repository root.
@@ -85,7 +85,7 @@ Decisions taken during execution (details in the ledger):
 
 ```
 core/
-  tsconfig.json                     strict; types ["node"] from ../vscode/node_modules/@types
+  tsconfig.json                     strict; Node's types as a file (../vscode/node_modules/@types/node), no typeRoots: no vscode
   src/
     events.ts                       Emitter<T>, Event<T>, Disposable (in place of vscode.EventEmitter / Disposable)
     host.ts                         HostServices and its option and item types

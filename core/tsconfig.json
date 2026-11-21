@@ -1,16 +1,23 @@
+// `tsc -p ../core` (npm run check) is the guard that nothing in core/ imports vscode or electron: Node's types
+// come in as a file of their own, and with no typeRoots tsc has nowhere to find another package's (it would
+// otherwise find @types/vscode beside them, in ../vscode/node_modules/@types). An import of either, in any
+// form tsc reads (`import … from`, `import "…"`, `import(…)`, `typeof import(…)`, `import … = require(…)`),
+// is then "Cannot find module"; core/test/noVscode.test.ts also catches a plain require(…).
 {
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
     "moduleResolution": "node",
     "lib": ["ES2022"],
-    "types": ["node"],
-    "typeRoots": ["../vscode/node_modules/@types"],
+    "types": [],
+    "typeRoots": [],
     "strict": true,
+    "noUncheckedSideEffectImports": true,
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
+  "files": ["../vscode/node_modules/@types/node/index.d.ts"],
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }
