@@ -17,12 +17,13 @@ export const recorded = {
   quickPicks: [] as StubQuickPick[],
 };
 
-// Listeners of a kind of event, each with a disposable that takes it off
+// Listeners of a kind of event, each with a disposable that takes it off; size: how many listen
 function listeners<T>() {
   const list = new Set<(e: T) => void>();
   return {
     on: (l: (e: T) => void) => (list.add(l), { dispose: () => void list.delete(l) }),
     fire: (e: T) => [...list].forEach((l) => l(e)),
+    size: () => list.size,
   };
 }
 
@@ -32,9 +33,10 @@ export function changeSettings(...keys: string[]): void {
   configChanges.fire({ affectsConfiguration: (section) => keys.some((k) => k === section || k.startsWith(section + ".")) });
 }
 
-// settings a test sets (key -> value); the rest read as their defaults
+// talpyDen settings a test sets (key -> value), read through getConfiguration("talpyDen") only; the rest read
+// as their defaults
 export const overrides = new Map<string, unknown>();
-// another section's settings, by "section.key" (a section other than talpyDen reads these first)
+// another section's settings, by "section.key" (what any section but talpyDen reads)
 export const sectionValues = new Map<string, unknown>();
 
 // The calls the window, command and env APIs got, in order (VsCodeHost's tests read them), and the answer a
@@ -54,9 +56,9 @@ const folderChanges = listeners<void>();
 export const workspace = {
   getConfiguration: (section?: string): { get<T>(key: string, fallback: T): T; update(...args: unknown[]): Promise<unknown>; inspect?(key: string): unknown } => ({
     get: <T>(key: string, fallback: T) => {
+      if (section === "talpyDen") return overrides.has(key) ? (overrides.get(key) as T) : fallback;
       const qualified = `${section}.${key}`;
-      if (section !== "talpyDen" && sectionValues.has(qualified)) return sectionValues.get(qualified) as T;
-      return overrides.has(key) ? (overrides.get(key) as T) : fallback;
+      return sectionValues.has(qualified) ? (sectionValues.get(qualified) as T) : fallback;
     },
     update: async (key: string, value: unknown, target?: unknown) => void call("config.update", [section, key, value, target]),
     inspect: (key: string) => call("config.inspect", [section, key]),
@@ -181,17 +183,28 @@ export class StubQuickPick {
   }
 }
 
-const windowStates = listeners<{ focused: boolean }>();
+const windowStates = listeners<{ focused: boolean; active?: boolean }>();
+// The window's state changes, as VS Code tells it: its focus, and whether it's in use (active: newer than the
+// typings; none, VS Code doesn't say)
+export function setWindowState(state: { focused: boolean; active?: boolean }): void {
+  window.state = { ...state };
+  windowStates.fire({ ...state });
+}
 // The window gains or loses the focus
 export function setWindowFocused(focused: boolean): void {
-  window.state.focused = focused;
-  windowStates.fire({ focused });
+  setWindowState({ focused });
+}
+
+// How many listen to the settings, the window's state and the open folders (a VsCodeHost's dispose() takes
+// its own off)
+export function listening(): { settings: number; windowState: number; folders: number } {
+  return { settings: configChanges.size(), windowState: windowStates.size(), folders: folderChanges.size() };
 }
 
 export const window = {
   terminals: [],
   visibleTextEditors: [],
-  state: { focused: false },
+  state: { focused: false } as { focused: boolean; active?: boolean },
   onDidCloseTerminal: disposable,
   onDidChangeWindowState: windowStates.on,
   createOutputChannel: logChannel,

@@ -31,8 +31,13 @@ test("chatFont: the terminal's font, else the editor's; editor: the editor's; ui
   assert.equal(chatFont(), "");
 });
 
-test("configDirArgs reads the extra config dirs", () => {
+test("configDirArgs reads the extra config dirs", (t) => {
   const fake = make();
+  const saved = process.env.CLAUDE_CONFIG_DIR;
+  t.after(() => {
+    if (saved === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = saved;
+  });
   delete process.env.CLAUDE_CONFIG_DIR;
   fake.set("extraConfigDirs", ["/data/a", " ~/b "]);
   assert.deepEqual(configDirArgs(), ["--config-dir", "/data/a", "--config-dir", path.join(os.homedir(), "b")]);

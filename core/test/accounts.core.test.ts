@@ -1,6 +1,6 @@
-// Accounts, the account switch and dictation on their host alone (no vscode): what adding an account asks and
-// where the wait for the accounts' list shows; the switch's ways to Claude Accounts, its reload offer and Make
-// Default's setting; dictation in a browser. Account folders are a temporary home's, never yours.
+// Accounts and the account switch on their host alone (no vscode): what adding an account asks and where the
+// wait for the accounts' list shows; the switch's ways to Claude Accounts, its reload offer and Make Default's
+// setting. Account folders are a temporary home's, never yours. (Dictation's: dictation.core.test.ts.)
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -11,7 +11,6 @@ import { Accounts, type AccountInfo } from "../src/accounts";
 import { AccountSwitch, type AccountsOpener } from "../src/accountSwitch";
 import type { Backend } from "../src/agents/claudeCode/backend";
 import type { Dashboard } from "../src/dashboard";
-import { dictationModels } from "../src/dictation";
 import type { EditorPort, Place, TerminalHandle, TerminalPort } from "../src/ports";
 import { useSettingsHost } from "../src/settings";
 import type { Group, ViewState } from "../src/shared/types";
@@ -70,19 +69,6 @@ test("adding an account asks for its name and shows progress in the window", asy
     ["info", "Added work."],
     ["info", "Log in to work in the terminal: sign in in your browser with the other account. Afterwards, Claude Accounts → work → Make Default makes it the account VS Code's Claude and plain claude run on."],
   ]);
-});
-
-// Dictation Models… in VS Code in a browser: said in an information message (as it always was), dictate.py
-// isn't asked
-test("dictation in a web UI says it isn't available", async () => {
-  const fake = new FakeHost();
-  fake.environment.web = true;
-  const calls: string[][] = [];
-  const backend = { dictate: async (args: string[]) => (calls.push(args), { ok: true, models: [] }) } as unknown as Backend;
-  await dictationModels(fake, backend);
-  assert.deepEqual(fake.recorded.messages.map((m) => [m.level, m.text]), [["info", "Dictating works in VS Code on your computer, not in a browser"]]);
-  assert.deepEqual(calls, [], "no backend call");
-  assert.equal(fake.recorded.picks.length, 0);
 });
 
 // This computer's accounts as the status says them: a group per account, its folder's name its profile key

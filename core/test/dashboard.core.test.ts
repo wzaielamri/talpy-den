@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { after, mock, test } from "node:test";
+import { after, before, mock, test } from "node:test";
 import type { Backend } from "../src/agents/claudeCode/backend";
 import { Dashboard } from "../src/dashboard";
 import type { Notifier } from "../src/notify";
@@ -21,11 +21,19 @@ import { FakeHost } from "./fakeHost";
 
 const NOW = 1_800_000_000_000;
 
-// (a home and a cache of the test's own: the live watch, and away's mark file, go there)
-const home = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-dashboard-core-"));
-process.env.HOME = home;
-process.env.XDG_CACHE_HOME = path.join(home, ".cache");
-after(() => fs.rmSync(home, { recursive: true, force: true }));
+// (a home and a cache of the tests' own: the live watch, and away's mark file, go there; HOME and
+// XDG_CACHE_HOME as they were after)
+const saved = { HOME: process.env.HOME, XDG_CACHE_HOME: process.env.XDG_CACHE_HOME };
+let home = "";
+before(() => {
+  home = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-dashboard-core-"));
+  process.env.HOME = home;
+  process.env.XDG_CACHE_HOME = path.join(home, ".cache");
+});
+after(() => {
+  for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  fs.rmSync(home, { recursive: true, force: true });
+});
 
 const setup = () => {
   const fake = new FakeHost();
@@ -68,25 +76,25 @@ test("an unfocused window polls at the working interval", async () => {
     status: async () => (polls++, { status: structuredClone(demoState(NOW).status!) }), // (one chat works)
   } as unknown as Backend;
   const dash = new Dashboard(fake, editor, backend, notifier);
-  const after = async (ms: number) => {
+  const advance = async (ms: number) => {
     mock.timers.tick(ms);
     await settle();
   };
   try {
     await dash.start();
     dash.setVisible(true);
-    await after(0);
+    await advance(0);
     assert.equal(polls, 1);
     assert.equal(dash.watching, true, "the chats' session files are watched");
     assert.equal(fake.focus.focused, false);
-    await after(5999);
+    await advance(5999);
     assert.equal(polls, 1, "not at pollInterval: the window isn't focused");
-    await after(1);
+    await advance(1);
     assert.equal(polls, 2, "6 s after the last check");
     fake.setFocused(true);
-    await after(6000); // (this check was set before the focus came)
+    await advance(6000); // (this check was set before the focus came)
     assert.equal(polls, 3);
-    await after(2000);
+    await advance(2000);
     assert.equal(polls, 4, "focused: pollInterval");
   } finally {
     dash.dispose();

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import { AwayWatch } from "../src/away";
 import { Notifier } from "../src/notify";
 import { useSettingsHost } from "../src/settings";
@@ -10,10 +10,21 @@ import { demoState } from "../src/shared/demo";
 import type { PermissionAsk, Session } from "../src/shared/types";
 import { FakeHost } from "./fakeHost";
 
+// (each test's cache, where the lead's file and away's mark go, is its own: gone after it, XDG_CACHE_HOME
+// as it was)
+const savedCache = process.env.XDG_CACHE_HOME;
+const caches: string[] = [];
+afterEach(() => {
+  for (const dir of caches.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  if (savedCache === undefined) delete process.env.XDG_CACHE_HOME;
+  else process.env.XDG_CACHE_HOME = savedCache;
+});
+
 // The notifier talks to its host alone (no vscode): a permission prompt's buttons and text, and which
 // window leads
 const setup = () => {
   process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-core-"));
+  caches.push(process.env.XDG_CACHE_HOME);
   const fake = new FakeHost();
   useSettingsHost(fake);
   const notifier = new Notifier(fake, { sound() {} } as never, () => undefined);
@@ -59,11 +70,14 @@ test("an unfocused window that leads notifies; a focused one claims the lead", (
   notifier.dispose();
 });
 
-test("the host's use state drives the away watch: used at start marks it; a window in use again tells it came back", () => {
+test("the host's use state drives the away watch: its first use marks the window used, nothing to sum up; in use again after it left, it came back", () => {
   const { fake } = setup();
+  const mark = path.join(process.env.XDG_CACHE_HOME!, "talpy-den", "vscode-active.json");
   const backs: number[] = [];
   const watch = new AwayWatch(fake, (now) => backs.push(now));
+  assert.equal(fs.existsSync(mark), false, "started in the background: not used yet");
   fake.setActive(true); // (the first use of a window that started in the background: nothing to sum up)
+  assert.equal(JSON.parse(fs.readFileSync(mark, "utf8")).pid, process.pid, "marked: this window was in use");
   assert.deepEqual(backs, []);
   fake.setActive(false);
   assert.notEqual(watch.tracker.since, null, "left");

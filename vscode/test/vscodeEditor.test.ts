@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import { beforeEach, test } from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
 import { host } from "./useHost";
@@ -30,6 +30,9 @@ beforeEach(() => {
   stub.setWorkspaceFolders(undefined);
   initDocs(vscode.Uri.file("/ext"));
 });
+
+// (the extensions a test installs are gone after it, whether it passed or not)
+afterEach(() => stub.installedExtensions.clear());
 
 test("openComparison opens VS Code's changes view", async () => {
   const c: Comparison = {
@@ -184,14 +187,10 @@ test("Claude Code's panel: whether it's here, the account it runs on, a new chat
 test("claudeCodeInstalled: whether the Claude Code extension is installed, even where its panel can't open chats", async () => {
   const editor = new VsCodeEditor();
   assert.equal(editor.claudeCodeInstalled(), false);
-  try {
-    stub.installedExtensions.add("anthropic.claude-code");
-    assert.equal(editor.claudeCodeInstalled(), true);
-    assert.equal(await editor.claudePanelAvailable(), false);
-  } finally {
-    stub.installedExtensions.clear();
-  }
+  stub.installedExtensions.add("anthropic.claude-code");
+  assert.equal(editor.claudeCodeInstalled(), true);
+  assert.equal(await editor.claudePanelAvailable(), false);
+  stub.installedExtensions.clear();
   stub.installedExtensions.add("someone.else");
   assert.equal(editor.claudeCodeInstalled(), false);
-  stub.installedExtensions.clear();
 });

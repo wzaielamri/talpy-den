@@ -1,4 +1,4 @@
-import { test, beforeEach } from "node:test";
+import { test, afterEach, beforeEach } from "node:test";
 import * as assert from "node:assert/strict";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
@@ -11,7 +11,13 @@ import { VsCodeHost } from "../src/vscodeHost";
 const logLines: string[] = [];
 const channel = { info: (m: string) => logLines.push(`info ${m}`), warn: (m: string) => logLines.push(`warn ${m}`), error: (m: string) => logLines.push(`error ${m}`) };
 const keys = settingNames(JSON.parse(fs.readFileSync("package.json", "utf8")));
-const make = () => new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys);
+// (each host a test makes is disposed after it: none keeps listening to the stub's events)
+const made: VsCodeHost[] = [];
+const make = (kept?: vscode.Memento) => {
+  const host = new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys, kept);
+  made.push(host);
+  return host;
+};
 const last = () => stub.calls[stub.calls.length - 1];
 
 beforeEach(() => {
@@ -20,10 +26,15 @@ beforeEach(() => {
   stub.sectionValues.clear();
   stub.overrides.clear();
   stub.setWorkspaceFolders(undefined);
+  stub.window.state = { focused: false };
   stub.env.remoteName = undefined;
   stub.env.sessionId = undefined;
   stub.env.uiKind = stub.UIKind.Desktop;
   logLines.length = 0;
+});
+
+afterEach(() => {
+  for (const host of made.splice(0)) host.dispose();
 });
 
 test("message passes level, text, modal and detail, and returns the chosen action", async () => {
@@ -56,12 +67,14 @@ test("pick maps separators and icons and returns the caller's item", async () =>
   assert.equal(await make().pick([mine]), undefined);
 });
 
-test("pickMany passes canPickMany and returns the caller's items", async () => {
+test("pickMany passes canPickMany and the items picked to start with, and returns the caller's items", async () => {
   const a = { label: "a" };
   const b = { label: "b", picked: true };
-  stub.answers.set("showQuickPick", (items: unknown[]) => items);
+  let shown: { label: string; picked?: boolean }[] = [];
+  stub.answers.set("showQuickPick", (items: { label: string; picked?: boolean }[]) => ((shown = items), items));
   const got = await make().pickMany([a, b], { title: "Which" });
   assert.equal((last().args[1] as { canPickMany: boolean }).canPickMany, true);
+  assert.deepEqual(shown.map((i) => [i.label, i.picked]), [["a", undefined], ["b", true]]);
   assert.equal(got?.length, 2);
   assert.equal(got?.[0], a);
   assert.equal(got?.[1], b);
@@ -130,15 +143,21 @@ test("progress uses the window or a notification", async () => {
   assert.deepEqual(last().args[0], { location: vscode.ProgressLocation.Notification, title: "Installing" });
 });
 
-test("settings get reads talpyDen.<key>, update writes the global scope", async () => {
+// (the stub reads overrides only through getConfiguration("talpyDen"): another section would give the fallback)
+test("settings get reads talpyDen.<key>, update writes the global scope, inspect reads talpyDen's", async () => {
   const host = make();
   stub.overrides.set("chatTextScale", 1.5);
+  stub.sectionValues.set("editor.chatTextScale", 9);
   assert.equal(host.settings.get("chatTextScale", 1), 1.5);
   assert.equal(host.settings.get("nothingSet", "dflt"), "dflt");
   await host.settings.update("chatTextScale", 2);
   assert.deepEqual(last(), { method: "config.update", args: ["talpyDen", "chatTextScale", 2, vscode.ConfigurationTarget.Global] });
   stub.answers.set("config.inspect", { globalValue: 1, workspaceValue: 2, workspaceFolderValue: 3, defaultValue: 0 });
   assert.deepEqual(host.settings.inspect("chatTextScale"), { global: 1, workspace: 2, workspaceFolder: 3 });
+  assert.deepEqual(last(), { method: "config.inspect", args: ["talpyDen", "chatTextScale"] });
+  // a declared setting set nowhere: VS Code says its default only
+  stub.answers.set("config.inspect", { key: "talpyDen.chatTextScale", defaultValue: 1 });
+  assert.deepEqual(host.settings.inspect("chatTextScale"), { global: undefined, workspace: undefined, workspaceFolder: undefined });
   stub.answers.set("config.inspect", undefined);
   assert.equal(host.settings.inspect("chatTextScale"), undefined);
 });
@@ -179,16 +198,37 @@ test("focus mirrors window state and fires on change", () => {
 
 test("inUse is the window's `active` when VS Code says it, else its focus, and fires on every window state", () => {
   const host = make();
-  stub.setWindowFocused(false);
   const got: boolean[] = [];
   host.focus.onDidChangeUse((u) => got.push(u));
   assert.equal(host.focus.inUse, false);
   stub.setWindowFocused(true);
   assert.equal(host.focus.inUse, true, "no `active`: the focus");
-  (stub.window.state as { active?: boolean }).active = false;
+  stub.setWindowState({ focused: true, active: false });
   assert.equal(host.focus.inUse, false, "focused but not used lately");
-  delete (stub.window.state as { active?: boolean }).active;
-  assert.deepEqual(got, [true]);
+  stub.setWindowState({ focused: false, active: true });
+  assert.equal(host.focus.inUse, true, "used lately, the focus elsewhere");
+  stub.setWindowState({ focused: false, active: true });
+  assert.deepEqual(got, [true, false, true, true], "each window state told, the same one too");
+});
+
+// (dispose(): the extension's deactivate; a test's host, after it)
+test("dispose takes the host off VS Code's events, and its listeners hear nothing more", () => {
+  const before = stub.listening();
+  const host = new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys);
+  assert.deepEqual(stub.listening(), { settings: before.settings + 1, windowState: before.windowState + 1, folders: before.folders + 1 });
+  const heard: string[] = [];
+  host.settings.onDidChange(() => heard.push("settings"));
+  host.focus.onDidChange(() => heard.push("focus"));
+  host.focus.onDidChangeUse(() => heard.push("use"));
+  host.onDidChangeWorkspaceFolders(() => heard.push("folders"));
+  stub.setWindowFocused(true);
+  assert.deepEqual(heard, ["focus", "use"]);
+  host.dispose();
+  assert.deepEqual(stub.listening(), before);
+  stub.changeSettings("talpyDen.chatTextScale");
+  stub.setWindowFocused(false);
+  stub.setWorkspaceFolders([{ name: "proj", uri: vscode.Uri.file("/home/me/proj") }]);
+  assert.deepEqual(heard, ["focus", "use"]);
 });
 
 // One change of the window's state: the focus is told before the use, whichever was listened to first (host.ts)
@@ -430,7 +470,7 @@ test("state reads and writes the Memento it's given (the extension's globalState
     get: (key: string, fallback?: unknown) => (kept.has(key) ? kept.get(key) : fallback),
     update: async (key: string, value: unknown) => void kept.set(key, value),
   };
-  const host = new VsCodeHost(channel as unknown as vscode.LogOutputChannel, keys, memento as unknown as vscode.Memento);
+  const host = make(memento as unknown as vscode.Memento);
   assert.equal(host.state.get("talpyDen.sideQuestions.pick", ""), "haiku");
   assert.equal(host.state.get<boolean | undefined>("talpyDen.sideQuestions.open", undefined), undefined);
   await host.state.update("talpyDen.sideQuestions.open", true);

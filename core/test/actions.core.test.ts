@@ -1,12 +1,12 @@
 // The actions on their host alone (no vscode): what a Delete asks before anything goes, the terminal a chat
-// opens in, and which file system a new chat's folder dialog browses.
+// opens in, which file system a new chat's folder dialog browses, and Find a Chat's pick list.
 
 import assert from "node:assert/strict";
 import * as os from "node:os";
 import { test } from "node:test";
 import type { AccountSwitch } from "../src/accountSwitch";
 import { Actions } from "../src/actions";
-import type { Answer, Backend } from "../src/agents/claudeCode/backend";
+import type { Answer, Backend, FindAnswer } from "../src/agents/claudeCode/backend";
 import type { Dashboard } from "../src/dashboard";
 import type { EditorPort, Place, TerminalHandle, TerminalPort } from "../src/ports";
 import { useSettingsHost } from "../src/settings";
@@ -32,8 +32,9 @@ const work = (host?: string) => ({
 
 // Actions over a FakeHost, with what they ran: the backend's helpers (without the --config-dir of the machine
 // the tests run on) and the terminals. currentHost: the host a Remote-SSH window is connected to; groups: this
-// computer's accounts (work alone, by default), canShare: they can share chats
-const setup = (opts: { currentHost?: string; answers?: Partial<Answer>[]; groups?: Group[]; canShare?: boolean } = {}) => {
+// computer's accounts (work alone, by default), canShare: they can share chats; found: what this computer's
+// search finds (Find a Chat; no SSH host answers)
+const setup = (opts: { currentHost?: string; answers?: Partial<Answer>[]; groups?: Group[]; canShare?: boolean; found?: FindAnswer } = {}) => {
   const fake = new FakeHost();
   useSettingsHost(fake);
   const terminals = new FakeTerminals();
@@ -43,13 +44,14 @@ const setup = (opts: { currentHost?: string; answers?: Partial<Answer>[]; groups
       helpers.push([script, args.filter((a, i) => a !== "--config-dir" && args[i - 1] !== "--config-dir")]);
       return { ok: true, message: "", ...opts.answers?.shift() };
     },
+    find: async () => opts.found,
   } as unknown as Backend;
   const editor = { claudePanelAvailable: async () => false } as unknown as EditorPort;
   const hosts = opts.currentHost ? [{ name: opts.currentHost, current: true, ok: true, result: { groups: [work(opts.currentHost)], cli: { installed: true } } }] : [];
   const errors: string[] = [];
   const dash = {
     demo: false, currentHost: opts.currentHost, opened() {}, isVisible: () => true, setActionError: (m: string) => void errors.push(m), setActionInfo() {},
-    refresh: async () => undefined, pollHost: async () => undefined, claudeCodeInfo: () => ({ available: false, profileKey: null }),
+    refresh: async () => undefined, pollHost: async () => undefined, claudeCodeInfo: () => ({ available: false, profileKey: null }), answeringHosts: () => [],
     state: () => ({ status: { groups: opts.groups ?? [work()], cli: { installed: true }, canShare: opts.canShare }, hosts }),
   } as unknown as Dashboard;
   const actions = new Actions(fake, terminals, editor, backend, dash, {} as AccountSwitch);
@@ -59,7 +61,7 @@ const setup = (opts: { currentHost?: string; answers?: Partial<Answer>[]; groups
 // A Delete is asked on its line, in the view: describeDelete gives it the question (the backend's
 // --describe, which deletes nothing), and only an answer there runs delete. Removing a shared chat from
 // the other accounts (Keep only on …) asks here, with a modal warning: no answer, no helper run.
-test("delete with no answer deletes nothing", async () => {
+test("a Delete only asks its question (the view's), deleting nothing; Keep Only on… with no answer unshares nothing", async () => {
   const question = "Delete “Fix the parser”? It goes to the Trash.";
   const { fake, helpers, actions } = setup({ answers: [{ question }] });
   assert.deepEqual(await actions.describeDelete("chat", "c1", ".claude-work"), { ok: true, question, message: "" });
@@ -109,4 +111,48 @@ test("a new chat's folder dialog on a Remote-SSH window asks the remote file sys
   await actions.newChat("w");
   assert.deepEqual(fake.recorded.choices[1], { kind: "folder", onRemote: false, defaultPath: os.homedir(), openLabel: "Start Chat Here" });
   assert.deepEqual(terminals.runs[1].place, { kind: "local" });
+});
+
+// Find a Chat through the host's pick list (host.quickPick): the words typed search, each kind found folds under
+// its heading, and its title bar button folds or unfolds them all. The button pressed comes back as the very
+// one findChat set (as FakeQuickPick and VsCodeQuickPick hand it back): that's how it knows which it was
+test("Find a Chat folds its headings: a heading picked folds or unfolds it, the title bar button all of them", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const now = Date.now();
+  const found: FindAnswer = {
+    ok: true, more: false, message: "", plans: [], memories: [],
+    results: [{ key: ".claude-work/c1/chat", sessionId: "c1", name: "Fix the parser", cwd: "/w/app", cwdShort: "~/app", lastActive: now, profile: "work",
+                profileDir: ".claude-work", groupId: "w", account: "work", shared: false, match: "the parser" }],
+    projects: [{ folder: "/w/app", folderShort: "~/app", lastActive: now, chats: 3, profile: "work", profileDir: ".claude-work", groupId: "w", account: "work" }],
+  };
+  const { fake, actions } = setup({ found });
+  const settle = async () => {
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  };
+  const finding = actions.findChat();
+  const qp = fake.recorded.quickPicks[0];
+  assert.deepEqual([qp.shown, qp.options.title, qp.options.sortByLabel], [true, "Find a Chat", false]);
+  qp.type("parser");
+  t.mock.timers.tick(300);
+  await settle();
+  const lines = () => qp.items.map((i) => i.label);
+  const button = () => qp.buttons.map((b) => b.tooltip);
+  // (the chats show; the folders, with chats found, fold)
+  assert.deepEqual(lines(), ["$(chevron-right) Folders (1)", "$(chevron-down) Chats (1)", "Fix the parser"]);
+  assert.deepEqual(button(), ["Unfold all"]);
+  qp.press(qp.buttons[0]);
+  assert.deepEqual(lines(), ["$(chevron-down) Folders (1)", "$(folder) ~/app", "$(chevron-down) Chats (1)", "Fix the parser"]);
+  assert.deepEqual(button(), ["Fold all"]);
+  qp.press(qp.buttons[0]);
+  assert.deepEqual(lines(), ["$(chevron-right) Folders (1)", "$(chevron-right) Chats (1)"]);
+  assert.deepEqual(button(), ["Unfold all"]);
+  // a heading picked unfolds, and stays where it is
+  qp.accept(qp.items[1]);
+  assert.deepEqual(lines(), ["$(chevron-right) Folders (1)", "$(chevron-down) Chats (1)", "Fix the parser"]);
+  assert.deepEqual([qp.activeItems.map((i) => i.label), qp.keepScrollPosition], [["$(chevron-down) Chats (1)"], true]);
+  // closed: nothing opens
+  qp.hide();
+  await finding;
+  assert.equal(qp.disposed, true);
+  assert.deepEqual(fake.recorded.messages, []);
 });

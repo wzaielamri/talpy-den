@@ -132,7 +132,7 @@ test("pickFiles on an SSH host's chat offers pictures only and posts the picked 
   }
 });
 
-test("pickFiles on this computer's chat offers any file of its folder; none picked, none posted", async () => {
+test("pickFiles on this computer's chat offers any file of its folder; none picked, an empty list is posted", async () => {
   const { fake, surfaces, panes } = setup();
   try {
     panes.open({ key: "l-1", chatId: "l-1", sessionId: "l-1", profileDir: ".claude", name: "here", cwd: "/home/me/repo" } as ChatRef);

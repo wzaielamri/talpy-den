@@ -105,7 +105,7 @@ export class FakeHost implements HostServices {
   private focusChanged = new Emitter<boolean>();
   private useChanged = new Emitter<boolean>();
   private foldersChanged = new Emitter<void>();
-  private watchers: { keys: readonly string[]; changed: Emitter<string[]> }[] = [];
+  private watchers = new Set<{ keys: readonly string[]; listener: (keys: string[]) => void }>(); // (settings.watchOther's, until disposed)
   private isFocused = false;
   private isActive: boolean | undefined; // set: the window is in use whatever its focus (VS Code's `active`)
 
@@ -118,10 +118,15 @@ export class FakeHost implements HostServices {
   // Sets another section's setting ("editor.fontFamily"), as the user would, and tells its watchers
   setOther(fullKey: string, value: unknown): void {
     this.others.set(fullKey, value);
-    for (const w of this.watchers) {
+    for (const w of [...this.watchers]) {
       const touched = w.keys.filter((k) => k === fullKey);
-      if (touched.length) w.changed.fire(touched);
+      if (touched.length && this.watchers.has(w)) w.listener(touched);
     }
+  }
+
+  // How many listen to other sections' settings (settings.watchOther, not disposed yet)
+  get watching(): number {
+    return this.watchers.size;
   }
 
   // (the focus told before the use, as VS Code's host tells them: host.ts)
@@ -195,12 +200,13 @@ export class FakeHost implements HostServices {
       this.recorded.updates.push({ section, key, value, scope: "global" });
       this.setOther(`${section}.${key}`, value);
     },
-    watchOther: (keys) => {
-      const watcher = { keys, changed: new Emitter<string[]>() };
-      this.watchers.push(watcher);
-      return watcher.changed.event;
+    watchOther: (keys) => (listener) => {
+      const watcher = { keys, listener };
+      this.watchers.add(watcher);
+      return { dispose: () => void this.watchers.delete(watcher) };
     },
-    inspect: (key) => (this.values.has(key) ? { global: this.values.get(key) } : undefined),
+    // (as VS Code's, for any key: what's set where; FakeHost keeps the user's settings only)
+    inspect: (key) => ({ global: this.values.get(key) }),
     other: <T>(section: string, key: string, fallback: T) => (this.others.has(`${section}.${key}`) ? (this.others.get(`${section}.${key}`) as T) : fallback),
     onDidChange: this.settingsChanged.event,
   };

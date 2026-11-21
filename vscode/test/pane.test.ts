@@ -1266,6 +1266,7 @@ test("a tab closed while it reads its chat, or looks up its row, does nothing mo
   const rejections: unknown[] = [];
   const onRejection = (e: unknown) => void rejections.push(e);
   process.on("unhandledRejection", onRejection);
+  let logged: VsCodeHost | undefined;
   try {
     const state = demoState(NOW);
     const row = state.status!.groups.flatMap((g) => g.sessions).find((s) => !!s.pid && s.entrypoint !== "claude-vscode" && s.kind !== "bg" && !s.tmux)!;
@@ -1279,7 +1280,8 @@ test("a tab closed while it reads its chat, or looks up its row, does nothing mo
     const dash = { opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), onUsageCameIn: () => ({ dispose() {} }), liveHook: false };
     const warnings: string[] = [];
     const log = { info() {}, warn: (m: string) => void warnings.push(m), error() {} } as unknown as vscode.LogOutputChannel;
-    const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, terminals, new VsCodeHost(log, settingNames(manifest)));
+    logged = new VsCodeHost(log, settingNames(manifest));
+    const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, terminals, logged);
     const tick = () => new Promise((r) => setTimeout(r, 10));
 
     // closed while its conversation is read
@@ -1317,6 +1319,7 @@ test("a tab closed while it reads its chat, or looks up its row, does nothing mo
     assert.deepEqual(rejections, []);
   } finally {
     process.off("unhandledRejection", onRejection);
+    logged?.dispose();
   }
 });
 
@@ -2278,7 +2281,7 @@ test("a side question goes to pane.py --side-question (a host's with --host, in 
   p.dispose();
 });
 
-test("the side questions panel's pick and whether it's open are kept for every Talpy Chat; a chat's list comes with its conversation, only as what it can be", async () => {
+test("the side questions panel's pick and whether it's open are kept for every Talpy Chat; a chat's list comes with its conversation, only as what it can be", async (t) => {
   const kept = new Map<string, unknown>();
   const memory = { get: (k: string, fallback?: unknown) => (kept.has(k) ? kept.get(k) : fallback), update: async (k: string, v: unknown) => void kept.set(k, v),
                    keys: () => [...kept.keys()] };
@@ -2288,7 +2291,9 @@ test("the side questions panel's pick and whether it's open are kept for every T
   assert.deepEqual(chatPanes(backend, dash).sidePrefs(), { open: false, pick: "" });   // (nowhere to keep them: closed, the chat's own model)
   // (kept in the extension's globalState, as its host's state)
   const quiet = { info() {}, warn() {}, error() {} } as unknown as vscode.LogOutputChannel;
-  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, undefined, new VsCodeHost(quiet, settingNames(manifest), memory as never));
+  const keeping = new VsCodeHost(quiet, settingNames(manifest), memory as never);
+  t.after(() => keeping.dispose());
+  const p = chatPanes(backend, dash, { canMoveToClaudeCode: () => false }, undefined, keeping);
   assert.deepEqual(p.sidePrefs(), { open: false, pick: "" });   // (nothing kept yet)
   p.open({ chatId: "pref-1", sessionId: "pref-1", profileDir: ".claude", name: "x" } as never);
   const panel = recorded.panels.at(-1)!;
