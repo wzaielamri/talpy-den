@@ -1535,6 +1535,11 @@ export function agentStatusText(a: Pick<Agent, "status" | "started">, now: numbe
   return a.status === "done" || a.status === "failed" ? a.status : "stopped";
 }
 
+// When a resumed agent first started, for its row's tooltip: "first started 09:37" ("" when it hasn't been resumed)
+export function agentFirstStartText(a: Pick<Agent, "started" | "firstStarted">): string {
+  return a.firstStarted && a.firstStarted !== a.started ? `first started ${clockText(a.firstStarted)}` : "";
+}
+
 // Its context now, as Claude's agent list counts it: "222.7k tokens" (at the
 // end of its second line, under its state); "" when not known
 export function agentContextText(a: Pick<Agent, "context">): string {

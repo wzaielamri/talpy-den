@@ -14,7 +14,8 @@ export interface Agent {
   background?: boolean;
   status: string; // running | done | stopped | failed
   activity: string;
-  started: number | null;
+  started: number | null; // when its current run began (a resumed agent: the message that resumed it)
+  firstStarted?: number | null; // its first start, only when a resume began a later run
   updated: number | null;
   model?: string | null; // e.g. "Haiku 4.5", from its replies
   task?: string; // what it was asked to do (plain text, may have newlines)

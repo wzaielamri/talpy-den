@@ -1,4 +1,4 @@
-import { agentContextText, agentDetailKey, agentRunTitle, agentStatusText, agentSummary, ranFor } from "../../../core/src/shared/model";
+import { agentContextText, agentFirstStartText, agentDetailKey, agentRunTitle, agentStatusText, agentSummary, ranFor } from "../../../core/src/shared/model";
 import type { Agent } from "../../../core/src/shared/types";
 import { I, Icon } from "../util/icons";
 
@@ -81,7 +81,7 @@ export function AgentTree({ tree, now, rowKey, host, opened, onToggle, onOpenRun
                 type="button"
                 class="agent-head"
                 aria-expanded={open}
-                title={`${title}${a.activity ? "\n" + a.activity : ""}\n\nClick to ${open ? "fold it up again" : "see what it was asked, what it runs now, its last steps and its report"}.`}
+                title={`${title}${a.activity ? "\n" + a.activity : ""}${agentFirstStartText(a) ? "\n" + agentFirstStartText(a) : ""}\n\nClick to ${open ? "fold it up again" : "see what it was asked, what it runs now, its last steps and its report"}.`}
                 onClick={() => onToggle(key)}
               >
                 <span class="agent-line">

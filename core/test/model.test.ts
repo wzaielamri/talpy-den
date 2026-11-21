@@ -23,6 +23,7 @@ import {
   agentRunTitle,
   agentSummary,
   nextBest,
+  agentFirstStartText,
   agentStatusText,
   ranFor,
   agentContextText,
@@ -285,6 +286,9 @@ test("an unfolded subagent: its numbers, its open state's key, the run's tooltip
   assert.equal(agentStatusText({ status: "running", started: 0 }, 17 * 60_000), "running · 17m");
   assert.equal(agentContextText({ context: 222_703 }), "222.7k tokens");
   assert.equal(agentStatusText({ status: "done", started: 0 }, 1), "done");
+  assert.equal(agentFirstStartText({ started: 5, firstStarted: null }), "");
+  assert.equal(agentFirstStartText({ started: 5, firstStarted: 5 }), "");
+  assert.match(agentFirstStartText({ started: 5 * 3600_000, firstStarted: 1 * 3600_000 }), /^first started \d/);
   assert.equal(agentContextText({ context: null }), "");
   assert.equal(agentContextText({ context: 0 }), "");
   // how long a call has been running: whole minutes, "<1m" before the first

@@ -15,6 +15,12 @@
   (0.4 s → 0.15 s a read on a made-up chat of 1,900 items), and with the find
   bar open a chat read again is searched again only where it changed.
 
+- **A resumed subagent counts its time from the resume.** A running agent
+  showed "running · 2h 17m" where Claude Code's agent list said "1h 30m 9s":
+  Talpy counted from the agent's first entry, Claude Code from the prompt that
+  began its current run. Reminders and queued messages inside a run don't
+  restart it. The row's tooltip says when it first started.
+
 - **The tasks and the subagents open on their own in Talpy Chat.** The line
   under a chat's header ("0/3 · what it's on") unfolded the tasks and the
   subagents together, so the subagents looked like part of the task list. Now

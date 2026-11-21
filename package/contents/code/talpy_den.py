@@ -1216,7 +1216,7 @@ def finish_row(row, job, job_id, profile, ctx, alive):
 AGENT_TAIL_BYTES = 65536
 AGENT_TAIL_ENTRIES = 40  # conversation entries read from the end (its status needs the last few, its steps more)
 AGENT_TAIL_MIN = 8  # read further back (up to PEEK_TAIL_MAX) until this many are found
-AGENT_CACHE_VERSION = 5  # bump when agent_progress() reads transcripts differently (3: the model; 4: running calls, context; 5: a failed agent's context)
+AGENT_CACHE_VERSION = 6  # bump when agent_progress() reads transcripts differently (3: the model; 4: running calls, context; 5: a failed agent's context; 6: "started" is its current run's start, kept with how far it read)
 AGENT_TREE_LIMIT = 30
 AGENT_STEPS = 6  # its last tool calls a row shows
 AGENT_TASK_CHARS = 600
@@ -1515,20 +1515,68 @@ def agent_task(path):
     return ""
 
 
-def agent_started(path):
-    """Timestamp (ms) of the first entry of a subagent transcript."""
+def starts_a_run(e):
+    """Whether a transcript entry is a prompt that gives an agent work: a user
+    entry with text of its own, not a tool result, a system reminder, an
+    interruption note or a compaction summary. (Queued messages Claude Code
+    adds inside a run are attachments, not user entries.)"""
+    if e.get("type") != "user" or e.get("isCompactSummary"):
+        return False
+    text = message_text(e.get("message")).strip()
+    if not text or text.startswith("[Request interrupted"):
+        return False
+    origin = e.get("origin") if isinstance(e.get("origin"), dict) else {}
+    return origin.get("kind") == "coordinator" or not (e.get("isMeta") or text.startswith("<"))
+
+
+def agent_runs(path, state=None, offset=0):
+    """(first ts, start of its current run, state, offset) of a subagent
+    transcript, read from byte offset on with the state of the read before
+    ({"idle", "pending", "run"}) so a transcript that grew is read only where
+    it did. The run starts at the first prompt, or at a later one that came
+    once the agent had stopped (a reply with no tool call waiting, e.g. when
+    its chat sent it a message to go on); text added inside a run (a reminder,
+    a queued message, a second entry of the first prompt) doesn't restart it."""
+    state = state or {"first": None, "run": None, "idle": False, "pending": []}
+    pending = set(state["pending"])
     try:
         with open(path, "rb") as f:
-            for line in f:
-                try:
-                    ts = to_ms(json.loads(line).get("timestamp"))
-                except (ValueError, AttributeError, RecursionError):
+            f.seek(offset)
+            while True:
+                line = f.readline()
+                if not line.endswith(b"\n"):  # (the end, or an entry not written whole yet)
+                    break
+                offset += len(line)
+                if not (USER_LINE.search(line) or ASSISTANT_LINE.search(line)):
+                    if state["first"] is None:
+                        try:
+                            state["first"] = to_ms(json.loads(line).get("timestamp"))
+                        except (ValueError, AttributeError, RecursionError):
+                            pass
                     continue
-                if ts is not None:
-                    return ts
+                try:
+                    e = json.loads(line)
+                except (ValueError, RecursionError):
+                    continue
+                if not isinstance(e, dict):
+                    continue
+                ts = to_ms(e.get("timestamp"))
+                if state["first"] is None:
+                    state["first"] = ts
+                content = e.get("message", {}).get("content") if isinstance(e.get("message"), dict) else None
+                blocks = [c for c in content if isinstance(c, dict)] if isinstance(content, list) else []
+                if e.get("type") == "assistant":
+                    if state["run"] is not None:  # (before its first prompt: a fork's copy of the call that started it)
+                        pending.update(c.get("id") for c in blocks if c.get("type") == "tool_use")
+                        state["idle"] = not pending
+                elif e.get("type") == "user":
+                    pending.difference_update(c.get("tool_use_id") for c in blocks if c.get("type") == "tool_result")
+                    if starts_a_run(e) and ts is not None and (state["run"] is None or (state["idle"] and not pending)):
+                        state["run"], state["idle"] = ts, False
     except OSError:
         pass
-    return None
+    state["pending"] = sorted(p for p in pending if isinstance(p, str))
+    return state["first"], state["run"] if state["run"] is not None else state["first"], state, offset
 
 
 class AgentCache:
@@ -1560,35 +1608,37 @@ class AgentCache:
         self.details, self.details_changed = {}, not ok
 
     def progress(self, transcript, finished=False):
-        """(status, activity, last ts, started ts, model, {"task", "steps",
-        "report"}) of a subagent transcript (finished: Claude says it is)."""
+        """(status, activity, last ts, started ts (of its current run), model, {"task", "steps",
+        "report"}, first started ts) of a subagent transcript (finished: Claude says it is)."""
         try:
             st = transcript.stat()
         except OSError:
-            return "running", "starting…", None, None, None, {"task": "", "steps": [], "report": ""}
+            return "running", "starting…", None, None, None, {"task": "", "steps": [], "report": ""}, None
         key = str(transcript)
         old, old_detail = self.old_files.get(key), self.old_details.get(key)
         fresh = lambda rec, n: isinstance(rec, list) and len(rec) == n and rec[0] == st.st_size and rec[1] == st.st_mtime_ns
         # "running" from before it finished (or from an older copy of this
         # script, which took an agent that died on an API error for one at
         # work) is read again once
-        if fresh(old, 7) and fresh(old_detail, 3) and not (finished and old[2] == "running"):
+        if fresh(old, 10) and fresh(old_detail, 3) and not (finished and old[2] == "running"):
             self.files[key], self.details[key] = old, old_detail
-            return (*old[2:], old_detail[2])
+            return (*old[2:7], old_detail[2], old[7])
         status, activity, ts, model, detail = agent_progress(transcript, finished)
-        if model is None and old and len(old) == 7:
+        if model is None and old and len(old) == 10:
             model = old[6]  # its newest entries are tool results; the model came earlier
-        started = old[5] if old and len(old) == 7 and old[5] is not None else agent_started(transcript)
+        # what it read of the transcript before, if it only grew (a resume adds a prompt at its end)
+        state, offset = (old[9], old[8]) if old and len(old) == 10 and isinstance(old[9], dict) and old[8] <= st.st_size else (None, 0)
+        first, started, state, offset = agent_runs(transcript, state, offset)
         known = old_detail[2] if isinstance(old_detail, list) and len(old_detail) == 3 and isinstance(old_detail[2], dict) else {}
         # read again while empty: the first look may come before its first prompt is written
         task = known["task"] if isinstance(known.get("task"), str) and known["task"] else \
             tidy_text(plain_text(agent_task(transcript)), AGENT_TASK_CHARS)
         detail = {"task": task, **detail}
-        entry = [st.st_size, st.st_mtime_ns, status, activity, ts, started, model]
+        entry = [st.st_size, st.st_mtime_ns, status, activity, ts, started, model, first, offset, state]
         self.changed = self.changed or entry != old
         self.files[key], self.details[key] = entry, [st.st_size, st.st_mtime_ns, detail]
         self.details_changed = True
-        return status, activity, ts, started, model, detail
+        return status, activity, ts, started, model, detail, first
 
     def parent(self, agent_dir, agent_id, tool_use_id):
         """Which other agent of the session started this one (nested agents), if any."""
@@ -1627,7 +1677,7 @@ class AgentCache:
                 if not isinstance(meta, dict):
                     continue
                 agent_id = meta_path.name[len("agent-"):-len(".meta.json")]
-                status, activity, ts, started, model, detail = self.progress(agent_dir / f"agent-{agent_id}.jsonl",
+                status, activity, ts, started, model, detail, first = self.progress(agent_dir / f"agent-{agent_id}.jsonl",
                                                                               meta.get("finished") is True)
                 # its session ended before it finished, or the process that ran
                 # it did (a resumed chat keeps its id, and its agents' folder)
@@ -1650,7 +1700,8 @@ class AgentCache:
                     "background": meta.get("requestShape") == "background",
                     "status": status,
                     "activity": activity,
-                    "started": started,
+                    "started": started,  # when its current run began: the prompt that began it (Claude's agent list counts so)
+                    "firstStarted": first if first != started else None,  # its first start, when a resume began a later run
                     "updated": ts,
                     "model": model,  # e.g. "Haiku 4.5", from its replies
                     "task": detail["task"],  # what it was asked to do

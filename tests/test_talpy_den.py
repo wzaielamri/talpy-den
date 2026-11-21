@@ -882,6 +882,70 @@ class AgentTests(Fixture):
                                   self.line("assistant", [{"type": "text", "text": "Done"}], "end_turn"), message])
         self.assertEqual(self.agents_of_busy()[1]["e5"], ("running", "reading a message from its chat…"))
 
+    def timed(self, kind, content, at, **kw):
+        """An entry `at` seconds before now."""
+        e = self.line(kind, content, "end_turn" if kind == "assistant" else None)
+        e["timestamp"] = iso(self.now - at)
+        e.update(kw)
+        return e
+
+    def agent_row(self, agent_id):
+        return next(t for t in self.agents_of_busy()[0]["tree"] if t["id"] == agent_id)
+
+    def test_an_agent_counts_from_its_first_prompt_in_one_run(self):
+        tool = {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": "/w/a.py"}}
+        result = [{"type": "tool_result", "tool_use_id": "t1", "content": "..."}]
+        self.agent("busy", "r1", [self.timed("user", "go", 600), self.timed("assistant", [tool], 590),
+                                  self.timed("user", result, 580)])
+        row = self.agent_row("r1")
+        self.assertEqual((row["started"], row["firstStarted"]), (td.to_ms(iso(self.now - 600)), None))
+
+    def test_a_resumed_agent_counts_from_the_message_that_resumed_it(self):
+        text = [{"type": "text", "text": "Done"}]
+        again = self.timed("user", "Also check the docs", 100, isMeta=True, origin={"kind": "coordinator"})
+        self.agent("busy", "r2", [self.timed("user", "look", 600), self.timed("assistant", text, 590), again])
+        row = self.agent_row("r2")
+        self.assertEqual(row["started"], td.to_ms(iso(self.now - 100)))
+        self.assertEqual(row["firstStarted"], td.to_ms(iso(self.now - 600)))
+
+    def test_text_inside_a_run_doesnt_restart_it(self):
+        tool = {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "make"}}
+        text = [{"type": "text", "text": "Working"}]
+        self.agent("busy", "r3", [
+            self.timed("user", "go", 600), self.timed("assistant", [tool], 590),
+            # a reminder and a queued message while the call runs
+            self.timed("user", "<system-reminder>\nBe brief.</system-reminder>", 580, isMeta=True),
+            self.timed("user", "also the docs", 570),
+            self.timed("user", [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}], 560),
+            # a reminder between two replies, after the call came back
+            self.timed("assistant", text, 550),
+            self.timed("user", "<system-reminder>\nStill brief.</system-reminder>", 540, isMeta=True)])
+        row = self.agent_row("r3")
+        self.assertEqual((row["started"], row["firstStarted"]), (td.to_ms(iso(self.now - 600)), None))
+
+    def test_two_prompt_entries_77_ms_apart_at_the_start_count_from_the_first(self):
+        first = self.timed("user", "go", 600)
+        second = self.timed("user", "go", 600)
+        second["timestamp"] = iso(self.now - 600 + 0.077)
+        self.agent("busy", "r4", [first, second, self.timed("assistant", [{"type": "text", "text": "Hm"}], 590)])
+        self.assertEqual(self.agent_row("r4")["started"], td.to_ms(first["timestamp"]))
+
+    def test_the_cache_follows_a_resume(self):
+        text = [{"type": "text", "text": "Done"}]
+        lines = [self.timed("user", "look", 600), self.timed("assistant", text, 590)]
+        d = self.agent("busy", "r5", lines)
+        self.assertEqual(self.agent_row("r5")["started"], td.to_ms(iso(self.now - 600)))
+        again = self.timed("user", "Also the docs", 100, isMeta=True, origin={"kind": "coordinator"})
+        path = d / "agent-r5.jsonl"
+        with open(path, "a") as f:
+            f.write(json.dumps(again) + "\n")
+        self.assertEqual(self.agent_row("r5")["started"], td.to_ms(iso(self.now - 100)))
+        # a later reply doesn't move it back
+        with open(path, "a") as f:
+            f.write(json.dumps(self.timed("assistant", text, 90)) + "\n")
+        row = self.agent_row("r5")
+        self.assertEqual((row["started"], row["firstStarted"]), (td.to_ms(iso(self.now - 100)), td.to_ms(iso(self.now - 600))))
+
     def test_a_parent_not_found_isnt_looked_for_on_every_check(self):
         self.agent("busy", "n1", [self.line("user", "nested")], depth=2, tool_use_id="toolu_nowhere")
         self.collect(with_tokens=False)
@@ -1069,7 +1133,7 @@ class AgentTests(Fixture):
         self.collect(with_tokens=False)
         agents = json.loads((self.cache / "agents.json").read_text())
         self.assertTrue({"version", "files", "parents"} <= set(agents))
-        self.assertTrue(all(len(rec) == 7 for rec in agents["files"].values()))  # no details in there
+        self.assertTrue(all(len(rec) == 10 for rec in agents["files"].values()))  # no details in there
         (self.cache / "agent-details.json").unlink()
         calls = []
         real = td.agent_progress
