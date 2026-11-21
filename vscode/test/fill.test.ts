@@ -1,5 +1,5 @@
 // Plasma Talpy Chat's rows a few at a time (package/contents/ui/fill.mjs, ChatPane.qml fillBuffer):
-// where it starts, how each step grows, that it ends, and that making rows takes at most half the time
+// where it starts, how each step grows, that it ends, and that each wait aims to leave half the time
 import test from "node:test";
 import assert from "node:assert/strict";
 import { FILL_ALL, FILL_INTERVAL, FILL_QUICK, FILL_SLOW, FILL_STEP_MAX, fillNext, fillPace, fillStart, fillStepMin } from "../../package/contents/ui/fill.mjs";
@@ -22,7 +22,7 @@ test("each step grows by what the one before cost: half over FILL_SLOW, twice un
   assert.equal(fillPace(800, Number.NaN, LINE).step, 1600);                       // (no cost known: a quick one)
 });
 
-test("the wait after a step is at least twice what it cost: rows take at most half of each period", () => {
+test("the wait after a step is at least twice what it cost: it aims at half of each period for the rows, at most", () => {
   for (const cost of [0, 3, 16, 17, 24, 40, 100, 333.3, 2000]) {
     const { interval } = fillPace(1000, cost, LINE);
     assert.ok(interval >= FILL_INTERVAL, `${cost}: ${interval}`);

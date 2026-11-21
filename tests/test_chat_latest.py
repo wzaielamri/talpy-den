@@ -86,7 +86,19 @@ class PlasmaRowsAFewAtATimeTests(unittest.TestCase):
         # end is followed till they're all made, as long as you don't scroll or jump, which stop settle)
         settle = PANE[PANE.index("        id: settle\n"):]
         settle = settle[:settle.index("\n    }\n")]
-        self.assertIn("if (--left <= 0 && pane.fillBuffer < 0)\n                stop()", settle)
+        # (and nothing ticks while the window is hidden: shown again at the end, it follows it again)
+        self.assertIn("if (--left <= 0 && (pane.fillBuffer < 0 || !pane.shown))\n                stop()", settle)
+        shown = PANE[PANE.index("    onShownChanged: {"):]
+        shown = shown[:shown.index("\n    }\n")]
+        self.assertIn("if (shown && loaded && endKept && conversationTab)\n            keepEnd()", shown)
+
+    def test_a_press_in_the_scroll_bar_stops_following_the_end_at_once(self):
+        # (scrolling() looks at it only on a tick: a click in its track was taken back down in between)
+        bar = PANE[PANE.index("        target: scroll.PlasmaComponents3.ScrollBar.vertical\n"):]
+        bar = bar[:bar.index("\n    }\n")]
+        self.assertIn("function onPressedChanged() {", bar)
+        self.assertIn("settle.stop()", bar)
+        self.assertIn("holdTop.stop()", bar)
 
     def test_a_read_for_a_bookmark_goes_to_it_not_the_end(self):
         self.assertIn('if (following && !(reach && result.reached === "here"))', function(PANE, "takeConversation"))

@@ -1063,6 +1063,8 @@ Window {
             away = null
         if (shown && loaded)
             load()
+        if (shown && loaded && endKept && conversationTab)
+            keepEnd()   // (at the end when it was hidden: it follows it again, settle stopped meanwhile)
     }
     Timer {
         // (with the watcher, only for what it can't see: a moment it wasn't running. An SSH host's or a
@@ -1504,8 +1506,8 @@ Window {
     // jump while you scroll), and many that came in at once (a read further back for a bookmark, Show
     // earlier: up to 2000) were all made in one go, rich text and all: 1,900 held the window up 12 s.
     // Then the list makes only those near what you read (fillBuffer: px either way), more each step,
-    // nearest first, as many as take a few ms, each wait at least twice what the step cost (plasmashell,
-    // which draws the panel too, keeps at least half of the time), till it's every row again (-1).
+    // nearest first, as many as take a few ms, each wait at least twice what the step cost (it aims to
+    // leave plasmashell, which draws the panel too, half of the time), till it's every row again (-1).
     // Nothing runs once they're all made
     property real fillBuffer: -1
     readonly property int fillMin: 100   // (more new rows than that at once: a few at a time)
@@ -1572,9 +1574,20 @@ Window {
             }
             pane.followEnd()
             // (rows still made a few at a time, fillBuffer: it follows the end till they're all made, else
-            // back at the newest, ↓ Latest, it went 200 px out of view as they were; a scroll or a jump stops it)
-            if (--left <= 0 && pane.fillBuffer < 0)
+            // back at the newest, ↓ Latest, it went 200 px out of view as they were; a scroll or a jump stops
+            // it, and nothing ticks while the window is hidden: shown again, at the end it follows it again)
+            if (--left <= 0 && (pane.fillBuffer < 0 || !pane.shown))
                 stop()
+        }
+    }
+    // (a press in the scroll bar, its track too, stops it at once: a tick in between took the list back down)
+    Connections {
+        target: scroll.PlasmaComponents3.ScrollBar.vertical
+        function onPressedChanged() {
+            if (scroll.PlasmaComponents3.ScrollBar.vertical.pressed) {
+                settle.stop()
+                holdTop.stop()
+            }
         }
     }
     function keepEnd() {
