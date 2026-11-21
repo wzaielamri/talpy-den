@@ -7,7 +7,7 @@ import { AwayWatch } from "../src/away";
 import { Notifier } from "../src/notify";
 import { useSettingsHost } from "../src/settings";
 import { demoState } from "../src/shared/demo";
-import type { PermissionAsk, Session } from "../src/shared/types";
+import type { Session } from "../src/shared/types";
 import { FakeHost } from "./fakeHost";
 
 // (each test's cache, where the lead's file and away's mark go, is its own: gone after it, XDG_CACHE_HOME
@@ -20,41 +20,16 @@ afterEach(() => {
   else process.env.XDG_CACHE_HOME = savedCache;
 });
 
-// The notifier talks to its host alone (no vscode): a permission prompt's buttons and text, and which
-// window leads
+// The notifier talks to its host alone (no vscode): which window leads, and a question's buttons (a
+// permission prompt's: vscode/test/notify.test.ts, through VsCodeHost)
 const setup = () => {
   process.env.XDG_CACHE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-den-notify-core-"));
   caches.push(process.env.XDG_CACHE_HOME);
   const fake = new FakeHost();
   useSettingsHost(fake);
   const notifier = new Notifier(fake, { sound() {} } as never, () => undefined);
-  const ask = (p: Partial<PermissionAsk>): Session => ({
-    ...demoState(Date.now()).status!.groups[0].sessions[0], state: "waiting", name: "deploy",
-    permission: { tool: "Bash", line: "Bash: npm publish", command: "npm publish", file: "", diff: [], always: "", request: "r1", answer: "hook", ...p },
-  }) as Session;
-  const notify = async (n: Notifier, s: Session) => {
-    n.handle({ notices: [{ key: s.key, kind: "waiting", title: "deploy asks", body: "", session: s }], petEvents: [], sound: "", finished: [] });
-    await new Promise((r) => setTimeout(r, 10));
-  };
-  return { fake, notifier, ask, notify };
+  return { fake, notifier };
 };
-
-test("a permission prompt's notification lists Allow once, Always allow, Deny, Deny with a note…", async () => {
-  const { fake, notifier, ask, notify } = setup();
-  const answers: [string, string][] = [];
-  notifier.panes = { answer: async (_c: unknown, d: string, _s: unknown, n = "") => (answers.push([d, n]), { ok: true, message: "" }) } as never;
-  await notify(notifier, ask({}));
-  await notify(notifier, ask({ always: "Bash(npm publish:*) in this project (.claude/settings.local.json)" }));
-  assert.deepEqual(fake.recorded.messages.map((m) => [m.level, m.text, m.actions]), [
-    ["warning", "deploy asks — ", ["Allow once", "Deny", "Deny with a note…", "Open"]],
-    ["warning", "deploy asks —  · Always allow: Bash(npm publish:*) in this project (.claude/settings.local.json)",
-      ["Allow once", "Always allow", "Deny", "Deny with a note…", "Open"]],
-  ]);
-  fake.answer.message = () => "Deny";
-  await notify(notifier, ask({}));
-  assert.deepEqual(answers, [["deny", ""]]);
-  notifier.dispose();
-});
 
 test("an unfocused window that leads notifies; a focused one claims the lead", () => {
   const { fake, notifier } = setup();

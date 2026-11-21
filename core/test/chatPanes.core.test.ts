@@ -1,7 +1,7 @@
 // Talpy Chat on its host alone (no vscode): a chat's surface gets its first state once its page is ready,
 // the + button's file dialog (pictures only for an SSH host's chat), the conversation's font following the
-// editor's and the terminal's, the side questions panel's choices kept in the host's state, and Open on a
-// file Claude made.
+// editor's and the terminal's, and Open on a file Claude made. (The side questions panel's choices kept in
+// the host's state: vscode/test/pane.test.ts, on VsCodeHost and VS Code's surfaces.)
 
 import assert from "node:assert/strict";
 import * as os from "node:os";
@@ -159,24 +159,6 @@ test("the conversation's font follows talpyDen.chatFont and the terminal's and t
     assert.deepEqual(surface.of("font").map((m) => m.family), ["Iosevka Term", "Iosevka Term", "Fira Code", ""]);
     panes.open({ key: "f-2", chatId: "f-2", sessionId: "f-2", profileDir: ".claude", name: "y" } as ChatRef);
     assert.equal(surfaces.opened[1].page.font, "", "the next chat's page starts with it");
-  } finally {
-    panes.dispose();
-  }
-});
-
-test("the side questions panel's pick and whether it's open are kept in the host's state, by the keys VS Code kept them by", async () => {
-  const { fake, surfaces, panes } = setup();
-  try {
-    assert.deepEqual(panes.sidePrefs(), { open: false, pick: "" }, "nothing kept yet: closed, the chat's own model");
-    panes.open({ key: "s-1", chatId: "s-1", sessionId: "s-1", profileDir: ".claude", name: "x" } as ChatRef);
-    const surface = surfaces.opened[0];
-    surface.say({ type: "sidePrefs", open: true });
-    surface.say({ type: "sidePrefs", pick: "haiku" });
-    surface.say({ type: "sidePrefs", open: "yes", pick: "opus" });   // (neither is one: nothing kept)
-    await tick();
-    assert.deepEqual([...fake.kept], [["talpyDen.sideQuestions.open", true], ["talpyDen.sideQuestions.pick", "haiku"]]);
-    panes.open({ key: "s-2", chatId: "s-2", sessionId: "s-2", profileDir: ".claude", name: "y" } as ChatRef);
-    assert.deepEqual(surfaces.opened[1].page.side, { open: true, pick: "haiku" }, "the next chat's page starts with them");
   } finally {
     panes.dispose();
   }

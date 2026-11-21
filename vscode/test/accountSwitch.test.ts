@@ -1,10 +1,10 @@
 // In a Remote-SSH window, the account switch shows and switches the host's
 // Claude Code: VS Code keeps claudeCode.environmentVariables (a machine
 // setting) per host, so the user setting written there is the host's. Its
-// Add Account… and Claude Accounts… are the extension's own accounts'.
+// Add Account… and Claude Accounts… are the extension's own accounts'
+// (activate.test.ts, through the extension as it's activated).
 
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
 import { test } from "node:test";
 import * as vscode from "vscode";
 import { host } from "./useHost";
@@ -89,14 +89,4 @@ test("making a host's account the default also points the host's ~/.claude there
     stub.env.remoteName = undefined;
     stub.workspace.getConfiguration = realConfig;
   }
-});
-
-// The switch's Add Account… and Claude Accounts… (one account, or the others hidden) are the extension's own
-// accounts' (talpyDen.addAccount's and talpyDen.accounts'), the same window's host and editor as the rest
-test("the switch opens the extension's accounts: Add Account… adds one, Claude Accounts… lists them", () => {
-  const activate = fs.readFileSync("src/extension.ts", "utf8");
-  assert.match(activate, /new AccountSwitch\(host, editor, dash, \{ add: \(\) => accounts\.add\(\), manage: \(\) => accounts\.manage\(\) \}, backend\)/);
-  assert.match(activate, /const accounts = new Accounts\(host, backend, dash, terminals, account\);/);
-  assert.match(activate, /registerCommand\("talpyDen\.accounts", \(\) => accounts\.manage\(\)\)/);
-  assert.match(activate, /registerCommand\("talpyDen\.addAccount", \(\) => accounts\.add\(\)\)/);
 });

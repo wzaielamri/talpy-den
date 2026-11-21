@@ -45,6 +45,8 @@ test("a permission prompt's notification lists Allow once, Always allow, Deny, D
   assert.deepEqual(shown.pop(), ["Open", "Allow once", "Deny"]);
   assert.equal(messages.pop(), "deploy asks — ");
 
+  pick = "Deny";
+  await notify(ask({}));
   pick = "Deny with a note…";
   note = "  publish to the test registry  ";
   await notify(ask({}));
@@ -52,7 +54,7 @@ test("a permission prompt's notification lists Allow once, Always allow, Deny, D
   await notify(ask({}));
   note = undefined;   // (Escape: no answer)
   await notify(ask({}));
-  assert.deepEqual(answers, [["deny", "publish to the test registry"], ["deny", ""]]);
+  assert.deepEqual(answers, [["deny", ""], ["deny", "publish to the test registry"], ["deny", ""]]);
   notifier.dispose();
 });
 

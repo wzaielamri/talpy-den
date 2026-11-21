@@ -1,6 +1,7 @@
 // The dashboard on its host alone (no vscode): the state it builds names each chat's and account's agent,
-// the pace of this computer's checks follows the window's focus as the host tells it, and so do what it
-// clears when you look and what it sums up when you come back.
+// the pace of this computer's checks follows the window's focus as the host tells it, and so does what it
+// clears when you look. (What it sums up when you come back: comingBack.ts, run on VsCodeHost by
+// vscode/test/vscodeHost.test.ts.)
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
@@ -16,7 +17,6 @@ import { demoState } from "../src/shared/demo";
 import { petKeyOf } from "../src/shared/model";
 import type { Session, Status } from "../src/shared/types";
 import type { Changes } from "../src/transitions";
-import { comingBack } from "./comingBack";
 import { FakeHost } from "./fakeHost";
 
 const NOW = 1_800_000_000_000;
@@ -125,15 +125,4 @@ test("what finished unseen is cleared once the window has the focus with the vie
   } finally {
     dash.dispose();
   }
-});
-
-// For one change of the window's state, FakeHost tells the focus before the use, as VS Code's host does
-// (host.ts): coming back, the window claims the lead before away's onBack asks for it, so "While you were
-// away" shows; then what finished unseen is cleared (comingBack.ts)
-test("coming back to the window: it claims the lead, away's digest shows, then what finished unseen is cleared", () => {
-  const fake = new FakeHost();
-  const { order, digest, unseen } = comingBack(fake, (focused) => fake.setFocused(focused));
-  assert.deepEqual(order, ["claim", "back", "digest", "unseen cleared"]);
-  assert.match(digest, /^While you were away \(10m\): Needs you: /);
-  assert.deepEqual(unseen, [1, 0]);
 });

@@ -1,5 +1,5 @@
-// Coming back to a window after a while, on a host (FakeHost, VsCodeHost over the stub): what a real Notifier
-// and Dashboard (with its AwayWatch) do on that one change of the window's state, in order. The window claims
+// Coming back to a window after a while, on a host (VsCodeHost over the stub, vscodeHost.test.ts): what a real
+// Notifier and Dashboard (with its AwayWatch) do on that one change of the window's state, in order. The window claims
 // the lead on the focus (Notifier: focus.onDidChange); away's onBack then sums up the absence and shows it only
 // in the window that leads (Dashboard.cameBack -> Notifier.digest -> isLeader); then the dashboard clears what
 // finished while you weren't looking (its focus.onDidChangeUse, after away's). The host must fire onDidChange

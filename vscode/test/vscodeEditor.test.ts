@@ -3,7 +3,6 @@
 // extension shows it today.
 
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
 import { afterEach, beforeEach, test } from "node:test";
 import * as vscode from "vscode";
 import * as stub from "./vscode-stub";
@@ -127,7 +126,8 @@ test("plan feedback: an editor's unsaved changes are saved, the plan review's co
 });
 
 // Send Feedback (actions' sendPlanFeedback in the core) reads your comments through the editor, which has the plan
-// review extension.ts makes: they go to Claude with the feedback (jump.py --comments), and once sent they're gone
+// review: they go to Claude with the feedback (jump.py --comments), and once sent they're gone. (The extension's
+// own editor and review, as it's activated: activate.test.ts.)
 test("plan feedback through the actions carries your comments on the plan's lines to Claude, then clears them", async () => {
   const plan = "/home/me/.claude/plans/calm-red-owl.md";
   stub.stubFiles.set(plan, "# Plan\n\n1. Parse the file\n2. Ship it\n");
@@ -146,10 +146,6 @@ test("plan feedback through the actions carries your comments on the plan's line
     assert.deepEqual(JSON.parse(args[7]), [{ from: 3, to: 4, quote: "1. Parse the file\n2. Ship it", text: "Run the tests before shipping" }]);
     assert.equal(disposed, 1, "sent: the comment is gone");
     assert.deepEqual(await review.comments(plan), []);
-    // (the extension's one editor, which the actions get, has the review whose comment commands add them)
-    const activate = fs.readFileSync("src/extension.ts", "utf8");
-    assert.match(activate, /const review = new PlanReview\(.*\);[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*const editor = new VsCodeEditor\(review\);/);
-    assert.match(activate, /new Actions\(host, terminals, editor, /);
   } finally {
     stub.stubFiles.delete(plan);
     review.dispose();
