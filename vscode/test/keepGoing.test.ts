@@ -14,7 +14,7 @@ import { chatOptionArgs } from "../../core/src/settings";
 import { Dashboard } from "../../core/src/dashboard";
 import type { Notifier } from "../../core/src/notify";
 import { demoState } from "../../core/src/shared/demo";
-import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems } from "../../core/src/shared/model";
+import { clockText, findChatRef, findPlan, keptChat, keptTitle, limitReset, resetAtText, toLocalClock, unseenHostItems, unseenQuiet } from "../../core/src/shared/model";
 import type { Group, KeptChat, QueuedTask } from "../../core/src/shared/types";
 import { VsCodeEditor } from "../src/vscodeEditor";
 
@@ -152,6 +152,8 @@ test("this computer's check has the usage cap, and the window that notifies look
   try {
     await dash.refresh();
     assert.ok(calls[0].includes("--keep-going"));
+    // (which window looks, so Plasma's copy and this one don't both: look_after_kept)
+    assert.deepEqual(calls[0].slice(calls[0].indexOf("--keeper"), calls[0].indexOf("--keeper") + 2), ["--keeper", `vscode:${process.pid}`]);
     assert.ok(!calls[0].includes("--usage-cap"), "no cap: none asked for");
     overrides.set("usageCap", 90);
     leader = false;
@@ -170,6 +172,40 @@ test("this computer's check has the usage cap, and the window that notifies look
     assert.deepEqual(fetchAfter(calls[3]), ["--usage-refresh", "60"], "(60 at most)");
   } finally {
     overrides.clear();
+    dash.dispose();
+  }
+});
+
+// (2026-11-22, the review) an SSH host or a container that isn't shown, whose chats that keep going
+// are all idle there and with nothing queued for it, is checked every 5 minutes: nothing of it can
+// hit a limit meanwhile. As often as a shown one again once something is queued, or one works there
+test("an unseen host with only idle chats that keep going is checked at a quieter pace", async () => {
+  const kept = (chat: string, h: string) => ({ chat, host: h, profile: ".claude", name: "", since: NOW, wentOnAt: null, tries: 0, note: "", error: "" }) as KeptChat;
+  const answer = (state: string) => ({ groups: [{ profileKeys: [".claude"], sessions: [{ sessionId: "c1", chatId: "c1", state }] }] });
+  const status = { keep: [kept("c1", "lab"), kept("c9", "build")], queue: [] as QueuedTask[] };
+  assert.equal(unseenQuiet(answer("idle") as never, status, "lab"), true);
+  assert.equal(unseenQuiet(answer("working") as never, status, "lab"), false);
+  assert.equal(unseenQuiet(answer("waiting") as never, status, "lab"), false);
+  assert.equal(unseenQuiet(answer("idle") as never, { ...status, queue: [{ id: "t", host: "lab" } as QueuedTask] }, "lab"), false);
+  assert.equal(unseenQuiet(answer("working") as never, status, "build"), true, "(another host's chat at work)");
+  // the window that notifies: checked once, then not again for 5 minutes, unless something's queued for it
+  const calls: string[] = [];
+  let state = "idle";
+  const backend = { hostStatus: async (h: string) => (calls.push(h), { ok: true, result: answer(state) }) } as unknown as Backend;
+  const dash = new Dashboard(host, new VsCodeEditor(), backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
+  const priv = dash as unknown as { status: unknown; checkUnseen(h: string): Promise<void> };
+  try {
+    priv.status = { ...demoState(NOW).status!, ...status };
+    await priv.checkUnseen("lab");
+    await priv.checkUnseen("lab");
+    assert.equal(calls.length, 1);
+    priv.status = { ...demoState(NOW).status!, ...status, queue: [{ id: "t", host: "lab" }] };
+    state = "working";
+    await priv.checkUnseen("lab");
+    priv.status = { ...demoState(NOW).status!, ...status };
+    await priv.checkUnseen("lab");
+    assert.equal(calls.length, 3, "a chat at work there: at the usual pace");
+  } finally {
     dash.dispose();
   }
 });

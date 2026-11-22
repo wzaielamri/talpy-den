@@ -4859,14 +4859,19 @@ def reset_from_text(text, at_ms):
 
 
 LIMIT_PCT = 95  # a plan window this full is at its limit (the widget's limitReset, limit_reset)
+# A window read after a chat stopped on its limit counts as reset early only
+# below this: a reading not far below the limit says little (2026-11-22, the
+# review: four stops at 93%, each read after its stop, each went on at once)
+FREED_PCT = 50
 
 
 def freed_early(stopped, limits):
     """Whether the account's plan window of the limit that stopped a chat
-    (stopped_by's), read after it stopped, is below its limit: it reset
-    before its time (Anthropic resets a window early now and then). With the
-    reset Claude noted ("resets"), only when that's this window's (not
-    another account's of that name: a shared chat that ran there then)."""
+    (stopped_by's), read after it stopped, is well below its limit
+    (FREED_PCT): it reset before its time (Anthropic resets a window early
+    now and then). With the reset Claude noted ("resets"), only when that's
+    this window's (not another account's of that name: a shared chat that
+    ran there then)."""
     at, read = stopped.get("at") or 0, number((limits or {}).get("updatedAt"))
     if not stopped.get("window") or not at or read is None or read <= at:
         return False
@@ -4876,22 +4881,39 @@ def freed_early(stopped, limits):
         return False
     if stopped.get("resets") and not same_window(stopped["resets"], w.get("resetsAt")):
         return False
-    return w["pct"] < LIMIT_PCT
+    return w["pct"] < FREED_PCT
 
 
-def limit_stop(stopped, limits, now_ms):
+def new_window_since(stopped, limits):
+    """Whether the account's plan window of the limit that stopped a chat
+    started after it stopped: an early reset can start a new window, with a
+    reset other than the one Claude noted."""
+    w = next((w for w in (limits or {}).get("windows") or []
+              if isinstance(w, dict) and w.get("key") == stopped.get("window")), None) if stopped.get("window") else None
+    hours = window_hours(w["key"]) if w is not None else None
+    return bool(w is not None and not w.get("reset") and number(w.get("resetsAt")) and hours
+                and (stopped.get("at") or 0) < w["resetsAt"] - hours * 3600_000)
+
+
+def limit_stop(stopped, limits, now_ms, shared=True, early=True):
     """A copy of what stopped a chat (stopped_by), with when the usage limit
     it hit resets ("resetsAt") or whether it has since ("over"): from the
     account's plan window of that limit (a window that started after the
     chat stopped is a new one; one read since below its limit reset early,
-    freed_early), else from the time in Claude's message.
+    freed_early, then "freedEarly"), else from the time in Claude's message.
     When it resets as Claude noted it with the stop ("resets") comes first:
-    that is the window of the account the chat ran on then."""
+    that is the window of the account the chat ran on then, unless this
+    account's window of it started since and the chat runs on this account
+    only (shared False: not shared between accounts). early False: a window
+    read below its limit doesn't count (a go-on that did hit it again)."""
     s = dict(stopped, resetsAt=None, over=False)
     if s.get("kind") != "limit":
         return s
     if isinstance(s.get("resets"), int):
-        s["over"] = s["resets"] <= now_ms or freed_early(s, limits)
+        if s["resets"] <= now_ms or (not shared and new_window_since(s, limits)):
+            s["over"] = True
+        elif early and freed_early(s, limits):
+            s["over"] = s["freedEarly"] = True
         s["resetsAt"] = None if s["over"] else s["resets"]
         return s
     at = s.get("at") or 0
@@ -4904,8 +4926,10 @@ def limit_stop(stopped, limits, now_ms):
             s["over"], known = True, True
     elif w is not None and w.get("resetsAt"):
         hours = window_hours(w["key"])
-        if (hours and at < w["resetsAt"] - hours * 3600_000) or freed_early(s, limits):
+        if hours and at < w["resetsAt"] - hours * 3600_000:
             s["over"] = True
+        elif early and freed_early(s, limits):
+            s["over"] = s["freedEarly"] = True
         else:
             s["resetsAt"] = w["resetsAt"]
         known = True
@@ -4921,7 +4945,7 @@ def note_limit_stops(group, now_ms):
     """The account's chats that a usage limit stopped: when it resets."""
     for s in group["sessions"]:
         if s.get("stopped"):
-            s["stopped"] = limit_stop(s["stopped"], group.get("limits"), now_ms)
+            s["stopped"] = limit_stop(s["stopped"], group.get("limits"), now_ms, shared=bool(s.get("shared")))
 
 
 def note_limit_hits(group):
@@ -5133,7 +5157,8 @@ KEEP_HOST_STALE_MS = 15 * 60_000
 
 def load_keep(cache_root):
     """{"chats": the chats that keep going, "capped": {account|window: when
-    that window resets}, for the windows the usage cap stopped chats in}."""
+    that window resets}, for the windows the usage cap stopped chats in,
+    "looked": {"at", "by", "cap"}: the copy that last looked after them}."""
     data = read_json(state_dir(cache_root) / "keep.json")
     data = data if isinstance(data, dict) else {}
     chats = data.get("chats") if isinstance(data.get("chats"), list) else []
@@ -5143,8 +5168,12 @@ def load_keep(cache_root):
              and (not k.get("host") or (isinstance(k["host"], str) and HOST_IDENT.match(k["host"])))]
     for k in chats:
         k["host"] = k.get("host") or ""  # (this computer's)
+    looked = data.get("looked") if isinstance(data.get("looked"), dict) else {}
     return {"chats": chats,
-            "capped": {w: at for w, at in capped.items() if isinstance(w, str) and number(at) is not None}}
+            "capped": {w: at for w, at in capped.items() if isinstance(w, str) and number(at) is not None},
+            # (the copy that looked after them last, when, with what usage cap: look_after_kept)
+            "looked": {"at": int(number(looked.get("at")) or 0), "by": looked.get("by") if isinstance(looked.get("by"), str) else "",
+                       "cap": int(number(looked.get("cap")) or 0)}}
 
 
 def change_keep(cache_root, change, wait=True):
@@ -5180,7 +5209,7 @@ def keep_chat(cache_root, profile_key, chat_id, name="", folder="", on=True, now
         if on:
             data["chats"].append({"chat": chat_id, "profile": profile_key, "host": host, "name": clean_text(name, 80),
                                   "folder": folder or "", "since": now_ms, "wentOnAt": None, "tries": 0,
-                                  "note": "", "error": "", "errorAt": None, "cappedUntil": None})
+                                  "note": "", "error": "", "errorAt": None, "cappedUntil": None, "stoppedAt": None})
         return on or had
     change_keep(cache_root, change)
 
@@ -5215,6 +5244,63 @@ def went_on_undone(cache_root, chat_id, noted, was, host=""):
         k["wentOnAt"] = was
         return True
     change_keep(cache_root, change)
+
+
+def note_user_stop(cache_root, chats, host="", now_ms=None):
+    """You stopped or interrupted a chat that keeps going (■ Stop, Interrupt,
+    Talpy Chat's Stop, a host's stop command: chats, the ids it may be kept
+    under, the chat's and the session's that had it open; of host). That's
+    you taking over: its "stoppedAt" is noted, so a turn it broke off, a
+    go-on with nothing new after it or an API error before the stop doesn't
+    go on again (kept_step), and its try again that's queued is taken out
+    (one read before this that starts after it: jump.py --start-queued drops
+    it). It goes on after its next usage limit. Whether one was kept (no
+    write at all for a chat that isn't)."""
+    now_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    ids, host = {c for c in chats if valid_id(c or "")}, host or ""
+    if not ids or not any(k["chat"] in ids and k["host"] == host for k in load_keep(cache_root)["chats"]):
+        return False
+    noted = []
+
+    def change(data):
+        for k in data["chats"]:
+            if k["chat"] in ids and k["host"] == host:
+                k["stoppedAt"] = now_ms
+                noted.append(k["chat"])
+        return bool(noted)
+    change_keep(cache_root, change)
+
+    def edit(tasks):
+        retries = [t for t in tasks if t.get("chat") in noted and (t.get("host") or "") == host
+                   and t.get("why") == "retry" and not t.get("afterTurn")]
+        for t in retries:
+            tasks.remove(t)
+        return bool(retries)
+    if noted:
+        change_queue(cache_root, edit=edit)
+    return bool(noted)
+
+
+def stop_keeping_hidden(cache_root, chats, host=""):
+    """Chats you hid (chats: the ids a chat may be kept under; of host)
+    don't keep going any more, and a go-on of theirs that's queued is
+    cancelled: out of sight, nothing of them goes on by itself. In words
+    ("" when none of them kept going)."""
+    ids, host = {c for c in chats if valid_id(c or "")}, host or ""
+    kept = [k["chat"] for k in load_keep(cache_root)["chats"] if k["chat"] in ids and k["host"] == host]
+    if not kept:
+        return ""
+    for chat in kept:
+        keep_chat(cache_root, "", chat, on=False, host=host)
+    taken = []
+
+    def edit(tasks):
+        for t in [t for t in tasks if t.get("chat") in kept and (t.get("host") or "") == host and not t.get("afterTurn")]:
+            tasks.remove(t)
+            taken.append(t)
+        return bool(taken)
+    change_queue(cache_root, edit=edit)
+    return "It won't go on by itself any more" + (": its queued go-on is cancelled" if taken else "")
 
 
 def kept_chats(cache_root, moves=None):
@@ -5342,7 +5428,8 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     (last_turn), whose row in the status (its process) is row, and whose
     account's plan limits are limits: ("go on", when, why, prompt) to queue
     its go-on, or None (nothing for now). Never that it's done: it keeps
-    going until you switch it off (see above)."""
+    going until you switch it off (see above). A stop of yours ("stoppedAt",
+    note_user_stop) is you taking over: nothing before it goes on again."""
     k["note"] = ""
     if queued:
         return None  # its go-on waits (or couldn't start, and says why)
@@ -5374,31 +5461,49 @@ def kept_step(k, turn, row, queued, limits, now_ms):
         return go(max(k["cappedUntil"] + 60_000, now_ms), "cap")
     if turn is None:
         return None
-    at, went = turn["at"], k.get("wentOnAt") or 0
+    at, went, stopped = turn["at"], k.get("wentOnAt") or 0, number(k.get("stoppedAt")) or 0
     if k.get("error"):
         if at <= (k.get("errorAt") or 0):
             return None  # it gave up; something new in the chat starts it over
         k.update(error="", errorAt=None, tries=0)
     if turn["kind"] == "limit" and at > went:
-        s = limit_stop(turn, limits, now_ms)
+        s = kept_limit(k, turn, row, limits, now_ms)
         if not s.get("resetsAt") and not s.get("over"):
             # when it resets isn't known (out of usage credits, a limit with no
             # window on record): on after a pause, longer each time it hits it
             return again(turn.get("text") or "a usage limit", retry="")
         k["tries"] = 0
+        k["earlyWindow"] = turn.get("window") if s.get("freedEarly") else None
         return go(s["resetsAt"] + 60_000 if not s["over"] else now_ms)
     if turn["kind"] == "login":
         k["note"] = "Its account's login has expired: log in again, then it can go on"
         return None
     if turn["kind"] == "error" and at > went:
-        return again(turn.get("text") or "an API error", RETRY_PROMPT)
+        # (one before a stop of yours: you took over)
+        return again(turn.get("text") or "an API error", RETRY_PROMPT) if at > stopped else None
     if went and at <= went:
-        # nothing new since it went on: that didn't take
-        return again("it didn't go on") if now_ms - went > KEEP_TAKE_MS else None
-    # A turn that ended by itself, one you interrupted (Esc: Claude's note), one with no process to
-    # finish it (■ Stop ends its process mid-turn: you took over), or nothing new: on after its next
-    # limit, never before (2026-11-22: a Stop went on again a few minutes later)
+        # nothing new since it went on: that didn't take (unless you stopped it since: its prompt may
+        # not have been written yet, over ssh a while)
+        return again("it didn't go on") if now_ms - went > KEEP_TAKE_MS and stopped < went else None
+    if not turn["ended"] and not live and stopped < at:
+        # a turn with no process to finish it, and no stop of yours since: its process ended in it
+        # (Claude crashed, it was killed, the machine went down)
+        return again("its turn broke off") if now_ms - at > KEEP_TAKE_MS else None
+    # A turn that ended by itself, one you interrupted (Esc: Claude's note) or stopped (■ Stop ends its
+    # process mid-turn: stoppedAt), or nothing new: on after its next limit, never before (2026-11-22:
+    # a Stop went on again a few minutes later)
     return None
+
+
+def kept_limit(k, turn, row, limits, now_ms):
+    """limit_stop for the newest stop (turn) of the chat that keeps going k:
+    its window's reset early counts, unless a go-on that started by it
+    ("earlyWindow") hit that window again within KEEP_TAKE_MS (the reading
+    was stale: then the reset Claude noted); a window started since counts
+    for a chat whose row says it isn't shared between accounts."""
+    window, went = turn.get("window") or "", k.get("wentOnAt") or 0
+    early = not (window and k.get("earlyWindow") == window and went and (turn.get("at") or 0) - went < KEEP_TAKE_MS)
+    return limit_stop(turn, limits, now_ms, shared=row is None or bool(row.get("shared")), early=early)
 
 
 def cap_window(group, cap, now_ms):
@@ -5422,12 +5527,36 @@ def note_caps(groups, cap, now_ms):
             if w else None
 
 
-def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=None):
+KEEP_LOOK_MS = 20_000  # a copy that looked after them this recently keeps doing it: the others leave it
+KEEP_LOOK_STAMP_MS = 10_000  # how often the one that looks says so in keep.json
+
+
+def look_skipped(data, keeper, cap, now_ms):
+    """Whether this copy (keeper; with its usage cap) leaves looking after
+    the chats that keep going to another one (keep.json's data, under its
+    lock): the Plasma widget's copy and VS Code's window that notify both
+    run the check. One that looked within KEEP_LOOK_MS keeps it, unless this
+    one has a lower cap (none counts as above 100%): the lower cap wins.
+    Else this one notes itself (data changed in place)."""
+    def level(c):
+        return c if c and c > 0 else 101
+    looked = data.get("looked") or {}
+    if looked.get("by") != keeper and abs(now_ms - (looked.get("at") or 0)) < KEEP_LOOK_MS \
+            and level(looked.get("cap")) <= level(cap):
+        return True
+    if looked.get("by") != keeper or looked.get("cap") != (cap or 0) or now_ms - (looked.get("at") or 0) >= KEEP_LOOK_STAMP_MS:
+        data["looked"] = {"at": now_ms, "by": keeper, "cap": cap or 0}
+    return False
+
+
+def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=None, keeper=""):
     """Look after the chats that keep going, and stop the chats at work at
     the usage cap (see above). groups: this computer's accounts, as the
     status lists them. moves: the chats Claude moved to the background
     under a new id (chat_moves): a kept chat and its queued go-on follow
-    it there, and each keeps the name its chat has now. A queued go-on
+    it there, and each keeps the name its chat has now. keeper: which copy
+    looks (Plasma's widget, VS Code's window): one at a time, look_skipped.
+    A queued go-on
     that can start sooner than it's queued for is brought forward
     (sooner_go_on, bring_forward). Nothing when another copy is at it
     right now."""
@@ -5453,7 +5582,10 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
     adds, stops, sooner = [], [], []
 
     def change(data):
-        changed = False
+        before_looked = dict(data.get("looked") or {})
+        if look_skipped(data, keeper, cap, now_ms):
+            return False
+        changed = data.get("looked") != before_looked
         for mark, at in list(data["capped"].items()):
             if at <= now_ms:  # (that window is over)
                 del data["capped"][mark]
@@ -5501,7 +5633,10 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                                         why=why, now_ms=now_ms))
                 k["cappedUntil"] = None
             elif task is not None:
-                when = sooner_go_on(k, task, turn, row, g, now_ms)
+                # (what a copy with a lower usage cap holds: its window's reset, keep.json's "capped")
+                mine = "|".join((g or {}).get("profileKeys") or []) + "|"
+                held = max((at for mark, at in data["capped"].items() if mark.startswith(mine) and at > now_ms), default=None)
+                when = sooner_go_on(k, task, turn, row, g, now_ms, held=held)
                 if when is not None:
                     sooner.append((task, when))
             changed = changed or k != before
@@ -5546,7 +5681,7 @@ def limit_reset(group, now_ms, offset=0):
     return best if best is not None and best[0] > now_ms else None
 
 
-def sooner_go_on(k, task, turn, row, group, now_ms, offset=0):
+def sooner_go_on(k, task, turn, row, group, now_ms, offset=0, held=None):
     """When the queued go-on (task) of the chat that keeps going k can
     start, if that's sooner than it's queued for: (ms, why in words), or
     None. What frees the chat is its newest stop (turn: last_turn, on this
@@ -5562,7 +5697,10 @@ def sooner_go_on(k, task, turn, row, group, now_ms, offset=0):
     itself (kept_step says why). One a front end sent back to wait for its
     account's limit (jump.py --requeue: "requeuedAt"), only by usage read
     or a stop since: the numbers it weighed then would bring it back, and
-    it would go back and forth."""
+    it would go back and forth. held: when the usage cap of a copy with a
+    lower one holds the account's window (keep.json's "capped"): not before
+    then either. k (keep.json's entry) notes a window read as reset early
+    that brings it forward ("earlyWindow", kept_limit)."""
     if not isinstance(task, dict) or task.get("afterTurn") or task.get("why") or task.get("error") \
             or task.get("waits") or number(task.get("startAt")) is None:
         return None
@@ -5576,7 +5714,7 @@ def sooner_go_on(k, task, turn, row, group, now_ms, offset=0):
     requeued = number(task.get("requeuedAt"))
     if requeued and requeued >= max(turn["at"], number((limits or {}).get("updatedAt")) or 0):
         return None
-    s = limit_stop(turn, limits, now_ms)
+    s = kept_limit(k, turn, row, limits, now_ms)
     window = turn.get("window") or ""
     what = WINDOW_LABELS.get(window, window.replace("_", " ")) + " limit" if window else "usage limit"
     if s["over"]:
@@ -5589,8 +5727,11 @@ def sooner_go_on(k, task, turn, row, group, now_ms, offset=0):
     if busy is not None and busy[0] + 60_000 > start:
         start = busy[0] + 60_000
         why = f"its account is at its {busy[1]} limit until then" if busy[1] else "its account is at a usage limit until then"
+    if held and held + 60_000 > start:
+        start, why = held + 60_000, "its account is at the usage cap until then"
     if start + GO_ON_SOONER_MS >= task["startAt"]:
         return None
+    k["earlyWindow"] = window if s.get("freedEarly") and start == now_ms else k.get("earlyWindow")
     return int(start), why
 
 
@@ -11724,9 +11865,11 @@ def change_hidden(cache_root, kind, add=None, forget=(), clear=False, now_ms=Non
         return hidden[kind]
 
 
-def hide_item(cache_root, kind, item_id):
+def hide_item(cache_root, kind, item_id, kept=None):
     """Hide a chat, a plan, a memory or a project (kind chats, plans,
-    memories, projects): (ok, message)."""
+    memories, projects): (ok, message). A chat that keeps going (by its id,
+    or kept: the chat its row's session, another one it was resumed in, is)
+    doesn't any more, and its queued go-on is cancelled (stop_keeping_hidden)."""
     if kind not in HIDE_KINDS:
         return False, "Only chats, plans, memories and projects can be hidden"
     one = HIDE_WORDS[kind][0]
@@ -11734,10 +11877,9 @@ def hide_item(cache_root, kind, item_id):
         return False, f"Not a {one}: {item_id}"
     if kind == "chats":
         change_dismissed(cache_root, add=item_id)
-        # (out of sight, it doesn't go on by itself any more: its go-on that's queued stays, in the queue's list)
-        if any(k["chat"] == item_id and not k["host"] for k in load_keep(cache_root)["chats"]):
-            keep_chat(cache_root, "", item_id, on=False)
-            return True, "Hid this chat. It won't go on by itself after later limits any more"
+        words = stop_keeping_hidden(cache_root, [item_id, kept])
+        if words:
+            return True, f"Hid this chat. {words}"
     else:
         change_hidden(cache_root, kind, add=item_id)
     return True, f"Hid this {one}"
@@ -13194,6 +13336,7 @@ USAGE = """usage: talpy_den.py [--config-dir DIR]... [--done-hours H] [--recent 
                     one that does looks after the chats that keep going (look_after_kept)
   --keep-going      look after the chats that keep going (the VS Code window that notifies); and,
                     as --cleanup-check, start Talpy Den's daily cleanup of old chats once it's due
+  --keeper NAME     (with --keep-going) the copy that asks, for look_after_kept: one copy at a time
   --cleanup-check   (GNOME's copy, which needs no electing) start that cleanup once it's due
   --usage-cap N     stop what an account has at work once one of its plan windows reaches N%
   --usage-refresh N while one of an account's chats works, have Claude Code fetch its plan usage
@@ -13217,6 +13360,7 @@ def main(argv=None):
     continue_id, continue_folder, continue_ends_at = None, None, None
     vscode_account, vscode_server = None, VSCODE_SERVERS["Code"]
     keep_going, usage_cap, model, effort, mode = False, 0, None, None, None
+    keeper = ""
     cleanup_check = False  # (--cleanup-check: GNOME's one copy asks whether Talpy Den's cleanup of old chats is due)
     usage_refresh = USAGE_REFRESH_MINUTES
     fetch_usage = False
@@ -13329,6 +13473,8 @@ def main(argv=None):
             pretty = True
         elif arg == "--keep-going":
             keep_going = True
+        elif arg == "--keeper" and args:
+            keeper = args.pop(0)  # (with --keep-going: which copy looks, look_after_kept)
         elif arg == "--cleanup-check":
             cleanup_check = True
         elif arg == "--usage-cap" and args and args[0].isdigit():
@@ -13445,7 +13591,8 @@ def main(argv=None):
                 try:
                     if keep_going or result.get("notifier") is True:
                         look_after_kept(home, cache_root, config_dirs, result["groups"], int(time.time() * 1000),
-                                        usage_cap, result.get("moved"))
+                                        usage_cap, result.get("moved"),
+                                        keeper=("plasma:" + instance) if instance is not None else keeper)
                     result["keep"] = kept_chats(cache_root, result.get("moved"))
                 except Exception as exc:
                     result["errors"].append(f"chats that keep going: {exc}")

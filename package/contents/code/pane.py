@@ -2988,6 +2988,8 @@ def main(argv=None):
                 elif there:   # (a stamp of before: as it is)
                     rest[at + 1] = there + "/" + rest[at + 1].partition("/")[2]
             answer = forward(host, rest, action)
+            if action == "--interrupt" and answer.get("ok"):   # (a chat of it that keeps going, kept here: you took over)
+                td.note_user_stop(cache_root, [target, session], host)
             if action == "--conversation" and answer.get("ok") and isinstance(answer.get("stamp"), str):
                 head, sep, tail = answer["stamp"].partition("/")
                 answer["stamp"] = f"{head}~h{mine}{sep}{tail}"
@@ -3036,6 +3038,8 @@ def main(argv=None):
                                 scoped=not remote, hook_source=source, predict=suggest)
         elif action == "--interrupt":
             ok, said = interrupt(home, config_dirs, profile, target, session)
+            if ok and not remote:   # (a chat that keeps going: you took over, it goes on after its next limit only)
+                td.note_user_stop(cache_root, [target, session])
             result = {"ok": ok, "message": said}
         elif action == "--remote-control":
             result = remote_control(home, config_dirs, profile, target, session, on=not off)

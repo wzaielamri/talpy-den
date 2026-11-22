@@ -411,7 +411,7 @@ test("stopping a chat that keeps going asks whether Keep going goes off too", as
   try {
     for (const [keep, choice, flags] of [
       [[{ chat: "c1" }], "Stop and turn Keep going off", ["--and-keep-off", "c1"]],
-      [[{ chat: "c1" }], "Stop", []],
+      [[{ chat: "c1" }], "Stop", ["--kept", "c1"]], // (you took over: it goes on after its next limit only)
       [[], "Stop", []],
     ] as [unknown[], string, string[]][]) {
       const { actions, helpers } = actionsHere([], { keep });

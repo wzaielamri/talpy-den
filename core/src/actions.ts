@@ -328,7 +328,7 @@ export class Actions {
     const go = busy ? "Stop and Move" : "Move";
     const choice = await this.host.message("warning", `Move “${chat.name}” to a Claude Code panel?`, { modal: true, detail }, go);
     if (choice !== go) return;
-    const flags = busy ? ["--busy"] : [];
+    const flags = [...(busy ? ["--busy"] : []), ...this.keptArgs(chat)];
     const answer = chat.host
       ? await this.backend.action("remote.py", ["--end", chat.host, chat.sessionId, ...(chat.profileDir ? [chat.profileDir] : []), ...flags])
       : await this.backend.action("jump.py", ["--stop", chat.sessionId, ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...flags, ...configDirArgs()]);
@@ -420,40 +420,45 @@ export class Actions {
     if (choice === "Interrupt") {
       if (terminal) {
         terminal.sendText("\x03", false); // Ctrl+C, as if pressed in it (Claude's terminal is raw: a key, not a signal)
+        await this.userStopped(chat);
         return;
       }
       const profile = chat.profileDir ? [chat.profileDir] : [];
       const answer = chat.host
-        ? await this.backend.action("remote.py", ["--interrupt", chat.host, chat.sessionId, ...profile])
-        : await this.backend.action("jump.py", ["--interrupt", chat.sessionId, ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...configDirArgs()]);
+        ? await this.backend.action("remote.py", ["--interrupt", chat.host, chat.sessionId, ...profile, ...this.keptArgs(chat)])
+        : await this.backend.action("jump.py", ["--interrupt", chat.sessionId, ...(chat.profileDir ? ["--profile", chat.profileDir] : []), ...this.keptArgs(chat), ...configDirArgs()]);
       this.report(answer, "Couldn't interrupt the chat");
       this.refresh(chat.host);
       return;
     }
     if (choice !== "Stop" && choice !== keepOff) return;
     let answer: Answer;
+    // (Stop alone, of a chat that keeps going: you took over, it goes on after its next usage limit only, --kept)
     if (chat.host && chatProcess) {
-      const off = choice === keepOff && kept ? ["--keep-off", kept.chat] : []; // (once it's stopped)
+      const off = choice === keepOff && kept ? ["--keep-off", kept.chat] : this.keptArgs(chat); // (once it's stopped)
       answer = await this.backend.action("remote.py", ["--end", chat.host, chat.sessionId, ...(chat.profileDir ? [chat.profileDir] : []), ...(busy ? ["--busy"] : []), ...off]);
     } else if (chat.host) {
       if (!chat.stopCommand) return this.fail(`${chat.name} can't be stopped from here.`);
       answer = await this.backend.action("remote.py", ["--run", chat.host, chat.stopCommand]);
-      // (its stop command there can't take it: off at once)
+      // (its stop command there can't take it: off at once, or noted)
       if (choice === keepOff && kept) await this.backend.action("jump.py", ["--keep-off", kept.chat, "--host", chat.host, ...configDirArgs()]);
+      else if (answer.ok) await this.userStopped(chat);
     } else {
       const profile = chat.profileDir ? ["--profile", chat.profileDir] : [];
-      const off = choice === keepOff && kept ? ["--and-keep-off", kept.chat] : [];
+      const off = choice === keepOff && kept ? ["--and-keep-off", kept.chat] : this.keptArgs(chat);
       answer = await this.backend.action("jump.py", ["--stop", chat.sessionId, ...profile, ...(busy ? ["--busy"] : []), ...off, ...configDirArgs()]);
     }
     if (this.report(answer, "Couldn't stop the chat") && (choice === keepOff || /killed|ended/.test(answer.message))) this.dash.setActionInfo(answer.message);
     this.refresh(chat.host);
   }
 
+  // (a chat that keeps going: it doesn't any more, and its queued go-on is cancelled; its row's session
+  // may be another one it was resumed in: the chat that keeps going goes along, --kept)
   async dismiss(chat: ChatRef): Promise<void> {
     if (this.demoOnly()) return;
     const answer = chat.host
-      ? await this.backend.action("remote.py", ["--dismiss", chat.host, chat.sessionId])
-      : await this.backend.action("jump.py", ["--dismiss", chat.sessionId, ...configDirArgs()]);
+      ? await this.backend.action("remote.py", ["--dismiss", chat.host, chat.sessionId, ...this.keptArgs(chat)])
+      : await this.backend.action("jump.py", ["--dismiss", chat.sessionId, ...this.keptArgs(chat), ...configDirArgs()]);
     this.report(answer, "Couldn't hide it");
     this.refresh(chat.host);
   }
@@ -1382,6 +1387,19 @@ export class Actions {
   async openRemoteControl(chat: ChatRef): Promise<void> {
     const page = remoteControlPage(chat.remoteControl);
     if (page) await this.host.openExternal(page);
+  }
+
+  // The chat that keeps going a row is, for a stop, an interrupt or a hide of it (jump.py and
+  // remote.py --kept): a stop of yours is you taking over, so it goes on after its next usage limit only
+  keptArgs(chat: ChatRef): string[] {
+    const kept = keptChat(this.dash.state().status, chat.chatId || chat.sessionId, chat.host);
+    return kept ? ["--kept", kept.chat] : [];
+  }
+
+  // A chat that keeps going stopped another way (Ctrl+C typed in its terminal, a host's stop command): said
+  async userStopped(chat: ChatRef): Promise<void> {
+    const kept = keptChat(this.dash.state().status, chat.chatId || chat.sessionId, chat.host);
+    if (kept) await this.backend.action("jump.py", ["--user-stopped", kept.chat, ...(chat.host ? ["--host", chat.host] : []), ...configDirArgs()]);
   }
 
   // A chat keeps going until you switch it off (after every usage limit, on by itself

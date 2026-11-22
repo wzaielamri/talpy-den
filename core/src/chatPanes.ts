@@ -406,6 +406,7 @@ export class ChatPanes implements Disposable, ChatPanesPort {
     const terminal = await this.windowTerminal(session, host);
     if (terminal) {
       terminal.sendText("\x03", false); // (Ctrl+C, as if pressed in it: Claude's terminal is raw, a key, not a signal)
+      await this.actions.userStopped(chat); // (a chat that keeps going: you took over, on after its next limit only)
       this.refresh(host);
       return { ok: true, message: "Interrupted (Ctrl+C in its terminal)" };
     }

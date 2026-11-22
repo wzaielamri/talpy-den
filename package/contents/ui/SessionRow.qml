@@ -209,14 +209,16 @@ RowLayout {
     function stop(keepOff) {
         root.stopConfirmSession = ""
         const busy = session.state !== "idle"
+        // (Stop alone: the chat that keeps going it is, so it goes on after its next limit only)
+        const keptChat = kept ? kept.chat : ""
         if (remoteHost && canEnd)
-            root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "")
+            root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "", keptChat)
         else if (remoteHost) {
-            root.remoteStop(remoteHost, session.stopCommand)
+            root.remoteStop(remoteHost, session.stopCommand, keepOff ? "" : keptChat)
             if (keepOff && kept)   // (its stop command there can't take it: off at once)
                 root.keepGoing(session, false, remoteHost)
         } else
-            root.stopSession(session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "")
+            root.stopSession(session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : "", keptChat)
     }
 
     function open() {
@@ -786,7 +788,7 @@ RowLayout {
                         icon.name: Icons.plasma.hide
                         text: i18n("Hide this chat")
                         Layout.alignment: Qt.AlignTop
-                        onClicked: root.hideItem("chats", row.session.sessionId, row.remoteHost)
+                        onClicked: root.hideItem("chats", row.session.sessionId, row.remoteHost, row.kept ? row.kept.chat : "")
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
@@ -1318,9 +1320,9 @@ RowLayout {
                         onTriggered: {
                             root.stopConfirmSession = ""
                             if (row.remoteHost)
-                                root.remoteInterrupt(row.remoteHost, row.session.sessionId, row.session.profileDir)
+                                root.remoteInterrupt(row.remoteHost, row.session.sessionId, row.session.profileDir, row.kept ? row.kept.chat : "")
                             else
-                                root.interruptSession(row.session.sessionId, row.session.profileDir)
+                                root.interruptSession(row.session.sessionId, row.session.profileDir, row.kept ? row.kept.chat : "")
                         }
                     },
                     Kirigami.Action {

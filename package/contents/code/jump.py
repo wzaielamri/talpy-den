@@ -7,6 +7,8 @@ a new chat (used by the Talpy Den widget).
                                                   programs, e.g. Talpy Den Display)
     python3 -I jump.py --stop SESSION_ID [--profile PROFILE] [--busy] [--and-keep-off CHAT_ID] [--config-dir DIR]...
     python3 -I jump.py --interrupt SESSION_ID [--profile PROFILE]   (Ctrl+C in its tmux pane, Esc in a background chat)
+                     (--stop, --interrupt, --dismiss, --hide chats: [--kept CHAT_ID], the chat that keeps going it
+                      is, which then waits for its next usage limit, or, hidden, doesn't keep going any more)
     python3 -I jump.py --save-settings JSON --by WIDGET [--unless-default]   (settings the widgets share)
     python3 -I jump.py --new-chat PROFILE_DIRNAME [--cwd FOLDER] [--config-dir DIR]...
     python3 -I jump.py --new-chat PROFILE_DIRNAME --choose-folder   (ask for the folder first)
@@ -1975,6 +1977,16 @@ def requeue(home, extra_dirs, task_id, start_at):
     return True, f"It waits for the usage limit: it starts {start_time(start_at)}"
 
 
+def user_stopped(home, extra_dirs, chat_id, host=""):
+    """A front end stopped or interrupted a chat that keeps going (of host)
+    another way than --stop or --interrupt (a host's stop command, Ctrl+C
+    typed in its terminal): you took over, td.note_user_stop."""
+    if not td.valid_id(chat_id):
+        return False, f"Not a chat: {chat_id}"
+    td.note_user_stop(td.cache_dir(home), [chat_id], host)
+    return True, ""
+
+
 def unqueue(home, extra_dirs, task_id):
     cache_root = td.cache_dir(home)
     taken = td.change_queue(cache_root, take=task_id)
@@ -2015,6 +2027,24 @@ def go_on_waits(cache_root, entry, answer, due, now_ms, out):
     return True, message
 
 
+def stopped_since(cache_root, entry):
+    """Whether a forced go-on of a chat that keeps going (why "retry" or
+    "cap": it goes on whatever its newest turn) was queued before a stop of
+    yours (td.note_user_stop: you took over): then it doesn't go on, and
+    go-on.log says so. (The stop takes out the tries again that are queued;
+    one a copy read before it can reach --start-queued after it.)"""
+    if not entry.get("chat") or entry.get("why") not in ("retry", "cap") or entry.get("afterTurn"):
+        return False
+    host = entry.get("host") or ""
+    k = next((k for k in td.load_keep(cache_root)["chats"] if k["chat"] == entry["chat"] and k["host"] == host), None)
+    if k is None or (td.number(k.get("stoppedAt")) or 0) <= (td.number(entry.get("createdAt")) or 0):
+        return False
+    td.log_go_on(cache_root, f"“{entry.get('name') or entry['chat'][:8]}” didn't "
+                             + ("try again" if entry["why"] == "retry" else "go on after the usage cap")
+                             + ": you stopped it since" + (f" · {host}" if host else ""))
+    return True
+
+
 def start_queued(home, extra_dirs, task_id, out=None, now=False):
     """Start a queued task now, in the background: (ok, message). It's taken
     out of the queue first, so of several copies of the widget only one
@@ -2029,6 +2059,8 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     cache_root = td.cache_dir(home)
     entry = td.change_queue(cache_root, take=task_id)
     if entry is None:
+        return True, ""
+    if stopped_since(cache_root, entry):
         return True, ""
     now_ms = int(time.time() * 1000)
     # (its go-on's time, kept while it waits: it ends what keeps the chat busy this long after it)
@@ -2989,9 +3021,11 @@ def unshare(home, extra_dirs, session_id, profile_dir):
                                 sharing.store_root(home))
 
 
-def dismiss(home, extra_dirs, session_id):
-    """Hide a finished chat from its list. Nothing of Claude's is touched."""
-    return td.hide_item(td.cache_dir(home), "chats", session_id)
+def dismiss(home, extra_dirs, session_id, kept=None):
+    """Hide a finished chat from its list. Nothing of Claude's is touched.
+    kept: the chat that keeps going it is (its row's session may be another
+    one it was resumed in): it doesn't any more (td.hide_item)."""
+    return td.hide_item(td.cache_dir(home), "chats", session_id, kept)
 
 
 def undismiss_all(home, extra_dirs, _session_id=None):
@@ -3059,8 +3093,10 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "               [--host HOST] [--account TITLE] [--keep]\n"
          "               (go on with a chat a usage limit stopped, at MS; --keep: and after every later limit, until --keep-off)\n"
          "       jump.py --keep-going CHAT_ID --profile PROFILE [--cwd FOLDER] [--name NAME] [--host HOST]\n"
-         "               | --keep-off CHAT_ID [--host HOST]\n"
+         "               | --keep-off CHAT_ID [--host HOST] | --user-stopped CHAT_ID [--host HOST]\n"
+         "               (--user-stopped: you stopped it another way: it goes on after its next limit only)\n"
          "       jump.py --stop SESSION_ID [--profile PROFILE] [--busy] --and-keep-off CHAT_ID   (and Keep going off)\n"
+         "       jump.py --stop|--interrupt|--dismiss SESSION_ID ... --kept CHAT_ID   (of a chat that keeps going)\n"
          "               (a chat goes on by itself after every usage limit, until --keep-off)\n"
          "       jump.py --unqueue|--start-queued TASK_ID [--now]\n"
          "               (--now: Start it now; a chat's go-on ends the background commands it waits for at once)\n"
@@ -3128,6 +3164,7 @@ def main(argv=None):
     start_now = False
     feedback_plan, comments, extra_out, hide_kind, describe = None, [], {}, None, False
     keep_off_chat = None
+    kept_chat = None  # (--kept: the chat that keeps going a stop, an interrupt or a hide is of, td.note_user_stop)
     into, back, setting, if_exists = None, False, True, None
     allow_vscode = False
     while args:
@@ -3154,6 +3191,10 @@ def main(argv=None):
             action, session_id = queue_continue, args.pop(0)  # the chat
         elif arg in ("--keep-going", "--keep-off") and args:
             action, session_id = (keep_going if arg == "--keep-going" else keep_off), args.pop(0)  # the chat
+        elif arg == "--user-stopped" and args:
+            action, session_id = user_stopped, args.pop(0)  # the chat that keeps going
+        elif arg == "--kept" and args:
+            kept_chat = args.pop(0)
         elif arg == "--requeue" and args:
             action, session_id = requeue, args.pop(0)  # the task's id
         elif arg in ("--star", "--unstar", "--star-plan", "--unstar-plan") and args:
@@ -3308,8 +3349,8 @@ def main(argv=None):
     if (task or background) and action not in (new_chat, "--remote-new-vscode", queue_task, queue_continue):
         sys.exit(USAGE)
     if (action in (queue_task, queue_continue, requeue)) != (start_at is not None) \
-            or (queue_host and action not in (queue_task, queue_continue, keep_going, keep_off, "--star", "--unstar",
-                                              "--star-plan", "--unstar-plan")):
+            or (queue_host and action not in (queue_task, queue_continue, keep_going, keep_off, user_stopped, "--star",
+                                              "--unstar", "--star-plan", "--unstar-plan")):
         sys.exit(USAGE)
     if action is queue_continue and (task.plan or background):
         sys.exit(USAGE)
@@ -3330,6 +3371,8 @@ def main(argv=None):
     if (into is not None or back or not setting or if_exists is not None) and action is not move_plan or (into and back):
         sys.exit(USAGE)
     if keep_off_chat is not None and action is not stop:
+        sys.exit(USAGE)
+    if kept_chat is not None and (action not in (stop, interrupt, dismiss, "--hide") or not td.valid_id(kept_chat)):
         sys.exit(USAGE)
     command, comparison = None, None
     try:
@@ -3360,6 +3403,8 @@ def main(argv=None):
             ok, message = keep_going(Path.home(), extra, session_id, profile_dir, folder, name_arg, queue_host)
         elif action is keep_off:
             ok, message = keep_off(Path.home(), extra, session_id, queue_host)
+        elif action is user_stopped:
+            ok, message = user_stopped(Path.home(), extra, session_id, queue_host)
         elif action is start_queued:
             ok, message = start_queued(Path.home(), extra, session_id, extra_out, now=start_now)
         elif action is unqueue:
@@ -3378,7 +3423,9 @@ def main(argv=None):
             ok, message, extra_out = move_plan(Path.home(), extra, session_id, profile_dir, into, back, setting,
                                                if_exists, describe)
         elif action == "--hide":
-            ok, message = td.hide_item(td.cache_dir(Path.home()), hide_kind, session_id)
+            ok, message = td.hide_item(td.cache_dir(Path.home()), hide_kind, session_id, kept_chat)
+        elif action is dismiss:
+            ok, message = dismiss(Path.home(), extra, session_id, kept_chat)
         elif action == "--show-hidden":
             ok, message = td.show_hidden(td.cache_dir(Path.home()), hide_kind)
         elif action == "--remote-edit":
@@ -3401,6 +3448,8 @@ def main(argv=None):
             ok, message = stop_keep_off(Path.home(), extra, session_id, keep_off_chat, profile_dir, busy)
         elif action is stop:
             ok, message = stop(Path.home(), extra, session_id, profile_dir, busy)
+            if ok:   # (you took over: it goes on after its next limit only, td.note_user_stop)
+                td.note_user_stop(td.cache_dir(Path.home()), [session_id, kept_chat])
         elif action is send_to_phone:
             ok, message = send_to_phone(session_id, device)
         elif action is phone_devices:
@@ -3435,6 +3484,8 @@ def main(argv=None):
                            else start(Path.home(), extra, session_id, folder, task))
         elif action in (jump, interrupt, resume, continue_on, share, unshare):
             ok, message = action(Path.home(), extra, session_id, profile_dir)
+            if ok and action is interrupt:   # (as a stop: you took over)
+                td.note_user_stop(td.cache_dir(Path.home()), [session_id, kept_chat])
         else:
             ok, message = action(Path.home(), extra, session_id)
     except ValueError as exc:  # e.g. a task's plan that's gone: says why

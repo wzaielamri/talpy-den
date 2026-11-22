@@ -1093,6 +1093,16 @@ export function unseenHostItems(status: Pick<Status, "keep" | "queue"> | null | 
   return out;
 }
 
+// Whether an SSH host or a container that isn't shown can be checked at a quieter pace: by its answer
+// (result), none of its chats that keep going works or waits for you there, and nothing is queued for it
+// here; nothing of it can hit a limit meanwhile (Plasma's main.qml: unseenQuietOf)
+export function unseenQuiet(result: Pick<Status, "groups"> | null | undefined, status: Pick<Status, "keep" | "queue"> | null | undefined, host: string): boolean {
+  if ((status?.queue ?? []).some((t) => (t.host || "") === host)) return false;
+  const kept = new Set((status?.keep ?? []).filter((k) => (k.host || "") === host).map((k) => k.chat));
+  return !(result?.groups ?? []).some((g) =>
+    (g.sessions ?? []).some((s) => (kept.has(s.chatId || s.sessionId) || kept.has(s.sessionId)) && (s.state === "working" || s.state === "waiting")));
+}
+
 // What a chat that keeps going does, for its tag's title
 export function keptTitle(kept: KeptChat): string {
   return [

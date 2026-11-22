@@ -21,7 +21,7 @@ import { LiveWatch } from "./agents/claudeCode/live";
 import type { Notifier } from "./notify";
 import { containerFromAuthority, hostFromAuthority, portFromAuthority, sshPort } from "./agents/claudeCode/remoteHost";
 import { demoHostProjects, demoLimits, demoPerms, demoProjects, demoState, demoWeek } from "./shared/demo";
-import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
+import { allGroups, chatsNeedingYou, containerDetail, containerOf, findProjectChat, hookedAtWork, hostLabel, keptChat, limitReset, liveFromRows, machineStatus, queuedWhat, recentRef, shareUsage, talpyChatHere, talpyPlace, toLocalClock, trackKey, unseenHostItems, unseenQuiet, usageCameIn, withLive, type ChatSpot, type RecentMore } from "./shared/model";
 import { chatRef, noLinks } from "./notify";
 import { cleanupText, oldChatsDetail, overridesNote, riskText, SETTING_OF } from "./agents/claudeCode/oldChats";
 import type { ChatRef, ClaudeCodeInfo, ContainerInfo, ContainerNote, DigestCard, Group, HostProjects, HostState, LimitHistory, LiveView, PermsData, PetEventKind, ProjectsData, QueuedTask, RecentChat, Status, ViewState, WeekRecap, WeekSpan } from "./shared/types";
@@ -29,6 +29,9 @@ import type { WeekRuleAsk } from "./shared/week";
 import { mergeChanges, TransitionTracker, type Changes, type PetEvent } from "./transitions";
 
 const HIDDEN_POLL_MS = 10000;
+// An SSH host or a container that isn't shown, whose chats that keep going are all idle there, with nothing
+// queued for it: checked this often (nothing of it can hit a limit meanwhile; unseenQuiet)
+const UNSEEN_QUIET_MS = 5 * 60_000;
 const LIVE_WORKING_MS = 6000; // watched, a chat works, live mode (or the window isn't focused)
 const DIGEST_SHOWN_MS = 60 * 60000; // the away card stays this long, unless closed
 const DEMO_STEP_MS = 8000;
@@ -55,6 +58,7 @@ export class Dashboard implements Disposable {
   private hostAnswered = new Map<string, number>(); // host -> when its last check that answered started
   private unseenBusy = new Set<string>(); // (checkUnseen)
   private unseenIdle = new Set<string>(); // a host not shown that's stopped or gone: not checked again (as a shown one)
+  private unseenQuietUntil = new Map<string, number>(); // a host not shown with only idle chats that keep going: not before then
   private localTimer?: NodeJS.Timeout;
   private hostTimer?: NodeJS.Timeout;
   private retryTimer?: NodeJS.Timeout; // Python didn't work: try again (its own timer: polls mustn't cancel it)
@@ -516,10 +520,15 @@ export class Dashboard implements Disposable {
 
   private async checkUnseen(host: string): Promise<void> {
     if (this.unseenBusy.has(host) || this.unseenIdle.has(host) || this.disposed) return;
+    // (its chats that keep going were all idle there, and still nothing's queued for it: not yet)
+    const queued = (this.status?.queue ?? []).some((t) => (t.host || "") === host);
+    if (!queued && (this.unseenQuietUntil.get(host) ?? 0) > Date.now()) return;
     this.unseenBusy.add(host);
     try {
       const answer = await this.backend.hostStatus(host, statusArgs());
       if (!answer.ok && (answer.stopped || answer.gone)) this.unseenIdle.add(host);
+      if (answer.ok && answer.result && unseenQuiet(answer.result, this.status, host)) this.unseenQuietUntil.set(host, Date.now() + UNSEEN_QUIET_MS);
+      else this.unseenQuietUntil.delete(host);
     } catch (e) {
       this.host.log.warn(`${host}: ${(e as Error).message}`);
     } finally {
@@ -531,7 +540,9 @@ export class Dashboard implements Disposable {
   // notifies) looking after the chats that keep going
   private localArgs(): string[] {
     const cap = settings.usageCap();
-    return [...(cap > 0 ? ["--usage-cap", String(Math.round(cap))] : []), ...(this.notifier.isLeader() ? ["--keep-going"] : [])];
+    // (--keeper: this window, so it and the Plasma widget's copy don't both look after them: look_after_kept)
+    return [...(cap > 0 ? ["--usage-cap", String(Math.round(cap))] : []),
+      ...(this.notifier.isLeader() ? ["--keep-going", "--keeper", `vscode:${process.pid}`] : [])];
   }
 
   // Check this computer now (a check still running isn't doubled; changed:

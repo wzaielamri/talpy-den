@@ -1517,6 +1517,17 @@ class StopTests(SendFixture):
             self.assertFalse(self.cli("--interrupt", "--x")["ok"])
         self.assertEqual(calls, [("bg", "work", "5c1d7a6e"), ("tmux", "ab12cd34-0000-4000-8000-000000000000")])
 
+    def test_a_stop_of_a_chat_that_keeps_going_is_noted(self):
+        # (2026-11-22) you took over: no try again for it until its next usage limit (td.note_user_stop)
+        td.keep_chat(self.cache, ".claude-work", SID, "Fix it", str(self.folder))
+        self.live(kind="bg", status="busy", jobId="5c1d7a6e", version="2.1.318")
+        with mock.patch.object(td, "interrupt_background", return_value=(False, "It isn't working")):
+            self.cli("--interrupt", SID, "--profile", ".claude-work")
+        self.assertIsNone(td.load_keep(self.cache)["chats"][0].get("stoppedAt"), "not stopped: nothing noted")
+        with mock.patch.object(td, "interrupt_background", return_value=(True, "Stopped")):
+            self.cli("--interrupt", SID, "--profile", ".claude-work")
+        self.assertTrue(td.load_keep(self.cache)["chats"][0]["stoppedAt"] > 0)
+
 
 
 class RemoteControlTests(SendFixture):

@@ -408,10 +408,13 @@ test("Stop on the working line: where Talpy Chat reaches a chat at work (Plasma'
   assert.deepEqual(calls, [["--interrupt", row.sessionId, ...(row.profileDir ? ["--profile", row.profileDir] : [])]]);
   const typed: string[] = [];
   Object.assign(row, { kind: "interactive", tmux: false, entrypoint: "cli", pid: 4242 });
-  const here = chatPanes({ pane: async () => assert.fail("not pane.py") }, { state: () => state, refresh: async () => undefined, pollHost: async () => undefined }, {},
-    { find: async () => ({ sendText: (t: string) => typed.push(t) }) });
+  // (a chat that keeps going stopped this way says so: it goes on after its next usage limit only, jump.py --user-stopped)
+  const stopped: unknown[] = [];
+  const here = chatPanes({ pane: async () => assert.fail("not pane.py") }, { state: () => state, refresh: async () => undefined, pollHost: async () => undefined },
+    { userStopped: async (c: unknown) => void stopped.push(c) }, { find: async () => ({ sendText: (t: string) => typed.push(t) }) });
   assert.deepEqual(await here.interrupt(chatRefOf(row)), { ok: true, message: "Interrupted (Ctrl+C in its terminal)" });
   assert.deepEqual(typed, ["\x03"]);
+  assert.equal(stopped.length, 1);
   row.state = "idle";
   assert.equal((await p.interrupt(chatRefOf(row))).ok, false);
 });

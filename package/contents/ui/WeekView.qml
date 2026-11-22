@@ -894,12 +894,13 @@ PlasmaComponents3.ScrollView {
             stopIdle(found.row, host)
     }
     function stopIdle(s, host) {
+        const kept = root.keptChat(s.chatId || s.sessionId, host)   // (a stop of yours: on after its next limit only)
         if (host && s.kind === "interactive")
-            root.remoteEnd(host, s.sessionId, s.profileDir, false, "")
+            root.remoteEnd(host, s.sessionId, s.profileDir, false, "", kept ? kept.chat : "")
         else if (host)
-            root.remoteStop(host, s.stopCommand)
+            root.remoteStop(host, s.stopCommand, kept ? kept.chat : "")
         else
-            root.stopSession(s.sessionId, s.profileDir, false, "")
+            root.stopSession(s.sessionId, s.profileDir, false, "", kept ? kept.chat : "")
     }
     // The question before Stop, in its row's words (SessionRow.qml)
     function stopAskText(c) {

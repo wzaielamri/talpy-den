@@ -13,10 +13,10 @@
                                      [--usage-refresh N]
     python3 -I remote.py --open HOST COMMAND        a terminal running COMMAND on HOST
     python3 -I remote.py --run HOST COMMAND         run COMMAND on HOST (e.g. claude stop)
-    python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy] [--keep-off CHAT_ID]   stop a chat in a terminal or VS Code there
+    python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy] [--keep-off CHAT_ID | --kept CHAT_ID]   stop a chat in a terminal or VS Code there
                      (--keep-off: and once it's stopped, that chat doesn't keep going any more)
-    python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE]      interrupt a working chat in tmux there (or in the background)
-    python3 -I remote.py --dismiss HOST SESSION_ID  hide a finished chat of HOST
+    python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE] [--kept CHAT_ID]   interrupt a working chat in tmux there (or in the background)
+    python3 -I remote.py --dismiss HOST SESSION_ID [--kept CHAT_ID]  hide a finished chat of HOST (--kept: the chat that keeps going it is; a stop of it: it goes on after its next limit only; a hide: it doesn't keep going any more)
     python3 -I remote.py --undismiss-all HOST
     python3 -I remote.py --hide HOST KIND ID        hide a chat, plan, memory or project of HOST (KIND
                                                     chats|plans|memories|projects; kept there)
@@ -1112,28 +1112,40 @@ def vscode_account(host, config_dir):
     return run_status_script(host, ["--vscode-account", config_dir or "-", "--vscode-server", server])
 
 
-def dismiss(host, session_id=None):
-    """Hide a finished chat in the host's list (or show all again)."""
+def dismiss(host, session_id=None, kept=None):
+    """Hide a finished chat in the host's list (or show all again). kept: the
+    chat that keeps going it is (unkept)."""
     ok, message = run_status_script(host, ["--dismiss", session_id] if session_id else ["--undismiss-all"])
-    return ok, unkept(host, session_id, message) if ok and session_id else message
+    return ok, unkept(host, [session_id, kept], message) if ok and session_id else message
 
 
-def hide(host, kind, item_id=None):
+def hide(host, kind, item_id=None, kept=None):
     """Hide a chat, plan, memory or project in the host's lists (kept on the
-    host, as its status leaves them out there), or show that kind again."""
+    host, as its status leaves them out there), or show that kind again.
+    kept: the chat that keeps going a hidden chat is (unkept)."""
     ok, message = run_status_script(host, ["--hide", kind, item_id] if item_id is not None else ["--show-hidden", kind])
-    return ok, unkept(host, item_id, message) if ok and kind == "chats" and item_id else message
+    return ok, unkept(host, [item_id, kept], message) if ok and kind == "chats" and item_id else message
 
 
-def unkept(host, chat_id, message):
-    """A chat of host you hid there doesn't go on by itself from here any
-    more (its Keep going is kept here, td.keep_chat; as for a chat of this
-    computer, td.hide_item): message, saying so if it kept going."""
-    cache = td.cache_dir(Path.home())
-    if not any(k["chat"] == chat_id and k["host"] == host for k in td.load_keep(cache)["chats"]):
-        return message
-    td.keep_chat(cache, "", chat_id, on=False, host=host)
-    return f"{(message or 'Hid this chat').rstrip('.')}. It won't go on by itself after later limits any more"
+def unkept(host, chats, message):
+    """A chat of host you hid there (chats: the ids it may be kept under)
+    doesn't go on by itself from here any more, and its queued go-on is
+    cancelled (its Keep going is kept here; as for a chat of this computer,
+    td.hide_item): message, saying so if it kept going."""
+    words = td.stop_keeping_hidden(td.cache_dir(Path.home()), chats, host)
+    return f"{(message or 'Hid this chat').rstrip('.')}. {words}" if words else message
+
+
+def kept_arg(args):
+    """args without "--kept CHAT_ID" (a stop's, an interrupt's or a hide's: the
+    chat that keeps going it is), and that chat ("" if none)."""
+    rest, kept = list(args), ""
+    if "--kept" in rest:
+        at = rest.index("--kept")
+        if at + 1 < len(rest) and td.valid_id(rest[at + 1]):
+            kept = rest[at + 1]
+            del rest[at:at + 2]
+    return rest, kept
 
 
 def delete(host, kind, item, profile=None, describe=False):
@@ -1603,25 +1615,33 @@ def main(argv=None):
         elif action in ("--open", "--run") and len(args) == 2:
             ok, message = (open_remote if action == "--open" else run)(args[0], args[1])
             out = {"ok": ok, "message": message}
-        elif action == "--dismiss" and len(args) == 2:
-            ok, message = dismiss(args[0], args[1])
+        elif action == "--dismiss" and len(kept_arg(args)[0]) == 2:
+            args, kept = kept_arg(args)
+            ok, message = dismiss(args[0], args[1], kept)
             out = {"ok": ok, "message": message}
         elif action in ("--delete-chat", "--delete-plan", "--delete-memory") and \
                 1 < len([a for a in args if a != "--describe"]) <= (2 if action == "--delete-memory" else 3):
             out = delete(args[0], action[len("--delete-"):], *[a for a in args[1:] if a != "--describe"],
                          describe="--describe" in args)
-        elif action in ("--hide", "--show-hidden") and len(args) == (3 if action == "--hide" else 2):
-            ok, message = hide(*args)
+        elif action in ("--hide", "--show-hidden") and len(kept_arg(args)[0]) == (3 if action == "--hide" else 2):
+            args, kept = kept_arg(args)
+            ok, message = hide(*args, kept=kept) if action == "--hide" else hide(*args)
             out = {"ok": ok, "message": message}
-        elif action == "--end" and len(end_args(args)[0]) in (2, 3):
+        elif action == "--end" and len(end_args(kept_arg(args)[0])[0]) in (2, 3):
+            args, kept = kept_arg(args)
             words, keep_off = end_args(args)
             ok, message = end(*words, busy="--busy" in args)
             if ok and keep_off:  # (stopped: Keep going off too; not stopped, it stays on, as for a chat here)
                 import jump  # (its words name a go-on that's still queued for it, as for a chat here)
                 message = f"{message.rstrip('.')}. {jump.keep_off(Path.home(), [], keep_off, words[0])[1]}"
+            elif ok:  # (you took over: it goes on after its next limit only)
+                td.note_user_stop(td.cache_dir(Path.home()), [words[1], kept], words[0])
             out = {"ok": ok, "message": message}
-        elif action == "--interrupt" and len(args) in (2, 3):
+        elif action == "--interrupt" and len(kept_arg(args)[0]) in (2, 3):
+            args, kept = kept_arg(args)
             ok, message = interrupt(*args)
+            if ok:  # (as a stop: you took over)
+                td.note_user_stop(td.cache_dir(Path.home()), [args[1], kept], args[0])
             out = {"ok": ok, "message": message}
         elif action == "--agent-run" and len([a for a in args if a != "--no-open"]) in (3, 4):
             ok, message, path = agent_run(*[a for a in args if a != "--no-open"], open_it="--no-open" not in args)

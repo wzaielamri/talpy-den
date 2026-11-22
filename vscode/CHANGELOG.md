@@ -64,7 +64,13 @@
   deleting the chat switches it off too. The usage cap still stops kept chats
   at work. Stopping or interrupting a kept chat is you taking over: it goes
   on again only after its next usage limit (Stop made it go on again a few
-  minutes later). A turn that broke off on an API error still tries again.
+  minutes later): each Stop, Interrupt or Talpy Chat Stop of it is noted,
+  and a try again queued before it doesn't run. A turn that broke off on an
+  API error, or whose process ended with no stop of yours (a crash), still
+  tries again. A window read after a stop counts as reset early only below
+  50%. Hiding a kept chat cancels its queued go-on too. One window or widget
+  looks after kept chats at a time, the lower usage cap first, and a host
+  that isn't shown, with only idle kept chats, is checked every 5 minutes.
   The one-off Go on at … says it goes on once.
 
 - **Keep going goes on when the limit is really gone.** A chat that keeps

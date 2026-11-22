@@ -211,7 +211,7 @@ class KeyedRowsTests(unittest.TestCase):
 
     def test_hide_takes_a_row_away_at_once_and_brings_it_back_if_it_fails(self):
         main = (UI / "main.qml").read_text()
-        hide = main[main.index("    function hideItem(kind, id, host) {"):]
+        hide = main[main.index("    function hideItem(kind, id, host, keptChat) {"):]
         hide = hide[:hide.index("\n    }\n")]
         self.assertLess(hide.index("hidingNow = Object.assign"), hide.index("hideRun("))   # (gone before jump.py runs)
         section = (UI / "GroupSection.qml").read_text()

@@ -2691,7 +2691,21 @@ PlasmoidItem {
     readonly property var unseenChecked: notifier ? unseenHostItems.map(x => x.host).filter((h, i, all) => all.indexOf(h) === i).sort() : []
     property var wantedUnseen: ({})   // host -> its check's command
     property var unseenIdle: ({})     // host -> true: stopped or gone, checked once a day (as a shown one)
-    readonly property string hostWish: JSON.stringify([shownHosts, unseenChecked, Plasmoid.configuration.remotePollSeconds,
+    // host -> true: its chats that keep going were all idle there, by its last answer: checked every 5
+    // minutes while nothing is queued for it (nothing of it can hit a limit meanwhile; VS Code: unseenQuiet)
+    property var unseenQuiet: ({})
+    readonly property var unseenQueued: ((status && status.queue) || []).map(t => t.host || "")
+        .filter((h, i, all) => h && all.indexOf(h) === i).sort()
+    function unseenQuietOf(host, result) {
+        const kept = ((status && status.keep) || []).filter(k => (k.host || "") === host).map(k => k.chat)
+        for (const g of (result && result.groups) || [])
+            for (const s of g.sessions || [])
+                if ((kept.indexOf(s.chatId || s.sessionId) >= 0 || kept.indexOf(s.sessionId) >= 0)
+                        && (s.state === "working" || s.state === "waiting"))
+                    return false
+        return true
+    }
+    readonly property string hostWish: JSON.stringify([shownHosts, unseenChecked, unseenQueued, Plasmoid.configuration.remotePollSeconds,
         Plasmoid.configuration.keepDoneHours, Plasmoid.configuration.recentChats, Plasmoid.configuration.showTokens,
         Plasmoid.configuration.usageRefreshMinutes])
     onHostWishChanged: wantHosts()
@@ -2712,7 +2726,8 @@ PlasmoidItem {
                 continue
             unseen[host] = hostCommand(host)
             idle[host] = !!unseenIdle[host]
-            Hub.want(instanceId, "unseen:" + host, unseen[host], idle[host] ? 86400000 : interval, false)
+            Hub.want(instanceId, "unseen:" + host, unseen[host], idle[host] ? 86400000
+                     : unseenQuiet[host] && unseenQueued.indexOf(host) < 0 ? 300000 : interval, false)
         }
         for (const host in wantedHosts)
             if (!(host in next))
@@ -2961,6 +2976,11 @@ PlasmoidItem {
             const answer = helperResult(data), idle = !answer.ok && !!(answer.stopped || answer.gone)
             if (idle !== !!unseenIdle[host]) {
                 unseenIdle = Object.assign({}, unseenIdle, { [host]: idle })
+                Qt.callLater(wantHosts)
+            }
+            const quiet = answer.ok && !!answer.result && unseenQuietOf(host, answer.result)
+            if (quiet !== !!unseenQuiet[host]) {
+                unseenQuiet = Object.assign({}, unseenQuiet, { [host]: quiet })
                 Qt.callLater(wantHosts)
             }
             return
@@ -3345,22 +3365,30 @@ PlasmoidItem {
         remoteAction("open", host, "--open " + shellQuote(host) + " " + shellQuote(command))
     }
 
-    function remoteStop(host, command) {
+    // keptChat (here and below): the chat that keeps going it is, if it does: a stop of yours is you
+    // taking over, so it goes on after its next usage limit only (jump.py --kept, --user-stopped)
+    function remoteStop(host, command, keptChat) {
         remoteAction("stop", host, "--run " + shellQuote(host) + " " + shellQuote(command))
+        if (keptChat)   // (its stop command there can't take it)
+            stopper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --user-stopped " + shellQuote(keptChat)
+                                  + " --host " + shellQuote(host) + configDirArgs + " # " + Date.now())
+    }
+    function keptArg(keptChat) {
+        return keptChat ? " --kept " + shellQuote(keptChat) : ""
     }
 
     // A chat with a process on the host (talpy_den.py --end there; busy:
     // you were told it's working or waiting), or one in tmux interrupted
     // keepOffChat: a chat that keeps going, to turn Keep going off for once it's stopped
-    function remoteEnd(host, sessionId, profileDir, busy, keepOffChat) {
+    function remoteEnd(host, sessionId, profileDir, busy, keepOffChat, keptChat) {
         remoteAction("stop", host, "--end " + shellQuote(host) + " " + shellQuote(sessionId)
                                    + (profileDir ? " " + shellQuote(profileDir) : "") + (busy ? " --busy" : "")
-                                   + (keepOffChat ? " --keep-off " + shellQuote(keepOffChat) : ""))
+                                   + (keepOffChat ? " --keep-off " + shellQuote(keepOffChat) : keptArg(keptChat)))
     }
 
-    function remoteInterrupt(host, sessionId, profileDir) {
+    function remoteInterrupt(host, sessionId, profileDir, keptChat) {
         remoteAction("stop", host, "--interrupt " + shellQuote(host) + " " + shellQuote(sessionId)
-                                   + (profileDir ? " " + shellQuote(profileDir) : ""))
+                                   + (profileDir ? " " + shellQuote(profileDir) : "") + keptArg(keptChat))
     }
 
     // ---------------------------------------------------------------- shared chats
@@ -3509,7 +3537,8 @@ PlasmoidItem {
     }
 
     function dismissSession(sessionId) {
-        hideItem("chats", sessionId, "")
+        const kept = keptChat(sessionId, "")
+        hideItem("chats", sessionId, "", kept ? kept.chat : "")
     }
 
     // ---------------------------------------------------------------- hide and delete
@@ -3563,14 +3592,15 @@ PlasmoidItem {
     function isHiding(kind, host, id) {
         return !!hidingNow[kind + "|" + (host || "") + "|" + id]
     }
-    function hideItem(kind, id, host) {
+    // (keptChat: a chat that keeps going a hidden chat is: it doesn't any more, its queued go-on is cancelled)
+    function hideItem(kind, id, host, keptChat) {
         const key = kind + "|" + (host || "") + "|" + id
         hidingNow = Object.assign({}, hidingNow, { [key]: Date.now() })
         if (hideFailed.key === key)
             hideFailed = noHideFailed
         hidingExpiry.restart()
-        hideRun(host ? "remote.py" : "jump.py", "--hide " + (host ? shellQuote(host) + " " : "") + kind + " " + shellQuote(id),
-                { kind: kind, host: host || "", say: false, key: key })
+        hideRun(host ? "remote.py" : "jump.py", "--hide " + (host ? shellQuote(host) + " " : "") + kind + " " + shellQuote(id)
+                + (kind === "chats" ? keptArg(keptChat) : ""), { kind: kind, host: host || "", say: false, key: key })
     }
     // (what a check of here, or of host, no longer lists is hidden for good: out of hidingNow;
     // and after a minute whatever it is: a check that still lists it shows it again)
@@ -3884,10 +3914,10 @@ PlasmoidItem {
 
     // busy: you were told it's working or waiting (else only an idle one is stopped);
     // keepOffChat: a chat that keeps going, to turn Keep going off for at once (once stopped)
-    function stopSession(sessionId, profileDir, busy, keepOffChat) {
+    function stopSession(sessionId, profileDir, busy, keepOffChat, keptChat) {
         const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --stop " + shellQuote(sessionId)
                     + profileArg(profileDir) + (busy ? " --busy" : "")
-                    + (keepOffChat ? " --and-keep-off " + shellQuote(keepOffChat) : "") + configDirArgs + " # " + Date.now()
+                    + (keepOffChat ? " --and-keep-off " + shellQuote(keepOffChat) : keptArg(keptChat)) + configDirArgs + " # " + Date.now()
         if (keepOffChat)
             stopSays[cmd] = true   // (its answer says what's left: Stopped. It won't go on by itself any more)
         stopper.connectSource(cmd)
@@ -3895,9 +3925,9 @@ PlasmoidItem {
     property var stopSays: ({})
 
     // Esc in the tmux pane of a working chat
-    function interruptSession(sessionId, profileDir) {
+    function interruptSession(sessionId, profileDir, keptChat) {
         stopper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --interrupt " + shellQuote(sessionId)
-                              + profileArg(profileDir) + configDirArgs + " # " + Date.now())
+                              + profileArg(profileDir) + keptArg(keptChat) + configDirArgs + " # " + Date.now())
     }
 
     // ---------------------------------------------------------------- Remote Control
