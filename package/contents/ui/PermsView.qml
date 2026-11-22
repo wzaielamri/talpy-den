@@ -13,6 +13,7 @@ import "icons.mjs" as Icons
 // chat transcripts: no tokens, nothing sent.
 PlasmaComponents3.ScrollView {
     id: view
+    Component.onCompleted: contentItem.pixelAligned = true   // (moved by whole pixels, as Talpy Chat's conversation)
 
     readonly property var perms: root.permsData
     // this computer's, then each SSH host's: [{host, ok, error, prompts, granted}]

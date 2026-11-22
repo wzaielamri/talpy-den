@@ -4,6 +4,19 @@
 
 ### Better
 
+- **Talpy Chat's text as it scrolls.** Text that looks soft and shimmers while
+  the conversation scrolls was not reproduced in a headless browser: there
+  every band of text moved by the same whole pixels, as sharp as at rest, at
+  display scales 1, 1.25 and 1.5. Two likely causes are changed. The
+  conversation and the side questions scroll on an opaque background (the
+  page's own: nothing looks different), so Chromium can scroll them on the GPU
+  and keep the text's subpixel edges; at scale 1.5, where it already scrolled
+  the see-through conversation on the GPU, 36% of the text's edge pixels kept
+  them, now 80%. And the blinking dot of a tool call still going has no layer
+  of its own inside the scrolling conversation any more (it steps on the
+  page's beat). Whether it helps on a real screen still needs the eye of
+  someone who saw it.
+
 - **↓ Latest in Talpy Chat, and a chat read far back stays quick.** Whenever
   the conversation isn't at its newest part (after going to a bookmark, a
   search's match, or scrolling up), a floating ↓ Latest over its bottom takes

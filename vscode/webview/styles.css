@@ -3929,6 +3929,9 @@ body.vscode-high-contrast-light .pane-side {
   display: flex;
   flex-direction: column;
   padding: 4px 6px 8px 0;
+  /* (the page's own background, body.chat-page's: opaque, so Chromium can scroll it on the GPU and keep
+     its text's subpixel edges, where a see-through one composited loses them and looks soft) */
+  background: var(--vscode-editor-background, transparent);
 }
 
 .pane-more {
@@ -4243,14 +4246,10 @@ body.vscode-high-contrast-light .pane-side {
   background: var(--td-failed);
 }
 
-/* (it blinks while it's going or waits for your answer: BlinkDot.tsx, on the page's beat) */
+/* (it blinks while it's going or waits for your answer: BlinkDot.tsx, on the page's beat; a step of its
+   opacity a beat, no layer of its own: one inside the conversation, as it scrolls, is drawn apart from it) */
 .pane-tool.asking .pane-dot {
   background: var(--td-waiting);
-}
-
-.pane-tool.asking .pane-dot,
-.pane-tool.going .pane-dot {
-  will-change: opacity;
 }
 
 .pane-tool-body {
@@ -4831,6 +4830,7 @@ body.vscode-high-contrast-light .pane-side {
   flex-direction: column;
   padding: 0 6px 8px 0;
   font-family: var(--pane-font, inherit);
+  background: var(--vscode-editor-background, var(--td-bg));   /* (its panel's, opaque: as .pane-list) */
 }
 
 .pane-side-list > * {

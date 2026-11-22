@@ -49,7 +49,10 @@ PlasmaComponents3.ScrollView {
         return e.project ? root.projectKey(e.project.path, e.host) : "empty|" + e.host
     }
     onEntriesChanged: cardRows.sync(entries, entryKey, null)
-    Component.onCompleted: cardRows.sync(entries, entryKey, null)
+    Component.onCompleted: {
+        contentItem.pixelAligned = true   // (moved by whole pixels, as Talpy Chat's conversation)
+        cardRows.sync(entries, entryKey, null)
+    }
     readonly property real folderWidth: Kirigami.Units.gridUnit * 8
     // a project's buttons, as a row's (HoverButton.qml): 22 px high, 16 px icons, packed close
     readonly property real buttonSize: Math.round(Kirigami.Units.iconSizes.small * 1.375)
