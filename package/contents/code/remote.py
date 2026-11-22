@@ -1361,6 +1361,9 @@ def watch(host, name, timeout=WATCH_S, chats=()):
             try:
                 td.private_dir(kept.parent)
                 td.write_json_atomic(kept, {c: stamps[c] for c in chats if isinstance(stamps.get(c), str)}, private=True)
+                for old in kept.parent.iterdir():   # (each VS Code window watches under a name of its own)
+                    if old != kept and time.time() - old.stat().st_mtime > PACKED_DAYS * 86400:
+                        old.unlink()
             except (OSError, ValueError, TypeError):
                 pass   # (then the next run tells it again: one read more)
         if chats:

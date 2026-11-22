@@ -1510,6 +1510,13 @@ class HostWatchTests(FakeSSH):
         self.assertEqual(json.loads(out.getvalue())["wrote"], [])
         # (only chat ids: anything else can't be one there)
         self.assertNotIn("wrote", remote.watch("lab", "a1b2c3d4e5f6", 1, chats=["../../x", "-o", "a b"]))
+        # (each VS Code window watches under a name of its own: what one told, unused for a week, goes)
+        stale, fresh = kept[0].parent / "0000000000000000.json", kept[0].parent / "1111111111111111.json"
+        for other in (stale, fresh):
+            other.write_text("{}")
+        os.utime(stale, (time.time() - 8 * 86400, time.time() - 8 * 86400))
+        remote.watch("lab", "a1b2c3d4e5f6", 1, chats=[chat])
+        self.assertEqual((stale.exists(), fresh.exists(), kept[0].exists()), (False, True, True))
 
     def test_a_host_it_cant_reach(self):
         self.mode("unreachable")
