@@ -3011,10 +3011,40 @@ Window {
     // Quote in reply: what you selected, as a Markdown quote at the top of the box, the cursor under it
     // (quote.mjs withQuote; VS Code chat.tsx the same); offered by a "Reply to this" button where a drag
     // that selected something ended (gone with a new press, a scroll or another chat) and the right-click menu
-    property var quoteAt: null   // {x, cy}: x in the scroll view, cy where the drag ended in the list's content (it scrolls with it), or null
-    function offerQuote(p) {
-        quoteAt = selectionText().trim() !== "" ? { x: Math.max(0, Math.min(p.x, scroll.width - Kirigami.Units.gridUnit * 7)),
-                                                    cy: p.y + list.contentY } : null
+    // The bar is anchored to the row the selection ends in (key, and dy: the bottom of the selection's last line
+    // in it), not to a place in the list's content: rows made, taken away or resized above it move that place
+    property var quoteAt: null   // {x, key, at, dy}: x in the scroll view, or null
+    // The bottom of the selection's last line, whichever way it was dragged: {x, key, at, dy} or null
+    function selectionEnd() {
+        let last = -1
+        for (const k in selOthers)
+            last = Math.max(last, selIndex(k, selOthers[k]))
+        last = Math.max(last, selIndex(selFrom, selFromAt))
+        for (let i = last; i >= 0; i--) {   // (the last row with something selected)
+            const b = boxAt(i), d = list.itemAtIndex(i)
+            if (!b || !d || b.selectedText === "")
+                continue
+            const r = b.positionToRectangle(b.selectionEnd)
+            return { x: b.mapToItem(scroll, r.x, 0).x, key: keyAt(i), at: i, dy: b.mapToItem(d, 0, r.y + r.height).y }
+        }
+        return null
+    }
+    function offerQuote() {
+        const end = selectionText().trim() !== "" ? selectionEnd() : null
+        quoteAt = end ? { x: Math.max(0, Math.min(end.x, scroll.width - Kirigami.Units.gridUnit * 7)), key: end.key, at: end.at, dy: end.dy } : null
+    }
+    // Where that line's bottom is in the scroll view now (NaN: its row isn't there): read in the bar's binding,
+    // which then runs again when the list scrolls, its rows change or that row moves, and not otherwise
+    function quoteLineY() {
+        const q = quoteAt
+        if (!q)
+            return NaN
+        void list.contentY, list.contentHeight, items.count
+        const i = selIndex(q.key, q.at), d = i >= 0 ? list.itemAtIndex(i) : null
+        if (!d)
+            return NaN
+        void d.y, d.height
+        return d.mapToItem(scroll, 0, q.dy).y
     }
     function quoteIn(selected) {
         const q = Quote.withQuote(replyBox.text, selected)
@@ -3893,7 +3923,6 @@ Window {
                     onMovementStarted: {   // (you scroll: it doesn't pull you back)
                         settle.stop()
                         holdTop.stop()
-                        pane.quoteAt = null
                         pane.away = null   // (and you read it yourself: Since you last looked goes)
                     }
                     onContentHeightChanged: {
@@ -4564,7 +4593,6 @@ Window {
                 parent: scroll
                 anchors.fill: parent
                 z: 10
-                property point dragEnd
                 PointHandler {
                     acceptedButtons: Qt.LeftButton
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -4573,12 +4601,11 @@ Window {
                             pane.quoteAt = null
                             pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
                         } else   // (let go: a selection made offers Reply to this there)
-                            Qt.callLater(pane.offerQuote, selectOver.dragEnd)
+                            Qt.callLater(pane.offerQuote)
                     }
                     onPointChanged: {
                         if (!active)
                             return
-                        selectOver.dragEnd = point.position
                         pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                     }
                 }
@@ -4594,9 +4621,9 @@ Window {
                 parent: scroll
                 z: 13
                 x: pane.quoteAt ? Math.max(0, Math.min(pane.quoteAt.x, scroll.width - width - Kirigami.Units.smallSpacing)) : 0
-                // (bound to the list's scroll and the drag's place, quote.mjs barY: it goes with the selection, hidden
-                // while that is out of view; nothing runs while nothing scrolls)
-                readonly property var barY: pane.quoteAt ? Quote.barY(pane.quoteAt.cy - list.contentY, 0, scroll.height,
+                // (bound to the list's scroll and to the selection's row, quote.mjs barY: it goes with the text, hidden
+                // while that is out of view; nothing runs while nothing scrolls or moves)
+                readonly property var barY: pane.quoteAt ? Quote.barY(pane.quoteLineY(), 0, scroll.height,
                                                                       Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) : null
                 y: barY !== null ? barY : 0
                 visible: barY !== null

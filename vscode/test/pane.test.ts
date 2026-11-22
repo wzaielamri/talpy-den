@@ -1638,6 +1638,20 @@ test("the selection bar follows its selection's end through a scroll and hides w
   assert.equal(barY(300 + 250 - 250, view.top, view.bottom, gap, limit), 306);   // scrolled back: it's back
   assert.equal(barY(490, view.top, view.bottom, gap, limit), 460);   // at the bottom edge: kept inside, as before
   assert.equal(barY(100, view.top, view.bottom, gap, limit), 106);
+  // (the edges: a line whose bottom edge is at the list's bottom is clipped, and the bar under it would be)
+  assert.equal(barY(500, view.top, view.bottom, gap, limit), null);
+  assert.equal(barY(500 - gap, view.top, view.bottom, gap, limit), 460);
+  assert.equal(barY(99, view.top, view.bottom, gap, limit), null);   // (top - 1: scrolled out above)
+  assert.equal(barY(501, view.top, view.bottom, gap, limit), null);   // (bottom + 1)
+  // (never above the list's top, whatever the limit says; no room at all: hidden)
+  assert.equal(barY(100, view.top, view.bottom, gap, 102), 102);   // (limit below endY + gap: the limit)
+  assert.equal(barY(100, view.top, view.bottom, gap, 100), 100);
+  assert.equal(barY(150, view.top, view.bottom, gap, 90), null);   // (limit < top)
+  assert.equal(barY(100, view.top, view.bottom, gap, 99), null);
+  // (not a number: hidden)
+  assert.equal(barY(NaN, view.top, view.bottom, gap, limit), null);
+  assert.equal(barY(300, NaN, view.bottom, gap, limit), null);
+  assert.equal(barY(300, view.top, view.bottom, gap, NaN), null);
 });
 
 test("Continue in a new chat opens a new chat in the same account and folder with the note in its box, not sent", async () => {

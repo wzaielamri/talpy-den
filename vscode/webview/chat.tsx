@@ -2213,44 +2213,73 @@ function ChatApp() {
     if (!sideWide) closeSide(false);
     quoteIn(s.a);
   };
+  // Where the bar goes, from the live selection: under the bottom of its last line (whichever way it was
+  // dragged), by its right end, inside the list's rect (y null: that line is out of the list's view, so the
+  // bar is hidden). Reply to this, and Explain this after it where the chat has side questions: as wide as both
+  const barWhere = (h: number) => {
+    const el = list.current, sel = window.getSelection();
+    if (!el || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(sel.rangeCount - 1);
+    let last = range.getBoundingClientRect();
+    for (const r of Array.from(range.getClientRects())) if ((r.width > 0 || r.height > 0) && r.bottom >= last.bottom - 0.5) last = r;
+    const view = el.getBoundingClientRect();
+    const wide = sideCan ? 250 : 130;
+    return { x: Math.max(4, Math.min(last.right - 40, window.innerWidth - wide)), y: barY(last.bottom, view.top, view.bottom, 6, view.bottom - h) };
+  };
   const offerQuote = () => {
     const el = list.current;
     const sel = window.getSelection();
     const said = sel && !sel.isCollapsed ? sel.toString() : "";
     if (!el || !sel || !said.trim() || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return setQuoteAt(null);
-    const r = sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect();
-    // (Reply to this, and Explain this after it where the chat has side questions: as wide as both)
-    const wide = sideCan ? 250 : 130;
-    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
+    const at = barWhere(30);
+    setQuoteAt(at ? { x: at.x, y: at.y ?? 0, text: said } : null);
   };
-  // A scroll moves the bar with the selection (hidden while its end is out of the list's view): once a frame
-  // at most, straight on the bar's style (no render), and nothing runs while nothing scrolls
+  // The bar goes with the selection (hidden while its last line is out of the list's view) as the list scrolls,
+  // is resized or changes (a fold, rows coming in, a window resized): once a frame at most, straight on the
+  // bar's style (no render), and nothing runs while none of that happens
   const quoteBar = useRef<HTMLDivElement>(null);
   const placeQuote = () => {
-    const el = list.current, bar = quoteBar.current, sel = window.getSelection();
-    if (!el || !bar || !sel || sel.isCollapsed || !sel.rangeCount) return;
-    const view = el.getBoundingClientRect();
-    const y = barY(sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect().bottom, view.top, view.bottom, 6, window.innerHeight - 40);
-    bar.style.visibility = y === null ? "hidden" : "visible";
-    if (y !== null) bar.style.top = `${y}px`;
+    const bar = quoteBar.current;
+    const at = bar ? barWhere(bar.offsetHeight || 30) : null;
+    if (!bar || !at) return;
+    bar.style.visibility = at.y === null ? "hidden" : "visible";
+    if (at.y !== null) {
+      bar.style.top = `${at.y}px`;
+      bar.style.left = `${at.x}px`;
+    }
   };
-  useEffect(() => {
+  const placeNow = useRef(placeQuote);
+  placeNow.current = placeQuote;
+  useLayoutEffect(() => {
     if (!quoteAt) return undefined;
     const gone = () => { const sel = window.getSelection(); if (!sel || sel.isCollapsed) setQuoteAt(null); };
     const away = () => setQuoteAt(null);
     let frame = 0;
     const follow = () => {
       if (frame) return;
-      frame = window.requestAnimationFrame(() => { frame = 0; placeQuote(); });
+      frame = window.requestAnimationFrame(() => { frame = 0; placeNow.current(); });
     };
-    placeQuote();   // (a new selection's bar shows, whatever the last one's was)
+    placeNow.current();   // (before it's drawn: a new selection's bar shows where it goes, whatever the last one's was)
+    const el = list.current;
+    const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(follow) : null;
+    const rows = new MutationObserver((changes) => {
+      for (const c of changes) c.addedNodes.forEach((n) => { if (n instanceof Element) sizes?.observe(n); });
+      follow();
+    });
+    if (el) {
+      el.addEventListener("scroll", follow, { passive: true });
+      sizes?.observe(el);
+      for (const c of Array.from(el.children)) sizes?.observe(c);
+      rows.observe(el, { childList: true });
+    }
     document.addEventListener("selectionchange", gone);
-    window.addEventListener("scroll", follow, true);
     window.addEventListener("blur", away);
     return () => {
       document.removeEventListener("selectionchange", gone);
-      window.removeEventListener("scroll", follow, true);
       window.removeEventListener("blur", away);
+      el?.removeEventListener("scroll", follow);
+      sizes?.disconnect();
+      rows.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, [quoteAt]);
