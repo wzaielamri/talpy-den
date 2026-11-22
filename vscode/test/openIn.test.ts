@@ -419,7 +419,7 @@ test("stopping a chat that keeps going asks whether Keep going goes off too", as
       window.showWarningMessage = async (...a: unknown[]) => (asked.push(a), choice);
       await actions.stop(fix as never);
       const detail = (asked[0][1] as { detail: string }).detail;
-      assert.equal(/It keeps going after usage limits\./.test(detail), keep.length > 0);
+      assert.equal(/It keeps going after usage limits\. Stop alone leaves that on: it goes on again only after its next usage limit\./.test(detail), keep.length > 0);
       assert.equal(asked[0].includes("Stop and turn Keep going off"), keep.length > 0);
       assert.deepEqual(helpers.at(-1), ["--stop", "s1", "--profile", "work", ...flags]);
     }

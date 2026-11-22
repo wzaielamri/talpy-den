@@ -1309,7 +1309,7 @@ RowLayout {
                       : row.session.state === "waiting"
                       ? i18n("Stop “%1”? It's waiting for you. The conversation is kept; claude attach resumes it.", root.escapeHtml(row.session.name))
                       : i18n("Stop “%1”? It's finished, so this only shuts down its idle process. The conversation is kept.", root.escapeHtml(row.session.name)))
-                      + (row.kept ? "<br>" + i18n("It keeps going after usage limits.") : "") + "</span>"
+                      + (row.kept ? "<br>" + i18n("It keeps going after usage limits. Stop alone leaves that on: it goes on again only after its next usage limit.") : "") + "</span>"
                 actions: [
                     Kirigami.Action {
                         text: i18n("Interrupt")

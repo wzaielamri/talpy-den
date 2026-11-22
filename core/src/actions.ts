@@ -413,7 +413,7 @@ export class Actions {
     const choice = await this.host.message(
       "warning",
       interruptible ? `Interrupt or stop “${chat.name}”?` : `Stop “${chat.name}”?`,
-      { modal: true, detail: kept ? `${detail}\n\nIt keeps going after usage limits.` : detail },
+      { modal: true, detail: kept ? `${detail}\n\nIt keeps going after usage limits. Stop alone leaves that on: it goes on again only after its next usage limit.` : detail },
       ...(interruptible ? ["Interrupt", "Stop"] : ["Stop"]),
       ...(kept ? [keepOff] : []),
     );

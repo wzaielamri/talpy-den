@@ -5101,7 +5101,10 @@ def queued_tasks(cache_root, now_ms):
 # it go by itself: a turn that ends by itself (an orchestrating chat ends its
 # turn while its subagents work), one you interrupted and weeks of nothing new
 # leave it kept, and a chat that's idle hits no limit, so that costs nothing
-# (2026-11-22, the user: it resets every time, not only once). Such chats
+# (2026-11-22, the user: it resets every time, not only once). Only a usage
+# limit (or the usage cap) stopping it makes it go on: a turn you stopped
+# (■ Stop ends its process mid-turn) or interrupted is you taking over, and it
+# goes on again only after its next limit. Such chats
 # are kept in ~/.cache/talpy-den/keep.json (an SSH host's and a container's
 # too, with their "host": they go on from here, over ssh, as queued tasks
 # there do), and the status run of the copy that notifies looks after them
@@ -5392,10 +5395,10 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     if went and at <= went:
         # nothing new since it went on: that didn't take
         return again("it didn't go on") if now_ms - went > KEEP_TAKE_MS else None
-    if not turn["ended"] and not live:
-        # a turn with no process to finish it: it broke off (its process ended in it)
-        return again("its turn broke off") if now_ms - at > KEEP_TAKE_MS else None
-    return None  # (a turn that ended by itself, one you interrupted, or nothing new: on after its next limit)
+    # A turn that ended by itself, one you interrupted (Esc: Claude's note), one with no process to
+    # finish it (■ Stop ends its process mid-turn: you took over), or nothing new: on after its next
+    # limit, never before (2026-11-22: a Stop went on again a few minutes later)
+    return None
 
 
 def cap_window(group, cap, now_ms):

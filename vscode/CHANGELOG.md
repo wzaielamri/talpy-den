@@ -62,7 +62,10 @@
   ↻ Keeps going tag, the row's ↻ button (shown pressed while it keeps going),
   Stop and turn Keep going off, or cancelling its queued go-on. Hiding or
   deleting the chat switches it off too. The usage cap still stops kept chats
-  at work. The one-off Go on at … says it goes on once.
+  at work. Stopping or interrupting a kept chat is you taking over: it goes
+  on again only after its next usage limit (Stop made it go on again a few
+  minutes later). A turn that broke off on an API error still tries again.
+  The one-off Go on at … says it goes on once.
 
 - **Keep going goes on when the limit is really gone.** A chat that keeps
   going and that Claude's weekly limit stopped waited three days for the

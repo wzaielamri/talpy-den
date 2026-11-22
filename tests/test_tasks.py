@@ -2185,10 +2185,12 @@ class KeepGoingTests(TaskFixture):
         self.assertIsNone(td.kept_step(dict(k, since=at + 1000), ended, row, False, limits, self.now_ms), "nothing new since")
         self.assertIsNone(td.kept_step(dict(k), ended, row, False, limits, self.now_ms))
         self.assertIsNone(td.kept_step(dict(k), ended, row, False, limits, self.now_ms + 30 * 86400_000))
-        # a turn with no process to finish it broke off: on again
+        # a turn with no process to finish it: you stopped it (■ Stop ends its process), or it ended in it;
+        # you took over, so nothing goes on: only a usage limit (or an API error, below) does
         open_turn = {"kind": "reply", "at": self.now_ms - td.KEEP_TAKE_MS - 1000, "ended": False}
         self.assertIsNone(td.kept_step(dict(k), dict(open_turn, at=self.now_ms - 1000), None, False, limits, self.now_ms))
-        self.assertEqual(td.kept_step(dict(k), open_turn, None, False, limits, self.now_ms)[2], "retry")
+        self.assertIsNone(td.kept_step(dict(k), open_turn, None, False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(dict(k), open_turn, None, False, limits, self.now_ms + 86400_000))
 
     def test_a_chat_you_interrupted_stays_kept(self):
         # (Esc while it works, then the chat closed: you took over; it goes on after its next limit all the same)
@@ -2204,6 +2206,22 @@ class KeepGoingTests(TaskFixture):
         # a prompt after it: a turn of its own again
         self.say(prompt("go on", self.now - 500))
         self.assertEqual(td.last_turn(self.path)["kind"], "prompt")
+
+    def test_a_chat_you_stopped_doesnt_go_on_until_its_next_limit(self):
+        # (2026-11-22) ■ Stop on a chat that keeps going ends its process mid-turn: no "interrupted"
+        # note, a turn nothing finishes. That was read as a turn that broke off, and it went on again
+        # a few minutes later. Stop alone leaves Keep going on: it goes on after its next limit
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 700_000)
+        self.say(tool_use("b", "Bash", {"command": "make"}, self.now - 600))
+        self.assertEqual(td.last_turn(self.path)["ended"], False)
+        for later in (td.KEEP_TAKE_MS + 60_000, 3600_000, 3 * 86400_000):
+            self.assertEqual(self.look(self.now_ms + later), [], later)
+        self.assertEqual((len(self.kept()), self.kept()[0]["tries"]), (1, 0))
+        # its next limit: on after that one, as ever
+        self.say(prompt("go on", self.now - 100), self.limit(self.now - 60))
+        (task,) = self.look(self.now_ms)
+        self.assertEqual((task["startAt"], task["why"]), (self.reset + 60_000, ""))
+        # (a turn that broke off on an API error still goes on again: test_a_turn_that_broke_off_on_an_api_error_goes_on_again)
 
     def test_a_limit_with_no_known_reset_waits_longer_each_time(self):
         at = self.now_ms - 60_000
@@ -2461,6 +2479,26 @@ class KeepGoingOnHostsTests(TaskFixture):
         with self.assertRaises(ValueError):
             td.keep_chat(self.cache_root(), ".claude", self.SID, host="lab; rm -rf /")
 
+    def test_stopped_or_interrupted_there_it_waits_for_its_next_limit(self):
+        # (2026-11-22) a chat there you stopped (its turn unfinished, no process) or interrupted doesn't
+        # go on by itself; its next limit does, and an API error still tries again
+        self.keep()
+        t = self.now_ms
+        for turn in ({"kind": "reply", "at": t - 600_000, "ended": False}, {"kind": "interrupted", "at": t - 600_000, "ended": True}):
+            for later in (td.KEEP_TAKE_MS + 60_000, 86400_000):
+                self.answer(turn, at=t + later)
+                self.assertEqual(self.look(t + later), [], (turn["kind"], later))
+        self.assertEqual((len(self.kept()), self.kept()[0]["tries"]), (1, 0))
+        self.answer(self.limit(t + 86400_000 + 60_000), at=t + 86400_000 + 120_000)
+        (task,) = self.look(t + 86400_000 + 120_000)
+        self.assertEqual((task["host"], task["why"]), ("lab", ""))
+        td.change_queue(self.cache_root(), take=task["id"])
+        td.note_went_on(self.cache_root(), self.SID, t + 86400_000 + 200_000, host="lab")
+        api = {"kind": "error", "at": t + 86400_000 + 300_000, "ended": True, "text": "API Error: Connection lost"}
+        self.answer(api, at=t + 86400_000 + 360_000)
+        (task,) = self.look(t + 86400_000 + 360_000)
+        self.assertEqual((task["why"], task["prompt"]), ("retry", td.RETRY_PROMPT))
+
     def test_hiding_it_there_ends_it_here(self):
         import remote
         for args in (["--dismiss", "lab", self.SID], ["--hide", "lab", "chats", self.SID]):
@@ -2561,6 +2599,9 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.assertIn("visible: row.kept !== null || root.canKeepGoing(row.session, row.remoteHost)\n"
                       "                        checked: row.kept !== null", row)
         self.assertIn('i18n("Go on once, when the limit resets")', row)
+        # (■'s question: Stop alone leaves it on, and it goes on only after its next limit)
+        self.assertIn('i18n("It keeps going after usage limits. Stop alone leaves that on: it goes on again only after '
+                      'its next usage limit.")', row)
         self.assertIn("pressed={!!kept}", tsx)
         self.assertIn('onClick={() => post({ type: "keepGoing", chat, on: !kept })}', tsx)
         self.assertIn("`Go on once, when the limit resets\\n", tsx)
