@@ -166,6 +166,7 @@ Rectangle {
             Layout.preferredHeight: contentHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            pixelAligned: true   // (moved by whole pixels: its text moves together, as the conversation's)
             model: pane.bookmarks
             cacheBuffer: 0   // (the entries in sight only: the rest as it scrolls)
             PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {

@@ -178,6 +178,7 @@ ColumnLayout {
                     id: textScroll
                     readonly property real textHeight: madeText.implicitHeight + Kirigami.Units.largeSpacing * 1.5
                     PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+                    Component.onCompleted: contentItem.pixelAligned = true   // (moved by whole pixels, as the conversation)
                     background: Rectangle {
                         color: pane.mdStyle.blockBg
                         border.width: 1

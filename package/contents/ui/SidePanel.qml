@@ -351,6 +351,7 @@ Rectangle {
             Layout.fillHeight: true
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            pixelAligned: true   // (moved by whole pixels: its text moves together, as the conversation's)
             model: rows
             spacing: Math.round(lineFm.height * 1.2)
             cacheBuffer: 100000   // (each made and laid out once, so the list doesn't jump as you scroll: a chat keeps 50 at most)

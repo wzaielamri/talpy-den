@@ -19,7 +19,7 @@ import { VsCodeEditor } from "../src/vscodeEditor";
 import { VsCodeHost } from "../src/vscodeHost";
 import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";
-import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
+import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, barY, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
 import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../../core/src/shared/pane";
 import { NEW_SINCE_READ_MS, NEW_SINCE_SEEN_MS, newSinceAfterHide, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooking, newSinceOf, newSinceReading, newSinceSeen, newSinceSeenOn, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import type { ViewState } from "../../core/src/shared/types";
@@ -1761,6 +1761,32 @@ test("quote in reply: each line quoted, blank runs one, the cursor under it, wha
   assert.deepEqual(withQuote("draft", "  "), { text: "draft", cursor: 5 });   // (nothing selected: as it was)
   assert.equal(QUOTE_BUTTON, "Reply to this");
   assert.equal(QUOTE_MENU, "Quote in reply");
+});
+
+test("the selection bar follows its selection's end through a scroll and hides while that end is out of view", () => {
+  // (the end of the selection's y, the list's top and bottom, the gap under it, the lowest the bar may sit)
+  const view = { top: 100, bottom: 500 }, gap = 6, limit = 460;
+  assert.equal(barY(300, view.top, view.bottom, gap, limit), 306);   // (under the end of the selection)
+  assert.equal(barY(300 - 40, view.top, view.bottom, gap, limit), 266);   // scrolled 40 px: it moved 40 px with it
+  assert.equal(barY(300 - 250, view.top, view.bottom, gap, limit), null);   // scrolled out above: hidden
+  assert.equal(barY(300 + 250, view.top, view.bottom, gap, limit), null);   // out below: hidden
+  assert.equal(barY(300 + 250 - 250, view.top, view.bottom, gap, limit), 306);   // scrolled back: it's back
+  assert.equal(barY(490, view.top, view.bottom, gap, limit), 460);   // at the bottom edge: kept inside, as before
+  assert.equal(barY(100, view.top, view.bottom, gap, limit), 106);
+  // (the edges: a line whose bottom edge is at the list's bottom is clipped, and the bar under it would be)
+  assert.equal(barY(500, view.top, view.bottom, gap, limit), null);
+  assert.equal(barY(500 - gap, view.top, view.bottom, gap, limit), 460);
+  assert.equal(barY(99, view.top, view.bottom, gap, limit), null);   // (top - 1: scrolled out above)
+  assert.equal(barY(501, view.top, view.bottom, gap, limit), null);   // (bottom + 1)
+  // (never above the list's top, whatever the limit says; no room at all: hidden)
+  assert.equal(barY(100, view.top, view.bottom, gap, 102), 102);   // (limit below endY + gap: the limit)
+  assert.equal(barY(100, view.top, view.bottom, gap, 100), 100);
+  assert.equal(barY(150, view.top, view.bottom, gap, 90), null);   // (limit < top)
+  assert.equal(barY(100, view.top, view.bottom, gap, 99), null);
+  // (not a number: hidden)
+  assert.equal(barY(NaN, view.top, view.bottom, gap, limit), null);
+  assert.equal(barY(300, NaN, view.bottom, gap, limit), null);
+  assert.equal(barY(300, view.top, view.bottom, gap, NaN), null);
 });
 
 test("Continue in a new chat opens a new chat in the same account and folder with the note in its box, not sent", async () => {

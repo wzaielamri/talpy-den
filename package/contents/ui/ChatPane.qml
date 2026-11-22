@@ -3052,10 +3052,43 @@ Window {
     // Quote in reply: what you selected, as a Markdown quote at the top of the box, the cursor under it
     // (quote.mjs withQuote; VS Code chat.tsx the same); offered by a "Reply to this" button where a drag
     // that selected something ended (gone with a new press, a scroll or another chat) and the right-click menu
-    property var quoteAt: null   // {x, y} in the scroll view, or null
-    function offerQuote(p) {
-        quoteAt = selectionText().trim() !== "" ? { x: Math.max(0, Math.min(p.x, scroll.width - Kirigami.Units.gridUnit * 7)),
-                                                    y: Math.min(p.y + Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) } : null
+    // The bar is anchored to the row the selection ends in (key, and dy: the bottom of the selection's last line
+    // in it), not to a place in the list's content: rows made, taken away or resized above it move that place
+    property var quoteAt: null   // {x, key, at, dy}: x in the scroll view, or null
+    property int rowsMade: 0     // (counts rows made and dropped: what the bar's binding reads to find its row again)
+    // The bottom of the selection's last line, whichever way it was dragged: {x, key, at, dy} or null
+    function selectionEnd() {
+        let last = -1
+        for (const k in selOthers)
+            last = Math.max(last, selIndex(k, selOthers[k]))
+        last = Math.max(last, selIndex(selFrom, selFromAt))
+        for (let i = last; i >= 0; i--) {   // (the last row with something selected)
+            const b = boxAt(i), d = list.itemAtIndex(i)
+            if (!b || !d || b.selectedText === "")
+                continue
+            const r = b.positionToRectangle(b.selectionEnd)
+            return { x: b.mapToItem(scroll, r.x, 0).x, key: keyAt(i), at: i, dy: b.mapToItem(d, 0, r.y + r.height).y }
+        }
+        return null
+    }
+    function offerQuote() {
+        const end = selectionText().trim() !== "" ? selectionEnd() : null
+        quoteAt = end ? { x: Math.max(0, Math.min(end.x, scroll.width - Kirigami.Units.gridUnit * 7)), key: end.key, at: end.at, dy: end.dy } : null
+    }
+    // Where that line's bottom is in the scroll view now (NaN: its row isn't there): read in the bar's binding,
+    // which then runs again when the list scrolls, its rows change or that row moves, and not otherwise
+    function quoteLineY() {
+        const q = quoteAt
+        if (!q)
+            return NaN
+        void list.contentY, list.contentHeight, items.count, rowsMade
+        const i = selIndex(q.key, q.at), d = i >= 0 ? list.itemAtIndex(i) : null
+        if (i >= 0 && i !== q.at)   // (rows came in above: where it is now, kept, so the next look is quick; not in the binding)
+            Qt.callLater(function() { if (pane.quoteAt === q) pane.quoteAt = { x: q.x, key: q.key, at: i, dy: q.dy } })
+        if (!d || !d.textBox || d.textBox.selectedText === "")   // (a row made again has lost its selection: no bar)
+            return NaN
+        void d.y, d.height
+        return d.mapToItem(scroll, 0, q.dy).y
     }
     function quoteIn(selected) {
         const q = Quote.withQuote(replyBox.text, selected)
@@ -3780,6 +3813,7 @@ Window {
                         contentHeight: stripList.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
+                        pixelAligned: true   // (its lines move together, as the conversation's)
                         PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {}
 
                         ColumnLayout {
@@ -3927,6 +3961,11 @@ Window {
                     spacing: 0
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    // whole pixels only: Qt snaps each text to the nearest pixel on its own, and its rows
+                    // sit at fractions of one (gap), so the wheel's eased steps (Kirigami's: 19.11 px,
+                    // 11.31…) moved some lines a pixel more than the rest in the same frame, a shimmer
+                    // as it scrolled; moved by whole pixels, every line rounds the same way each frame
+                    pixelAligned: true
                     // every item made and laid out once (not as it scrolls in), so the
                     // list doesn't jump while you scroll; many come in at once, a few at a
                     // time (fillBuffer)
@@ -3934,7 +3973,6 @@ Window {
                     onMovementStarted: {   // (you scroll: it doesn't pull you back)
                         settle.stop()
                         holdTop.stop()
-                        pane.quoteAt = null
                         pane.away = null   // (and you read it yourself: Since you last looked goes)
                     }
                     onContentHeightChanged: {
@@ -4153,6 +4191,9 @@ Window {
                         required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
+                        // (a row made or dropped by the fill: the selection's bar looks for its row again)
+                        Component.onCompleted: pane.rowsMade++
+                        Component.onDestruction: pane.rowsMade++
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
                         readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
                         readonly property bool allTurn: pane.allOpen && late === pane.allGen
@@ -4607,7 +4648,6 @@ Window {
                 parent: scroll
                 anchors.fill: parent
                 z: 10
-                property point dragEnd
                 PointHandler {
                     acceptedButtons: Qt.LeftButton
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
@@ -4616,12 +4656,11 @@ Window {
                             pane.quoteAt = null
                             pane.selectStart(selectOver.mapToItem(list, point.position.x, point.position.y))
                         } else   // (let go: a selection made offers Reply to this there)
-                            Qt.callLater(pane.offerQuote, selectOver.dragEnd)
+                            Qt.callLater(pane.offerQuote)
                     }
                     onPointChanged: {
                         if (!active)
                             return
-                        selectOver.dragEnd = point.position
                         pane.selectAcross(selectOver.mapToItem(list, point.position.x, point.position.y))
                     }
                 }
@@ -4637,7 +4676,12 @@ Window {
                 parent: scroll
                 z: 13
                 x: pane.quoteAt ? Math.max(0, Math.min(pane.quoteAt.x, scroll.width - width - Kirigami.Units.smallSpacing)) : 0
-                y: pane.quoteAt ? pane.quoteAt.y : 0
+                // (bound to the list's scroll and to the selection's row, quote.mjs barY: it goes with the text, hidden
+                // while that is out of view; nothing runs while nothing scrolls or moves)
+                readonly property var barY: pane.quoteAt ? Quote.barY(pane.quoteLineY(), 0, scroll.height,
+                                                                      Kirigami.Units.smallSpacing, scroll.height - Kirigami.Units.gridUnit * 2) : null
+                y: barY !== null ? barY : 0
+                visible: barY !== null
                 active: pane.quoteAt !== null && pane.conversationTab
                 sourceComponent: Row {
                     spacing: Kirigami.Units.smallSpacing
@@ -4724,6 +4768,7 @@ Window {
                     anchors.margins: Kirigami.Units.largeSpacing
                     contentWidth: availableWidth
                     PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+                    Component.onCompleted: contentItem.pixelAligned = true   // (moved by whole pixels, as the conversation)
 
                     PermissionAsk {
                         id: askColumn
@@ -4759,9 +4804,21 @@ Window {
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
-                        text: pane.queued ? i18n("Sent when this turn ends: %1", pane.queued.prompt) : ""
+                        // (its background service refused it while the chat ran something in the background: tried
+                        // again then, why on hover, while that's to come; one with an error waits for you:
+                        // root.queuedRetryAt)
+                        readonly property real retryAt: pane.queued ? root.queuedRetryAt(pane.queued) : 0
+                        readonly property bool refused: retryAt > 0
+                        text: !pane.queued ? ""
+                              : refused ? i18n("Tries again at %1: %2", root.clockText(retryAt), pane.queued.prompt)
+                              : i18n("Sent when this turn ends: %1", pane.queued.prompt)
                         elide: Text.ElideRight
                         color: Kirigami.Theme.focusColor
+                        PlasmaComponents3.ToolTip.text: refused ? pane.queued.refused : ""
+                        PlasmaComponents3.ToolTip.visible: refused && refusedHover.hovered
+                        HoverHandler {
+                            id: refusedHover
+                        }
                     }
                     PlasmaComponents3.ToolButton {
                         icon.name: Icons.plasma.cancel
