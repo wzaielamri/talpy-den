@@ -4234,6 +4234,14 @@ PlasmoidItem {
     // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
     // in the background with your message only once its Claude is idle, and ending it sooner would end
     // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
+    // When a reply its chat's background service refused is tried again (its startAt), for Talpy Chat's
+    // "Tries again at 14:31": only while that's to come and it has no error (it waits for you then);
+    // else 0, and the line says "Sent when this turn ends". VS Code's shared/model.ts queuedRetryAt:
+    // the same (both tested with tests/after_turn_cases.json's "retry")
+    function queuedRetryAt(t) {
+        return t && t.refused && !t.error && t.startAt > now ? t.startAt : 0
+    }
+
     // VS Code's shared/model.ts afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
     function afterTurnWaits(s) {
         return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")))

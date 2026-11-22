@@ -377,6 +377,8 @@ export class Backend {
       ...(typeof r.waits === "string" ? { waits: r.waits } : {}),
       ...(Array.isArray(r.ended) ? { ended: r.ended.filter((e: unknown) => typeof e === "string") } : {}),
       ...(typeof r.notify === "boolean" ? { notify: r.notify } : {}),
+      ...(r.turnRuns === true ? { turnRuns: true } : {}),
+      ...(typeof r.refused === "string" ? { refused: r.refused } : {}),
     };
   }
 

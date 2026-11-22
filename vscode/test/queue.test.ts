@@ -8,7 +8,8 @@ import { test } from "node:test";
 import "./useHost";
 import { markdownLinkFile } from "../../core/src/agentRun";
 import { demoState } from "../../core/src/shared/demo";
-import { afterTurnWaits, findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedWhat, startText } from "../../core/src/shared/model";
+import { Backend } from "../../core/src/agents/claudeCode/backend";
+import { afterTurnWaits, findMemory, goOnAt, laterAt, laterDays, limitReset, onItsRow, overlapText, queuedChat, queuedFor, queuedRetryAt, queuedWhat, startText } from "../../core/src/shared/model";
 import type { Group, QueuedTask, Session } from "../../core/src/shared/types";
 import { TransitionTracker } from "../../core/src/transitions";
 import { planPath } from "../src/planReview";
@@ -181,4 +182,39 @@ test("a reply after a chat's turn waits by the same rule as Plasma's", () => {
   };
   assert.ok(cases.length >= 10);
   for (const c of cases) assert.equal(afterTurnWaits(c.row), c.waits, c.what);
+});
+
+// "Tries again at 14:31" only while that's to come: the "retry" cases there, which Plasma's
+// queuedRetryAt (main.qml) is run through too
+test("a refused reply says when it's tried again only while that's to come", () => {
+  const file = path.resolve(__dirname, "..", "..", "..", "tests", "after_turn_cases.json");
+  const { retry } = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    retry: { what: string; refused: string; error: string; inMs: number; shows: boolean }[];
+  };
+  assert.ok(retry.length >= 4);
+  for (const c of retry) {
+    const at = queuedRetryAt({ refused: c.refused, error: c.error, startAt: NOW + c.inMs }, NOW);
+    assert.equal(at > 0, c.shows, c.what);
+  }
+});
+
+// What jump.py --start-queued says of a reply it put back reaches the dashboard through Backend.action
+// (which builds its answer from the fields it knows): a stand-in jump.py answers as the real one does
+test("a reply put back says so through the backend: its turn ran, or its chat's service refused it", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "td-backend-"));
+  try {
+    fs.mkdirSync(path.join(root, "vendor", "code"), { recursive: true });
+    fs.writeFileSync(path.join(root, "vendor", "code", "jump.py"),
+      "import json, sys\n" +
+      "said = {'q1': {'turnRuns': True}, 'q2': {'refused': 'its service said no'}}.get(sys.argv[2], {})\n" +
+      "print(json.dumps(dict({'ok': True, 'message': ''}, **said)))\n");
+    const backend = new Backend(root, () => "python3");
+    const ran = await backend.action("jump.py", ["--start-queued", "q1"]);
+    assert.equal(ran.turnRuns, true);
+    const refused = await backend.action("jump.py", ["--start-queued", "q2"]);
+    assert.equal(refused.refused, "its service said no");
+    assert.equal(refused.turnRuns, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

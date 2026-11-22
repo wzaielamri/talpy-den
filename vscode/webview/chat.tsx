@@ -2709,10 +2709,9 @@ function ChatApp() {
           {chat?.queued ? (
             <div class="pane-queued">
               {/* (its background service refused it while the chat ran something in the background: tried again
-                  then, why on hover; one with an error waits for you, whatever came before) */}
-              <span title={(!chat.queued.error && chat.queued.refused) || undefined}>
-                {chat.queued.refused && !chat.queued.error && (chat.queued.retryAt ?? 0) > 0
-                  ? `Tries again at ${clockText(chat.queued.retryAt!)}` : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
+                  then, why on hover, while that's to come; one with an error waits for you: queuedRetryAt) */}
+              <span title={(chat.queued.retryAt && chat.queued.refused) || undefined}>
+                {chat.queued.retryAt ? `Tries again at ${clockText(chat.queued.retryAt)}` : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
               </span>
               <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk(unqueueAsk === chat.queued!.id ? "" : chat.queued!.id)}>
                 <Icon name={I.cancel} tone={T.cancel} />Cancel

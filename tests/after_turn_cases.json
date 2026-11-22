@@ -1,5 +1,5 @@
 {
-  "about": "Whether a reply queued for when a chat's turn ends still waits (afterTurnWaits), by the chat's row. Read by both front ends' tests: tests/test_pane.py runs Plasma's main.qml functions in node, vscode/test/queue.test.ts the TypeScript one (core/src/shared/model.ts).",
+  "about": "Whether a reply queued for when a chat's turn ends still waits (afterTurnWaits), by the chat's row (cases), and whether Talpy Chat says when a refused one is tried again (queuedRetryAt; retry: its refused, error, startAt this many ms from now). Read by both front ends' tests: tests/test_pane.py runs Plasma's main.qml functions in node, vscode/test/queue.test.ts the TypeScript one (core/src/shared/model.ts).",
   "cases": [
     {"what": "its turn goes on", "row": {"state": "working", "turnOver": false, "reply": "background"}, "waits": true},
     {"what": "it asks you", "row": {"state": "waiting", "turnOver": false, "reply": "background"}, "waits": true},
@@ -11,5 +11,11 @@
     {"what": "done (a background chat between turns)", "row": {"state": "done", "turnOver": false, "reply": "background"}, "waits": false},
     {"what": "an older backend (no turnOver)", "row": {"state": "working", "reply": "background"}, "waits": true},
     {"what": "not listed", "row": null, "waits": false}
+  ],
+  "retry": [
+    {"what": "refused, tried again in a minute", "refused": "its service said no", "error": "", "inMs": 60000, "shows": true},
+    {"what": "refused, its try's time has come", "refused": "its service said no", "error": "", "inMs": -1000, "shows": false},
+    {"what": "refused, then Start it now failed", "refused": "its service said no", "error": "its terminal is gone", "inMs": 60000, "shows": false},
+    {"what": "never refused, waiting for a usage limit", "refused": "", "error": "", "inMs": 3600000, "shows": false}
   ]
 }

@@ -1653,17 +1653,17 @@ class SendTests(SendFixture):
         td.change_queue(self.cache, add=td.queue_entry(".claude-work", "", "a task", 5, chat=None))
         self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn")
         compact = td.load_queue(self.cache)[1]["id"]
+        moment = td.load_queue(self.cache)[1]["createdAt"]
 
-        def earlier(tasks):   # (queued a second before the follow-up: not the same moment)
+        def same_moment(tasks):   # (all queued in the same millisecond: their place alone says their order)
             for t in tasks:
-                if t["id"] == compact:
-                    t["createdAt"] -= 1000
+                t["createdAt"] = moment
             return True
-        td.change_queue(self.cache, edit=earlier)
 
         def meanwhile(answer, other_goes=False):
             def send(*args, **kw):
                 self.cli("--send", SID, "--profile", ".claude-work", "--text", "and then the docs", "--after-turn")
+                td.change_queue(self.cache, edit=same_moment)
                 if other_goes:   # (the task before it was taken out and started meanwhile)
                     td.change_queue(self.cache, take=td.load_queue(self.cache)[0]["id"])
                 return answer
@@ -1680,6 +1680,20 @@ class SendTests(SendFixture):
             self.assertEqual(prompts, (["a task"] if not other_goes else []) + ["/compact", "and then the docs"])
             self.assertEqual(queue[prompts.index("/compact")].get("error") or "", "")
             td.change_queue(self.cache, take=queue[-1]["id"])
+        # a reply of the same chat queued before it (one that failed, say) stays before it, and one queued
+        # meanwhile after it, all in the same moment
+        reply = lambda text, **kw: dict(td.queue_entry(".claude-work", "", text, 5, chat=SID, name="Fix it"),
+                                        afterTurn=True, createdAt=moment, **kw)
+        td.change_queue(self.cache, edit=lambda tasks: tasks.insert(0, reply("the tests first", error="its terminal is gone")) or True)
+
+        def queued_meanwhile(*args, **kw):   # (added as it is: send_later would take the chat's others out)
+            td.change_queue(self.cache, add=reply("and then the docs"))
+            return {"ok": False, "turnRuns": True, "message": pane.TURN_RUNS}
+        with mock.patch.object(pane, "send", side_effect=queued_meanwhile), \
+                mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
+                mock.patch.object(jump, "claude_path", return_value="claude"):
+            self.assertEqual(jump.start_queued(self.home, [], compact, {}), (True, ""))
+        self.assertEqual([t["prompt"] for t in td.load_queue(self.cache)], ["the tests first", "/compact", "and then the docs"])
 
     def test_a_reply_its_service_refused_is_tried_again_in_a_minute_then_every_ten(self):
         # Its chat's background service refused it while the chat ran something in the background: tried
@@ -1701,6 +1715,13 @@ class SendTests(SendFixture):
             self.assertEqual((back.get("refusals"), back.get("error") or "", back.get("refused")), (n, "", refused["message"]), n)
             self.assertTrue(before + wait - 1000 <= back["startAt"] <= int(time.time() * 1000) + wait, n)
             self.assertEqual((out.get("refused"), "untilIdle" in back, "untilIdle" in out), (refused["message"], False, False), n)
+        # its turn ran after all this time: not a refusal, so no "Tries again at": the count stays (backoff)
+        with mock.patch.object(pane, "send", return_value={"ok": False, "turnRuns": True, "message": pane.TURN_RUNS}), \
+                mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
+                mock.patch.object(jump, "claude_path", return_value="claude"):
+            self.assertEqual(jump.start_queued(self.home, [], task["id"]), (True, ""))
+        (back,) = td.load_queue(self.cache)
+        self.assertEqual(("refused" in back, back.get("refusals")), (False, 4))
         with mock.patch.object(pane, "send", return_value={"ok": False, "message": "its terminal is gone"}), \
                 mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
                 mock.patch.object(jump, "claude_path", return_value="claude"):
@@ -1715,7 +1736,7 @@ class SendTests(SendFixture):
         import re
         qml = (Path(__file__).resolve().parent.parent / "package/contents/ui/main.qml").read_text()
         functions = "".join(re.search(r"\n    (function %s\(.*?\n    \})\n" % f, qml, re.S).group(1) + "\n"
-                            for f in ("afterTurnWaits", "startDueTasks", "noteHeldBack", "chatStarting"))
+                            for f in ("afterTurnWaits", "startDueTasks", "noteHeldBack", "chatStarting", "queuedRetryAt"))
         head = ("const root = { notifier: true }; const remote = { lab: { result: {}, error: '', askedAt: 0 } };\n"
                 "const heldBack = {}; const starting = {}; const startingChats = {}; let row = null; const started = [];\n"
                 "let now = Date.now(); const startStaleMs = 120000;\n"
@@ -1738,6 +1759,18 @@ class SendTests(SendFixture):
         for case, (waits, waited) in zip(cases, got):
             self.assertIs(waits, case["waits"], case["what"])
             self.assertIs(waited, case["waits"], case["what"])
+
+    @unittest.skipUnless(shutil.which("node"), "node isn't installed")
+    def test_plasma_says_when_a_refused_reply_is_tried_again_only_while_that_is_to_come(self):
+        # The "retry" cases in after_turn_cases.json (vscode/test/queue.test.ts: the TypeScript
+        # queuedRetryAt), through main.qml's queuedRetryAt, which Talpy Chat's line goes by
+        cases = json.loads((Path(__file__).resolve().parent / "after_turn_cases.json").read_text())["retry"]
+        got = self.plasma_queue(
+            "console.log(JSON.stringify(%s.map(c => queuedRetryAt({ refused: c.refused, error: c.error, startAt: now + c.inMs }) > 0)))"
+            % json.dumps(cases))
+        self.assertEqual(len(got), len(cases))
+        for case, shows in zip(cases, got):
+            self.assertIs(shows, case["shows"], case["what"])
 
     @unittest.skipUnless(shutil.which("node"), "node isn't installed")
     def test_plasma_sends_a_chats_replies_in_their_order_and_a_hosts_once_it_answered_again(self):

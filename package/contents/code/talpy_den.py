@@ -5083,15 +5083,16 @@ def load_queue(cache_root):
     return [t for t in tasks if isinstance(t, dict) and valid_id(t.get("id"))] if isinstance(tasks, list) else []
 
 
-def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None, where=None, at=None):
+def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None, where=None, after=None):
     """Change queue.json under a lock: add a task (once: unless a go-on of
     the same chat is queued already), take one out by its id (returned), or
     put one back (e.g. with the error it got); edit(tasks) changes the
     tasks in place and says whether it did. The task taken out, or None.
-    where (a list): gets the place the task taken out had; at: the place to
-    put one back at (where it was), else at the end; a chat's reply for when
-    its turn ends goes before the first of that chat's queued after it (its
-    createdAt) if that comes sooner: a chat's replies go in their order."""
+    where (a list): gets the ids of the tasks before the one taken out;
+    after (those ids): one put back goes right after the last of them still
+    queued, where it was, before any added since (a chat's replies for when
+    its turn ends go in their order: one queued while another was out being
+    sent comes after it, the same moment or not); else at the end."""
     state = state_dir(cache_root)
     private_dir(state)
     with open(state / "queue.lock", "a") as lock:
@@ -5103,21 +5104,15 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
         if take is not None:
             place = next((i for i, t in enumerate(tasks) if t["id"] == take), None)
             if place is not None:
+                if where is not None:
+                    where.extend(t["id"] for t in tasks[:place])
                 taken = tasks.pop(place)
                 tasks = [t for t in tasks if t["id"] != take]
-                if where is not None:
-                    where.append(place)
         if put_back is not None:
             tasks = [t for t in tasks if t["id"] != put_back["id"]]
-            place = len(tasks) if at is None else max(0, min(at, len(tasks)))
-            if put_back.get("afterTurn") and put_back.get("chat"):
-                # (a reply: before the first of the same chat's queued after it, wherever the tasks before
-                # it went meanwhile, so the chat's replies keep their order)
-                later = next((i for i, t in enumerate(tasks) if t.get("afterTurn") and t.get("chat") == put_back["chat"]
-                              and (t.get("host") or "") == (put_back.get("host") or "")
-                              and (number(t.get("createdAt")) or 0) > (number(put_back.get("createdAt")) or 0)), None)
-                if later is not None:
-                    place = min(place, later)
+            before = set(after) if after is not None else None
+            place = len(tasks) if before is None else max((i + 1 for i, t in enumerate(tasks) if t["id"] in before),
+                                                           default=0)
             tasks.insert(place, put_back)
         if add is not None and once and add.get("chat") and any(
                 t.get("chat") == add["chat"] and (t.get("host") or "") == (add.get("host") or "") for t in tasks):

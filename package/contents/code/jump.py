@@ -2006,14 +2006,14 @@ def background_named(commands):
 
 def go_on_waits(cache_root, entry, answer, due, now_ms, out, at=None):
     """A chat's go-on waits for its background commands (td.continue_chat's
-    "waits" answer): back in the queue (at: its place there), tried again in
+    "waits" answer): back in the queue (at: the ids of the tasks before it there), tried again in
     a minute, saying so ("waits": the queue shows it, no error). The first
     time it's said ("notify": a notification) and logged (td.log_go_on)."""
     what, it = background_named(answer.get("commands") or [])
     ends = answer.get("endsAt") or due + td.GO_ON_WAIT_MS
     note = f"Waits for {what} to finish before it goes on; {start_time(ends)} it ends {it}"
     first = not entry.get("waits")
-    td.change_queue(cache_root, put_back=dict(entry, startAt=now_ms + 60_000, dueAt=due, waits=note, error=""), at=at)
+    td.change_queue(cache_root, put_back=dict(entry, startAt=now_ms + 60_000, dueAt=due, waits=note, error=""), after=at)
     message = f"“{entry.get('name') or entry['chat'][:8]}” " + note[0].lower() + note[1:]
     if first:
         td.log_go_on(cache_root, message + (f" · {entry['host']}" if entry.get("host") else ""))
@@ -2054,7 +2054,7 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     entry = td.change_queue(cache_root, take=task_id, where=where)
     if entry is None:
         return True, ""
-    at = where[0] if where else None   # (where it was: one put back goes there)
+    at = where   # (the ids of the tasks before it: one put back goes right after them, where it was)
     now_ms = int(time.time() * 1000)
     # (its go-on's time, kept while it waits: it ends what keeps the chat busy this long after it)
     due = entry.get("dueAt") or min(entry.get("startAt") or now_ms, now_ms)
@@ -2081,8 +2081,9 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             else:
                 answer = pane.send(home, extra_dirs, entry["profile"], entry["chat"], task.text, entry.get("session"),
                                    how, claude_path(home), if_turn_over=not now)
-            if answer.get("turnRuns"):  # (its turn goes on after all, or it asks you: it waits on, as it was)
-                td.change_queue(cache_root, put_back=entry, at=at)
+            if answer.get("turnRuns"):  # (its turn goes on after all, or it asks you: it waits on, as it was, but no
+                # "Tries again at" from a refusal before: not what happened now; the count stays, for the backoff)
+                td.change_queue(cache_root, put_back={k: v for k, v in entry.items() if k != "refused"}, after=at)
                 out.update(turnRuns=True)
                 return True, ""
             if answer.get("refused") and not now:
@@ -2093,7 +2094,7 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 refusals = (entry.get("refusals") or 0) + 1
                 wait = REFUSED_AGAIN_MS if refusals < REFUSALS_BEFORE_LATER else REFUSED_LATER_MS
                 td.change_queue(cache_root, put_back=dict(entry, refusals=refusals, refused=why, startAt=now_ms + wait,
-                                                          error=""), at=at)
+                                                          error=""), after=at)
                 out.update(refused=why)
                 return True, ""
             ok, message = bool(answer.get("ok")) and answer.get("how") != "ask", answer.get("message") or ""
@@ -2150,11 +2151,11 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
         td.change_queue(cache_root, put_back=dict(
             entry, unreachable=now_ms,
             error=f"{(message or 'It could not be reached').rstrip('.')}. It starts once {remote.label(entry['host'])} answers again"),
-            at=at)
+            after=at)
     elif not ok:
         # (it waits for you now, Start it now or Cancel: not to be tried again, as a refused one was)
         entry = {k: v for k, v in entry.items() if k not in ("refused", "refusals", "untilIdle")}
-        td.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"), at=at)
+        td.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"), after=at)
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start
     elif entry.get("chat") and "ended" in answer:  # (it waited for its background commands, then ended them)

@@ -4717,11 +4717,12 @@ Window {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
                         // (its background service refused it while the chat ran something in the background: tried
-                        // again then, why on hover. One with an error waits for you, whatever came before)
-                        readonly property bool refused: !!pane.queued && !!pane.queued.refused && !pane.queued.error
-                                                        && pane.queued.startAt > 0
+                        // again then, why on hover, while that's to come; one with an error waits for you:
+                        // root.queuedRetryAt)
+                        readonly property real retryAt: pane.queued ? root.queuedRetryAt(pane.queued) : 0
+                        readonly property bool refused: retryAt > 0
                         text: !pane.queued ? ""
-                              : refused ? i18n("Tries again at %1: %2", root.clockText(pane.queued.startAt), pane.queued.prompt)
+                              : refused ? i18n("Tries again at %1: %2", root.clockText(retryAt), pane.queued.prompt)
                               : i18n("Sent when this turn ends: %1", pane.queued.prompt)
                         elide: Text.ElideRight
                         color: Kirigami.Theme.focusColor
