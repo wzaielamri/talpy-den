@@ -24,7 +24,7 @@ import { beatShown, cancelBeat, withNextBeat } from "./pets/beat";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { ribbonCss } from "./util/ribbons";
-import { NEW_SINCE_READ_MS, NEW_SINCE_TIP, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooked, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
+import { NEW_SINCE_READ_MS, NEW_SINCE_SEEN_MS, NEW_SINCE_TIP, newSinceAfterHide, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooking, newSinceOf, newSinceReading, newSinceSeen, newSinceSeenOn, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
@@ -698,9 +698,10 @@ function ChatApp() {
   const [away, setAway] = useState<Away | null>(null);
   // New since … (shared/pane.ts newSinceOf; Plasma's NewSinceLine.qml the same): a thin line in the
   // conversation above the first item since you last looked, where the line's click goes. It comes with
-  // Since you last looked, stays after its click and moves when you come back to more; once it has been in
-  // view with the tab in front (seen), it goes when you've been at the newest part a while (one timeout, only
-  // then); unseen, it stays. It goes at once when you send a message
+  // Since you last looked, stays after its click and moves when you come back to more; once seen on this tab
+  // (in view a moment with the list at rest), it goes when you've been at the newest part a while with the
+  // tab in front (one timeout, only then); unseen, it stays. It goes at once when you send a message, and
+  // when another tab comes in front (back with new items, Since you last looked's answer puts it there)
   const [newSince, setNewSince] = useState<NewSince | null>(null);
   // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own recap)
   const [recapBefore, setRecapBefore] = useState<ReadonlySet<string> | null>(null);
@@ -1128,7 +1129,10 @@ function ChatApp() {
       else if (m.type === "visible") {
         setShown(m.visible);
         beatShown(m.visible);   // (nothing moves while another tab is in front)
-        if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
+        if (!m.visible) {
+          setAway(null);   // (shown again: what it did meanwhile, asked again)
+          setNewSince((was) => newSinceAfterHide(was));
+        }
       }
       else if (m.type === "away") {
         setAway(m.away);
@@ -1900,7 +1904,7 @@ function ChatApp() {
   };
   // (New since …'s one timeout: only while there's a line you've seen and the tab in front is at the chat's
   // newest part; scrolling up or another tab in front stops it, a new line starts it again)
-  const newSinceRuns = newSinceReading(newSince, shown && conversation, !seen);
+  const newSinceRuns = newSinceReading(newSince, tab === "steps", shown && conversation, !seen);
   useEffect(() => {
     if (!newSinceRuns) return;
     const t = window.setTimeout(() => setNewSince(null), NEW_SINCE_READ_MS);
@@ -2038,7 +2042,7 @@ function ChatApp() {
         <div key="side-from" class="pane-day pane-from-line" role="separator" title={SIDE_FROM_TIP}><span>{SIDE_FROM_LINE}</span></div>
       ) : null;
       const fresh = it.key === newSinceAt ? (
-        <div key="new-since" class="pane-new-since" role="separator" title={NEW_SINCE_TIP}><span>{newSinceLine}</span></div>
+        <div key="new-since" class="pane-new-since" role="separator" title={NEW_SINCE_TIP}><span><span>{newSinceLine}</span></span></div>
       ) : null;
       // (the first item of a new day the tab shows: its line before it)
       if (breaks.has(it.key) && it.at) {
@@ -2058,21 +2062,45 @@ function ChatApp() {
     });
     return out;
   }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine, newSinceAt, newSinceLine]);
-  // (New since …, seen: once all of it has been in the list's view with the tab in front, newsince.mjs
-  // newSinceLooked; watched by the browser, not looked for, and only till then)
-  const newSinceUnseen = !!newSince && !newSince.seen && shown && conversation;
+  // (New since …, seen on this tab: all of it in the list's view for NEW_SINCE_SEEN_MS with the list at rest,
+  // the tab in front and the list done going where it goes, newsince.mjs newSinceLooking; a glimpse as it
+  // scrolls past doesn't count: each scroll starts the wait again. Looked at only while it isn't seen here)
+  const newSinceSteps = tab === "steps";
+  const newSinceUnseen = !!newSince && !newSinceSeenOn(newSince, newSinceSteps) && shown && conversation;
+  const newSincePlaced = loaded && !pendingJump && !markGoing;
+  const seenWait = useRef<{ timer: number; at: NewSince | null; steps: boolean }>({ timer: 0, at: null, steps: false });
   useEffect(() => {
-    const el = list.current;
-    const line = el?.querySelector<HTMLElement>(".pane-new-since");
-    if (!newSinceUnseen || !el || !line || typeof IntersectionObserver !== "function") return;
-    const io = new IntersectionObserver((entries) => {
-      const e = entries[entries.length - 1], v = e.rootBounds;
-      if (!e.isIntersecting || !v) return;
-      setNewSince((was) => newSinceLooked(was, shown, newSinceInView(e.boundingClientRect.top - v.top, e.boundingClientRect.height, v.height)));
-    }, { root: el, threshold: [0, 1] });
-    io.observe(line);
-    return () => io.disconnect();
-  }, [newSinceUnseen, steps]);
+    const el = list.current, w = seenWait.current;
+    const stop = () => {
+      window.clearTimeout(w.timer);
+      w.timer = 0;
+    };
+    if (!newSinceUnseen || !el) return stop();
+    // (each scroll is a move: the list at rest is NEW_SINCE_SEEN_MS without one)
+    const looking = () => {
+      const line = el.querySelector<HTMLElement>(".pane-new-since > span");
+      const v = el.getBoundingClientRect(), r = line ? line.getBoundingClientRect() : null;
+      const inView = !!r && newSinceInView(r.top - v.top, r.height, el.clientHeight);
+      return newSinceLooking(newSince, newSinceSteps, shown, inView, true, newSincePlaced);
+    };
+    const look = (moved: boolean) => {
+      if (!looking()) return stop();
+      if (w.timer && !moved && w.at === newSince && w.steps === newSinceSteps) return;   // (still waiting)
+      stop();
+      const at = newSince, steps = newSinceSteps;
+      w.at = at;
+      w.steps = steps;
+      w.timer = window.setTimeout(() => {
+        w.timer = 0;
+        if (looking()) setNewSince((was) => (was === at ? newSinceSeen(was, steps) : was));
+      }, NEW_SINCE_SEEN_MS);
+    };
+    look(false);
+    const onScroll = () => look(true);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [newSinceUnseen, newSince, newSinceSteps, newSincePlaced, steps]);
+  useEffect(() => () => window.clearTimeout(seenWait.current.timer), []);
   // (the matches marked in the rows near the view, again as they're drawn again or you scroll)
   useEffect(() => {
     const el = list.current;

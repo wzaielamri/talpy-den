@@ -281,6 +281,7 @@ Item {
     property bool closeAfter: false   // (gone to from the list: it closes, unless it covers little)
     property string jumpKey: ""
     property int jumpTries: 0
+    readonly property bool jumping: jumpRetry.running   // (its row not made yet: tried again, ChatPane listSettling)
 
     readonly property bool capped: pane.more && pane.limit >= pane.limitMax   // (the most Talpy Chat shows)
     function loadedKeys() {   // key -> its first row

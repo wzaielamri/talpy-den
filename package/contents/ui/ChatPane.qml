@@ -1061,8 +1061,10 @@ Window {
             newDay()
         if (shown)
             awayNext = true   // (shown again: what it did meanwhile)
-        else
+        else {
             away = null
+            newSince = NewSince.newSinceAfterHide(newSince)   // (back with new items, the --away answer puts it there)
+        }
         if (shown && loaded)
             load()
         if (shown && loaded && endKept && conversationTab)
@@ -1416,11 +1418,26 @@ Window {
     // New since … (NewSinceLine.qml: made only while there's one): a thin line in the conversation above
     // the first item since you last looked, where the line's click goes ({key, stepKey, since}: newsince.mjs).
     // It comes with Since you last looked, stays after its click and moves when you come back to more; once
-    // it has been in view (seen: NewSinceLine.qml looks), it goes when you've been at the newest part a while
-    // with the window shown (newSinceRead, the only timer, running only then); unseen, it stays. It goes at
-    // once when you send a message, and with the window (reset). VS Code chat.tsx the same
+    // seen on this tab (in view a moment with the list at rest: NewSinceLine.qml looks), it goes when you've
+    // been at the newest part a while with the window shown (newSinceRead, running only then); unseen, it
+    // stays. It goes at once when you send a message, when the window hides (back with new items, Since you
+    // last looked's answer puts it at the new point) and with the window (reset). VS Code chat.tsx the same
     property var newSince: null
     readonly property string newSinceAt: NewSince.newSinceKey(newSince, listTab === "steps")   // (the item it's above here)
+    // (the line takes no room of its own: it's drawn in the room above its row, the delegate's gap, which is
+    // at least the line's height there, lineRoom; a step right after a step has less. No other row changes)
+    readonly property string roomAbove: newSinceAt
+    FontMetrics {
+        id: newSinceFm
+        font.family: pane.chatFamily
+        font.pointSize: pane.pt * 0.8
+    }
+    readonly property font newSinceFont: newSinceFm.font   // (NewSinceLine.qml's words)
+    readonly property real lineRoom: Math.ceil(newSinceFm.height) + 2
+    // The list going where it goes, not yet where you read: the end as the window opens and follows it
+    // (settle), a jump held at the top (holdTop), a read further back, a bookmark's row not made yet
+    readonly property bool listSettling: !loaded || settle.running || holdTop.running || reachKey !== ""
+                                       || (bookmarkLogic.item !== null && bookmarkLogic.item.jumping)
     function tookAway(a) {   // (the --away read's answer: Since you last looked, and where new begins)
         away = a
         newSince = NewSince.newSinceOf(a, newSince)
@@ -1428,7 +1445,7 @@ Window {
     Timer {
         id: newSinceRead
         interval: NewSince.NEW_SINCE_READ_MS
-        running: NewSince.newSinceReading(pane.newSince, pane.shown && pane.conversationTab, pane.atEnd)
+        running: NewSince.newSinceReading(pane.newSince, pane.listTab === "steps", pane.shown && pane.conversationTab, pane.atEnd)
         onTriggered: pane.newSince = null
     }
     onNewSinceChanged: if (newSinceRead.running)
@@ -4147,11 +4164,13 @@ Window {
                         readonly property var commandData: command !== "" ? JSON.parse(command) : null
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
                         readonly property bool card: kind === "tool" && pane.askedShows(askedData, pane.answeringFor[key] === true)
-                        // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
+                        // more room before your prompt (a new turn) than between steps; your answer: right under what it answers;
+                        // the row the New since line is above: at least the room the line takes (roomAbove, lineRoom)
                         readonly property real gap: index === 0 ? 0
                             : kind === "you" && answered === "" ? Kirigami.Units.gridUnit * 1.6
-                            : (kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made" ? Kirigami.Units.smallSpacing * 1.5
-                            : Kirigami.Units.gridUnit * 0.8
+                            : Math.max((kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made"
+                                       ? Kirigami.Units.smallSpacing * 1.5 : Kirigami.Units.gridUnit * 0.8,
+                                       key === pane.roomAbove ? pane.lineRoom : 0)
                         // (the Chat tab: a call you denied with a note too, its note under it)
                         readonly property bool shows: (kind !== "tool" || pane.listTab === "steps" || card
                                                        || (askedData !== null && askedData.state === "denied")) && listed

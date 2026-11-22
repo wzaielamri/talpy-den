@@ -4472,26 +4472,53 @@ body.vscode-high-contrast-light .pane-side {
 
 /* New since 14:32: where what came in since you last looked starts, above that item (Since you last
    looked's point): a thin line in the accent colour, as your band and a bookmark's ribbon, its words near
-   its right end; not part of what you copy, nothing in it moves (Plasma's NewSinceLine.qml the same) */
+   its right end, its tooltip on all of it; not part of what you copy, nothing in it moves. It takes no
+   room of its own, as Plasma's NewSinceLine.qml: drawn in the middle of the room above the row (its
+   margin), which is at least the line's height there (a reply's 0.8em, a step right after a step's less) */
 .pane-new-since {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 1em;
-  color: var(--pane-you);
-  font-size: 0.8em;
+  --room: 1.1em;
+  position: relative;
+  flex: none;
+  height: 0;
   cursor: default;
   user-select: none;
 }
 
-.pane-new-since::before,
-.pane-new-since::after {
+.pane-new-since:has(+ .pane-item.turn) {
+  --room: 1.7em;
+}
+
+.pane-new-since + .pane-item:not(.turn) {
+  margin-top: 1.1em;
+}
+
+/* (the room above the row, the line in its middle; its words smaller) */
+.pane-new-since > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--room);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pane-you);
+  white-space: nowrap;
+}
+
+.pane-new-since > span > span {
+  font-size: 0.8em;
+  line-height: 1.2;
+}
+
+.pane-new-since > span::before,
+.pane-new-since > span::after {
   content: "";
   flex: 1 1 0;
   border-top: 1px solid var(--pane-you);
 }
 
-.pane-new-since::after {
+.pane-new-since > span::after {
   flex: 0 0 8px;
 }
 
