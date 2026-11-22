@@ -9,6 +9,14 @@ export function fmt(text, ...args) {
     return text.replace(/%(\d)/g, (m, i) => (args[i - 1] !== undefined ? String(args[i - 1]) : m));
 }
 
+// A stop, an interrupt or a hide of a chat that keeps going (status.keep; of host) names it: jump.py and
+// remote.py --kept. A stop of yours is you taking over: it goes on after its next usage limit only; hidden,
+// it doesn't keep going any more (as Plasma's and VS Code's)
+export function keptArgs(status, chatId, host) {
+    const kept = ((status && status.keep) || []).find(k => k.chat === chatId && (k.host || '') === (host || ''));
+    return kept ? ['--kept', kept.chat] : [];
+}
+
 export function plural(n, one, many) {
     return fmt(n === 1 ? one : many, n);
 }

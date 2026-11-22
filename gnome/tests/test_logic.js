@@ -922,6 +922,16 @@ test('advanced analyses: how a plan\'s limits changed, in words (as VS Code)', (
     eq(L.limitFillText({wallMs: 97 * 60000, workMs: 155 * 60000}), 'Full after about 1h 37m at your pace · Claude worked 2h 35m in it, across chats');
 });
 
+// (2026-11-22) a stop, an interrupt or a hide of a chat that keeps going names it (jump.py and remote.py
+// --kept): a stop of yours is you taking over, it goes on after its next usage limit only
+test('a stop of a chat that keeps going names it', () => {
+    const status = {keep: [{chat: 'c1', host: ''}, {chat: 'c2', host: 'lab'}]};
+    eq(L.keptArgs(status, 'c1', ''), ['--kept', 'c1']);
+    eq(L.keptArgs(status, 'c2', ''), []);
+    eq(L.keptArgs(status, 'c2', 'lab'), ['--kept', 'c2']);
+    eq(L.keptArgs(null, 'c1', ''), []);
+});
+
 print(`${count - failures}/${count} passed`);
 if (failures)
     System.exit(1);

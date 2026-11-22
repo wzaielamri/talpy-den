@@ -2298,6 +2298,15 @@ class KeepGoingTests(TaskFixture):
                              now_ms=int(time.time() * 1000) + 1000)
         td.change_queue(self.cache_root(), add=new)
         self.assertTrue(self.queue("--start-queued", new["id"])["message"])
+        # a go-on after the usage cap queued before the stop goes on all the same: the cap paused it, as a
+        # limit does, and a limit's go-on stays through a stop (it says "Goes on at …" meanwhile)
+        cap = td.queue_entry(".claude-work", str(self.folder), "", self.now_ms, chat=self.SID, name="Fix it", why="cap",
+                             now_ms=self.now_ms - 60_000)
+        td.change_queue(self.cache_root(), add=cap)
+        self.queue("--user-stopped", self.SID)
+        self.assertEqual(len(td.load_queue(self.cache_root())), 1, "a stop takes out tries again only")
+        self.assertTrue(self.queue("--start-queued", cap["id"])["message"])
+        self.assertEqual(len((self.cache_root() / "go-on.log").read_text().splitlines()), 1)
 
     def test_a_reading_that_isnt_far_below_the_limit_doesnt_start_it(self):
         # (2026-11-22, the review: four stops at 93%, each read after its stop, each went on at once into the
@@ -2357,6 +2366,17 @@ class KeepGoingTests(TaskFixture):
         # 20 s on, the copy with no cap looks: the window, read since, is at 10%, but what the cap holds stays held
         self.assertEqual(look(self.now_ms + 60_000, "vscode:b", pct=10, read=self.now_ms)[0]["startAt"], self.reset + 60_000)
         self.assertEqual(td.load_keep(self.cache_root())["looked"]["by"], "vscode:b")
+        # the status says the account is at the cap while it's held, so both front ends wait for it
+        # (Plasma's startOrWait, VS Code's startDueTasks: limitReset), whichever copy asks
+        groups = [{"profileKeys": [".claude-work"], "cap": None}, {"profileKeys": [".claude"], "cap": None}]
+        td.note_held_caps(groups, self.cache_root(), self.now_ms + 61_000)
+        self.assertEqual((groups[0]["cap"]["resetsAt"], groups[0]["cap"]["pct"], groups[0]["cap"]["held"], groups[1]["cap"]),
+                         (self.reset, 40, True, None))
+        # the copy that set it switches its cap off: released, and the other one brings the go-on forward
+        self.assertEqual(len(look(self.now_ms + 90_000, "plasma:a")), 1)
+        self.assertEqual(td.load_keep(self.cache_root())["capped"], {})
+        (task,) = look(self.now_ms + 120_000, "vscode:b", pct=10, read=self.now_ms)
+        self.assertEqual(task["startAt"], self.now_ms + 120_000)
 
     def test_a_limit_with_no_known_reset_waits_longer_each_time(self):
         at = self.now_ms - 60_000
@@ -2621,6 +2641,58 @@ class KeepGoingOnHostsTests(TaskFixture):
                 mock.patch.object(remote, "run_status_script", return_value=(ok, "Stopped" if ok else "It's busy")):
             remote.main(list(args))
         return json.loads(out.getvalue())
+
+    def test_a_stop_command_there_is_noted_once_it_landed(self):
+        # (2026-11-22, the final check) Plasma noted the stop beside the stop command (jump.py --user-stopped),
+        # before it landed there: a step written meanwhile read as a turn that broke off, tried again 5 minutes
+        # later; and a stop that failed was noted too. remote.py --run --kept notes it once the command ran
+        import remote
+        self.keep()
+        seen = []
+        for ok in (False, True):
+            def run(host, command, ok=ok):
+                seen.append(td.load_keep(self.cache_root())["chats"][0].get("stoppedAt"))
+                return ok, "Stopped" if ok else "lab: Connection timed out"
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(remote.Path, "home", return_value=self.home), \
+                    mock.patch.object(remote, "run", side_effect=run):
+                remote.main(["--run", "lab", "claude stop 1a2b3c4d", "--kept", self.SID])
+            self.assertEqual(json.loads(out.getvalue())["ok"], ok)
+            self.assertEqual(td.load_keep(self.cache_root())["chats"][0].get("stoppedAt") is not None, ok, ok)
+        self.assertEqual(seen, [None, None])   # (nothing noted before the command ran there)
+        main = (Path(__file__).resolve().parent.parent / "package/contents/ui/main.qml").read_text()
+        stop = main[main.index("    function remoteStop(host, command, keptChat) {"):][:400]
+        self.assertTrue('"--run " + shellQuote(host) + " " + shellQuote(command) + keptArg(keptChat)' in stop)
+        self.assertFalse("--user-stopped" in stop)
+
+    def test_gnome_names_the_chat_that_keeps_going_when_it_stops_one(self):
+        # (2026-11-22, the final check: GNOME's stops weren't noted) its logic.js keptArgs: gnome/tests/test_logic.js
+        ext = Path(__file__).resolve().parent.parent / "gnome/extension"
+        indicator, row = (ext / "indicator.js").read_text(), (ext / "ui/sessionRow.js").read_text()
+        for name in ("async stopSession(", "async interruptSession(", "remoteStop(", "remoteEnd(", "remoteInterrupt(",
+                     "remoteDismiss(", "dismissSession("):
+            body = indicator[indicator.index("    " + name):][:700]
+            self.assertTrue("L.keptArgs(this._status, " in body, name)
+        for call in ("ctx.remoteDismiss(remoteHost, s.sessionId, s.chatId || s.sessionId)",
+                     "ctx.dismissSession(s.sessionId, s.chatId || s.sessionId)",
+                     "ctx.remoteEnd(remoteHost, s.sessionId, s.profileDir, busy, s.chatId || s.sessionId)",
+                     "ctx.remoteStop(remoteHost, s.stopCommand, s.chatId || s.sessionId)",
+                     "ctx.stopSession(s.sessionId, s.profileDir, busy, s.chatId || s.sessionId)",
+                     "ctx.remoteInterrupt(remoteHost, s.sessionId, s.profileDir, s.chatId || s.sessionId)",
+                     "ctx.interruptSession(s.sessionId, s.profileDir, s.chatId || s.sessionId)"):
+            self.assertTrue(call in row, call)
+
+    def test_a_host_s_step_just_after_a_stop_is_before_it(self):
+        # (its times put on this computer's clock are a few seconds off at worst: a step up to 5 s after the
+        # stop noted here was written before it there)
+        self.keep()
+        t = self.now_ms
+        td.note_user_stop(self.cache_root(), [self.SID], "lab", now_ms=t)
+        self.answer({"kind": "reply", "at": t + 3000, "ended": False}, at=t + td.KEEP_TAKE_MS + 60_000)
+        self.assertEqual(self.look(t + td.KEEP_TAKE_MS + 60_000), [])
+        self.answer({"kind": "reply", "at": t + 8000, "ended": False}, at=t + td.KEEP_TAKE_MS + 70_000)
+        (task,) = self.look(t + td.KEEP_TAKE_MS + 70_000)
+        self.assertEqual(task["why"], "retry")
 
     def test_a_crash_there_still_goes_on_again(self):
         self.keep()

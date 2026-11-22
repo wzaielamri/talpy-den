@@ -127,7 +127,8 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
         // Hide a finished chat here (nothing is deleted); also one no process runs that a usage
         // limit or an expired login stopped, or that waits for you (talpy_den.row_over)
         const hide = iconButton(Icons.gnome.hide,
-            () => (remoteHost ? ctx.remoteDismiss(remoteHost, s.sessionId) : ctx.dismissSession(s.sessionId)));
+            () => (remoteHost ? ctx.remoteDismiss(remoteHost, s.sessionId, s.chatId || s.sessionId)
+                : ctx.dismissSession(s.sessionId, s.chatId || s.sessionId)));
         tips.add(hide, ['Hide this chat', L.hideHint(remoteHost)]);
         hoverButtons.push(hide);
         end.add_child(hide);
@@ -219,12 +220,13 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
                 // follows the chat): an idle one that got busy since isn't
                 const busy = s.state !== 'idle';
                 ctx.setStopConfirm('');
+                // (a chat that keeps going: noted, it goes on after its next usage limit only)
                 if (remoteHost && canEnd)
-                    ctx.remoteEnd(remoteHost, s.sessionId, s.profileDir, busy);
+                    ctx.remoteEnd(remoteHost, s.sessionId, s.profileDir, busy, s.chatId || s.sessionId);
                 else if (remoteHost)
-                    ctx.remoteStop(remoteHost, s.stopCommand);
+                    ctx.remoteStop(remoteHost, s.stopCommand, s.chatId || s.sessionId);
                 else
-                    ctx.stopSession(s.sessionId, s.profileDir, busy);
+                    ctx.stopSession(s.sessionId, s.profileDir, busy, s.chatId || s.sessionId);
             }],
             ['Cancel', '', () => ctx.setStopConfirm('')],
         ];
@@ -232,9 +234,9 @@ export function buildSessionRow(ctx, session, {showProfile = false, remoteHost =
             buttons.unshift(['Interrupt', Icons.gnome.interrupt, () => {
                 ctx.setStopConfirm('');
                 if (remoteHost)
-                    ctx.remoteInterrupt(remoteHost, s.sessionId, s.profileDir);
+                    ctx.remoteInterrupt(remoteHost, s.sessionId, s.profileDir, s.chatId || s.sessionId);
                 else
-                    ctx.interruptSession(s.sessionId, s.profileDir);
+                    ctx.interruptSession(s.sessionId, s.profileDir, s.chatId || s.sessionId);
             }]);
         }
         body.add_child(confirmBox(L.stopQuestion(s), buttons));

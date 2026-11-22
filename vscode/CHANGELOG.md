@@ -69,7 +69,11 @@
   API error, or whose process ended with no stop of yours (a crash), still
   tries again. A window read after a stop counts as reset early only below
   50%. Hiding a kept chat cancels its queued go-on too. One window or widget
-  looks after kept chats at a time, the lower usage cap first, and a host
+  looks after kept chats at a time, the lower usage cap first, and the window
+  that cap holds shows as the account's cap everywhere, so queued tasks and
+  go-ons wait for it. A host's chat stopped by its stop command is noted once
+  the command ran there. A go-on after the usage cap stays through a Stop.
+  A host
   that isn't shown, with only idle kept chats, is checked every 5 minutes.
   The one-off Go on at … says it goes on once.
 

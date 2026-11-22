@@ -5157,7 +5157,8 @@ KEEP_HOST_STALE_MS = 15 * 60_000
 
 def load_keep(cache_root):
     """{"chats": the chats that keep going, "capped": {account|window: when
-    that window resets}, for the windows the usage cap stopped chats in,
+    that window resets}, for the windows the usage cap stopped chats in
+    ("cappedBy": {account|window: {"by": the copy, "pct": its cap}}),
     "looked": {"at", "by", "cap"}: the copy that last looked after them}."""
     data = read_json(state_dir(cache_root) / "keep.json")
     data = data if isinstance(data, dict) else {}
@@ -5169,8 +5170,13 @@ def load_keep(cache_root):
     for k in chats:
         k["host"] = k.get("host") or ""  # (this computer's)
     looked = data.get("looked") if isinstance(data.get("looked"), dict) else {}
+    capped = {w: at for w, at in capped.items() if isinstance(w, str) and number(at) is not None}
+    by = data.get("cappedBy") if isinstance(data.get("cappedBy"), dict) else {}
     return {"chats": chats,
-            "capped": {w: at for w, at in capped.items() if isinstance(w, str) and number(at) is not None},
+            "capped": capped,
+            # (the copy whose cap set each, and that cap: it releases its own once its cap doesn't hold it)
+            "cappedBy": {w: {"by": v.get("by") if isinstance(v.get("by"), str) else "", "pct": int(number(v.get("pct")) or 0)}
+                         for w, v in by.items() if w in capped and isinstance(v, dict)},
             # (the copy that looked after them last, when, with what usage cap: look_after_kept)
             "looked": {"at": int(number(looked.get("at")) or 0), "by": looked.get("by") if isinstance(looked.get("by"), str) else "",
                        "cap": int(number(looked.get("cap")) or 0)}}
@@ -5422,14 +5428,19 @@ def interrupted_note(e):
             and message_text(e.get("message")).lstrip().startswith("[Request interrupted"))
 
 
-def kept_step(k, turn, row, queued, limits, now_ms):
+KEEP_HOST_CLOCK_MS = 5000  # a host's times on this computer's clock may be this far off (its answer's offset)
+
+
+def kept_step(k, turn, row, queued, limits, now_ms, margin=0):
     """What to do now about the chat that keeps going k (keep.json's entry,
     changed in place: tries, note, error), whose newest turn is turn
     (last_turn), whose row in the status (its process) is row, and whose
     account's plan limits are limits: ("go on", when, why, prompt) to queue
     its go-on, or None (nothing for now). Never that it's done: it keeps
     going until you switch it off (see above). A stop of yours ("stoppedAt",
-    note_user_stop) is you taking over: nothing before it goes on again."""
+    note_user_stop) is you taking over: nothing before it goes on again
+    (margin: how far after the stop a step still counts as before it, a
+    host's, whose times are put on this computer's clock)."""
     k["note"] = ""
     if queued:
         return None  # its go-on waits (or couldn't start, and says why)
@@ -5462,6 +5473,7 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     if turn is None:
         return None
     at, went, stopped = turn["at"], k.get("wentOnAt") or 0, number(k.get("stoppedAt")) or 0
+    stopped = stopped + margin if stopped else 0
     if k.get("error"):
         if at <= (k.get("errorAt") or 0):
             return None  # it gave up; something new in the chat starts it over
@@ -5516,6 +5528,29 @@ def cap_window(group, cap, now_ms):
                 and (best is None or at > best["resetsAt"]):
             best = w
     return best
+
+
+def note_held_caps(groups, cache_root, now_ms):
+    """The windows a usage cap holds (keep.json's "capped": set by the copy
+    that looks after the chats that keep going, the one with the lowest cap,
+    look_skipped): an account whose own cap (note_caps) doesn't hold one
+    until as late is marked at the cap till then (group["cap"], with
+    "held"), so every front end's queued tasks and go-ons wait for it
+    (limitReset), whatever its own cap."""
+    data = load_keep(cache_root)
+    for g in groups:
+        keys = "|".join(g.get("profileKeys") or [])
+        best = None
+        for mark, at in data["capped"].items():
+            if mark.rpartition("|")[0] == keys and at > now_ms and (best is None or at > best[1]):
+                best = (mark, at)
+        mine = g.get("cap")
+        if best is None or (mine and mine["resetsAt"] >= best[1]):
+            continue
+        key = best[0].rpartition("|")[2]
+        g["cap"] = {"pct": (data["cappedBy"].get(best[0]) or {}).get("pct") or 0,
+                    "label": WINDOW_LABELS.get(key, key.replace("_", " ")), "key": key, "resetsAt": int(best[1]),
+                    "held": True}
 
 
 def note_caps(groups, cap, now_ms):
@@ -5586,16 +5621,22 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
         if look_skipped(data, keeper, cap, now_ms):
             return False
         changed = data.get("looked") != before_looked
+        own = {"|".join(g.get("profileKeys") or []) + "|" + g["cap"]["key"]
+               for g in groups if g.get("cap") and not g["cap"].get("held")}
         for mark, at in list(data["capped"].items()):
-            if at <= now_ms:  # (that window is over)
+            # (that window is over; or this copy set it and its cap doesn't hold it now: switched off, raised,
+            # or the window reset early)
+            if at <= now_ms or ((data["cappedBy"].get(mark) or {}).get("by") == keeper and mark not in own):
                 del data["capped"][mark]
+                data["cappedBy"].pop(mark, None)
                 changed = True
         for g in groups:
             w = g.get("cap")
             mark = "|".join(g.get("profileKeys") or []) + "|" + (w["key"] if w else "")
-            if not w or mark in data["capped"]:
+            if not w or w.get("held") or mark in data["capped"]:
                 continue
             data["capped"][mark] = w["resetsAt"]
+            data["cappedBy"][mark] = {"by": keeper, "pct": cap or 0}
             changed = True
             for s in g.get("sessions", []):
                 if s.get("pid") is not None and s.get("state") == "working":
@@ -5634,8 +5675,9 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                 k["cappedUntil"] = None
             elif task is not None:
                 # (what a copy with a lower usage cap holds: its window's reset, keep.json's "capped")
-                mine = "|".join((g or {}).get("profileKeys") or []) + "|"
-                held = max((at for mark, at in data["capped"].items() if mark.startswith(mine) and at > now_ms), default=None)
+                mine = "|".join((g or {}).get("profileKeys") or [])
+                held = max((at for mark, at in data["capped"].items() if mark.rpartition("|")[0] == mine and at > now_ms),
+                           default=None)
                 when = sooner_go_on(k, task, turn, row, g, now_ms, held=held)
                 if when is not None:
                     sooner.append((task, when))
@@ -5864,7 +5906,7 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms, sooner=None):
     turn = shifted(turns[chat].get("turn"), offset)
     # (its go-on queued under the id it had counts too, until remote.py's check follows it: follow_host_moves)
     task = queued.get((k["host"], chat)) or queued.get((k["host"], old))
-    step = kept_step(k, turn, rows.get(chat), task is not None, shifted(limits, offset), seen["at"])
+    step = kept_step(k, turn, rows.get(chat), task is not None, shifted(limits, offset), seen["at"], KEEP_HOST_CLOCK_MS)
     if step is not None:
         _, start, why, prompt = step
         adds.append(queue_entry(k["profile"], k.get("folder") or "", prompt, int(start), host=k["host"],
@@ -12350,6 +12392,11 @@ def collect(home, cache_root, extra_dirs=(), with_tokens=True, now=None, keep_do
         errors.append(f"queued tasks: {exc}")
         queue = []
     note_caps(groups, usage_cap, now_ms)  # (an account at the usage cap: g["cap"])
+    if not remote:   # (or at another copy's lower one, which holds its window: keep.json)
+        try:
+            note_held_caps(groups, cache_root, now_ms)
+        except (OSError, ValueError) as exc:
+            errors.append(f"usage cap: {exc}")
     return {
         "ok": True,
         "generatedAt": now_ms,

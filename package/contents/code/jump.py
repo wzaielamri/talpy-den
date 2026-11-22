@@ -2028,20 +2028,21 @@ def go_on_waits(cache_root, entry, answer, due, now_ms, out):
 
 
 def stopped_since(cache_root, entry):
-    """Whether a forced go-on of a chat that keeps going (why "retry" or
-    "cap": it goes on whatever its newest turn) was queued before a stop of
-    yours (td.note_user_stop: you took over): then it doesn't go on, and
+    """Whether a try again of a chat that keeps going (why "retry": forced,
+    it goes on whatever its newest turn) was queued before a stop of yours
+    (td.note_user_stop: you took over): then it doesn't go on, and
     go-on.log says so. (The stop takes out the tries again that are queued;
-    one a copy read before it can reach --start-queued after it.)"""
-    if not entry.get("chat") or entry.get("why") not in ("retry", "cap") or entry.get("afterTurn"):
+    one a copy read before it can reach --start-queued after it.) Not a
+    go-on after the usage cap: the cap paused the chat, as a limit does,
+    and a limit's go-on stays through a stop (it says "Goes on at …")."""
+    if not entry.get("chat") or entry.get("why") != "retry" or entry.get("afterTurn"):
         return False
     host = entry.get("host") or ""
     k = next((k for k in td.load_keep(cache_root)["chats"] if k["chat"] == entry["chat"] and k["host"] == host), None)
     if k is None or (td.number(k.get("stoppedAt")) or 0) <= (td.number(entry.get("createdAt")) or 0):
         return False
-    td.log_go_on(cache_root, f"“{entry.get('name') or entry['chat'][:8]}” didn't "
-                             + ("try again" if entry["why"] == "retry" else "go on after the usage cap")
-                             + ": you stopped it since" + (f" · {host}" if host else ""))
+    td.log_go_on(cache_root, f"“{entry.get('name') or entry['chat'][:8]}” didn't try again: you stopped it since"
+                             + (f" · {host}" if host else ""))
     return True
 
 

@@ -3367,11 +3367,9 @@ PlasmoidItem {
 
     // keptChat (here and below): the chat that keeps going it is, if it does: a stop of yours is you
     // taking over, so it goes on after its next usage limit only (jump.py --kept, --user-stopped)
+    // (a stop command there: remote.py notes the stop once it ran, not before it landed, nor one that failed)
     function remoteStop(host, command, keptChat) {
-        remoteAction("stop", host, "--run " + shellQuote(host) + " " + shellQuote(command))
-        if (keptChat)   // (its stop command there can't take it)
-            stopper.connectSource("python3 -I " + shellQuote(codeDir + "jump.py") + " --user-stopped " + shellQuote(keptChat)
-                                  + " --host " + shellQuote(host) + configDirArgs + " # " + Date.now())
+        remoteAction("stop", host, "--run " + shellQuote(host) + " " + shellQuote(command) + keptArg(keptChat))
     }
     function keptArg(keptChat) {
         return keptChat ? " --kept " + shellQuote(keptChat) : ""

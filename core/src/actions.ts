@@ -439,10 +439,10 @@ export class Actions {
       answer = await this.backend.action("remote.py", ["--end", chat.host, chat.sessionId, ...(chat.profileDir ? [chat.profileDir] : []), ...(busy ? ["--busy"] : []), ...off]);
     } else if (chat.host) {
       if (!chat.stopCommand) return this.fail(`${chat.name} can't be stopped from here.`);
-      answer = await this.backend.action("remote.py", ["--run", chat.host, chat.stopCommand]);
-      // (its stop command there can't take it: off at once, or noted)
+      // (Stop alone: noted once the command ran there, remote.py --run --kept)
+      answer = await this.backend.action("remote.py", ["--run", chat.host, chat.stopCommand, ...(choice === keepOff ? [] : this.keptArgs(chat))]);
+      // (its stop command there can't take it: off at once)
       if (choice === keepOff && kept) await this.backend.action("jump.py", ["--keep-off", kept.chat, "--host", chat.host, ...configDirArgs()]);
-      else if (answer.ok) await this.userStopped(chat);
     } else {
       const profile = chat.profileDir ? ["--profile", chat.profileDir] : [];
       const off = choice === keepOff && kept ? ["--and-keep-off", kept.chat] : this.keptArgs(chat);

@@ -596,10 +596,11 @@ class TalpyDenIndicator extends PanelMenu.Button {
     }
 
     // busy: you were told it's working or waiting (else only an idle one is stopped)
-    async stopSession(sessionId, profileDir, busy = false) {
+    // chatId (here and below): the row's chat, for one that keeps going (L.keptArgs)
+    async stopSession(sessionId, profileDir, busy = false, chatId = sessionId) {
         const profile = profileDir ? ['--profile', profileDir] : [];
         const result = await this._helper('jump.py',
-            ['--stop', sessionId, ...profile, ...busy ? ['--busy'] : [], ...this._configDirArgs]);
+            ['--stop', sessionId, ...profile, ...busy ? ['--busy'] : [], ...L.keptArgs(this._status, chatId, ''), ...this._configDirArgs]);
         if (this._destroyed)
             return;   // turned off meanwhile (e.g. the screen locked)
         if (!result.ok)
@@ -610,9 +611,10 @@ class TalpyDenIndicator extends PanelMenu.Button {
     }
 
     // Esc in the tmux pane of a working chat
-    async interruptSession(sessionId, profileDir) {
+    async interruptSession(sessionId, profileDir, chatId = sessionId) {
         const profile = profileDir ? ['--profile', profileDir] : [];
-        const result = await this._helper('jump.py', ['--interrupt', sessionId, ...profile, ...this._configDirArgs]);
+        const result = await this._helper('jump.py',
+            ['--interrupt', sessionId, ...profile, ...L.keptArgs(this._status, chatId, ''), ...this._configDirArgs]);
         if (this._destroyed)
             return;
         if (!result.ok)
@@ -630,8 +632,8 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this.refresh();
     }
 
-    dismissSession(sessionId) {
-        this.runHelper(['--dismiss', sessionId]);
+    dismissSession(sessionId, chatId = sessionId) {
+        this.runHelper(['--dismiss', sessionId, ...L.keptArgs(this._status, chatId, '')]);
     }
 
     // The menu's Show Hidden Chats Again: its answer says how many
@@ -1202,22 +1204,25 @@ class TalpyDenIndicator extends PanelMenu.Button {
         this._remoteAction('open', host, ['--open', host, command]);
     }
 
-    remoteStop(host, command) {
-        this._remoteAction('stop', host, ['--run', host, command]);
+    // (its stop command: remote.py notes a chat that keeps going stopped once the command ran there)
+    remoteStop(host, command, chatId = '') {
+        this._remoteAction('stop', host, ['--run', host, command, ...L.keptArgs(this._status, chatId, host)]);
     }
 
     // A chat with a process on the host (talpy_den.py --end there; busy:
     // you were told it's working or waiting), or one in tmux interrupted
-    remoteEnd(host, sessionId, profileDir, busy = false) {
-        this._remoteAction('stop', host, ['--end', host, sessionId, ...profileDir ? [profileDir] : [], ...busy ? ['--busy'] : []]);
+    remoteEnd(host, sessionId, profileDir, busy = false, chatId = sessionId) {
+        this._remoteAction('stop', host, ['--end', host, sessionId, ...profileDir ? [profileDir] : [], ...busy ? ['--busy'] : [],
+            ...L.keptArgs(this._status, chatId, host)]);
     }
 
-    remoteInterrupt(host, sessionId, profileDir) {
-        this._remoteAction('stop', host, ['--interrupt', host, sessionId, ...profileDir ? [profileDir] : []]);
+    remoteInterrupt(host, sessionId, profileDir, chatId = sessionId) {
+        this._remoteAction('stop', host, ['--interrupt', host, sessionId, ...profileDir ? [profileDir] : [],
+            ...L.keptArgs(this._status, chatId, host)]);
     }
 
-    remoteDismiss(host, sessionId) {
-        this._remoteAction('dismiss', host, ['--dismiss', host, sessionId]);
+    remoteDismiss(host, sessionId, chatId = sessionId) {
+        this._remoteAction('dismiss', host, ['--dismiss', host, sessionId, ...L.keptArgs(this._status, chatId, host)]);
     }
 
     remoteUndismissAll(host) {

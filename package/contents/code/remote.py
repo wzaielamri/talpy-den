@@ -12,7 +12,8 @@
     python3 -I remote.py --status HOST [--done-hours H] [--recent N] [--plans N] [--memories N] [--no-tokens]
                                      [--usage-refresh N]
     python3 -I remote.py --open HOST COMMAND        a terminal running COMMAND on HOST
-    python3 -I remote.py --run HOST COMMAND         run COMMAND on HOST (e.g. claude stop)
+    python3 -I remote.py --run HOST COMMAND [--kept CHAT_ID]   run COMMAND on HOST (e.g. claude stop; --kept:
+                     the chat that keeps going it stopped, noted once it ran: it goes on after its next limit only)
     python3 -I remote.py --end HOST SESSION_ID [PROFILE] [--busy] [--keep-off CHAT_ID | --kept CHAT_ID]   stop a chat in a terminal or VS Code there
                      (--keep-off: and once it's stopped, that chat doesn't keep going any more)
     python3 -I remote.py --interrupt HOST SESSION_ID [PROFILE] [--kept CHAT_ID]   interrupt a working chat in tmux there (or in the background)
@@ -1612,8 +1613,14 @@ def main(argv=None):
                 else:
                     sys.exit(USAGE)
             out = status(host, **kw)
-        elif action in ("--open", "--run") and len(args) == 2:
-            ok, message = (open_remote if action == "--open" else run)(args[0], args[1])
+        elif action == "--open" and len(args) == 2:
+            ok, message = open_remote(args[0], args[1])
+            out = {"ok": ok, "message": message}
+        elif action == "--run" and len(kept_arg(args)[0]) == 2:
+            args, kept = kept_arg(args)
+            ok, message = run(args[0], args[1])
+            if ok and kept:  # (a chat's stop command: once it ran there, you took over, td.note_user_stop)
+                td.note_user_stop(td.cache_dir(Path.home()), [kept], args[0])
             out = {"ok": ok, "message": message}
         elif action == "--dismiss" and len(kept_arg(args)[0]) == 2:
             args, kept = kept_arg(args)
