@@ -38,7 +38,8 @@
             }
             return null
         }
-        function listOf(win) { return find(win.contentItem, o => o.cacheBuffer === 100000) }
+        // (the conversation: the list with a line between days; its cacheBuffer is smaller while rows are made)
+        function listOf(win) { return find(win.contentItem, o => typeof o.cacheBuffer === "number" && o.section && o.section.property === "day") }
         function boxOf(win) {
             return find(win.contentItem, o => typeof o.placeholderText === "string" && o.placeholderText.indexOf("Reply to Claude") === 0)
         }
@@ -262,11 +263,239 @@
                 win.limit = 500
                 win.stamp = ""
                 win.load()
-                when(() => win.loaded && win.lastItems.length >= 500, () => after(3000, () =>
+                when(() => win.loaded && win.lastItems.length >= 500 && win.fillBuffer < 0, () => after(3000, () =>
                     scrollTab(win, "chat", () => {
                         win.tab = "steps"
-                        after(3000, () => scrollTab(win, "steps", done))
-                    })), 30000, "500 items")
+                        after(3000, () => scrollTab(win, "steps", () => {
+                            win.tab = "chat"
+                            const tester = Qt.createQmlObject("import QtTest; TestCase { when: false; name: 'bench' }", bench)
+                            after(3000, () => pace(win, tester, false, () => after(1500, () => pace(win, tester, true, done))))
+                        }))
+                    })), 60000, "500 items, every row made")
+            })
+        }
+        // The window drawn as fast as it can while the list moves 12 px a frame (a wheel's pace, 720 px a
+        // second at 60) for 240 frames, the pointer away from the list, then over it (what's under it is
+        // looked up again as the rows move under it: Qt's hover, the message's tools): each frame's time, and
+        // the script a move runs at once (the list's handlers, the bindings that read where it is: ms, and
+        // 50 moves timed together for less than a ms each). Marks around it: bench.py reads Qt's own timing
+        // of each frame between them (its renderloop lines)
+        function pace(win, tester, over, cb) {
+            const list = listOf(win), step = 12, n = 240
+            const bottom = Math.max(list.originY, list.originY + list.contentHeight - list.height)
+            list.contentY = Math.max(list.originY, bottom - 4000)
+            if (over)
+                tester.mouseMove(list, list.width / 2, list.height / 2)
+            else
+                tester.mouseMove(win.contentItem, win.contentItem.width / 2, 2)
+            after(1500, () => {
+                const label = over ? "pointer over the list" : "pointer away"
+                const t0 = Date.now()
+                for (let k = 0; k < 50; k++)
+                    list.contentY += k % 2 ? 1 : -1
+                const batch = (Date.now() - t0) / 50
+                const frames = []
+                let last = 0, script = 0, moved = 0
+                log("mark", { name: "pace-start", label: label })
+                const f = function() {
+                    const t = Date.now()
+                    if (last)
+                        frames.push(t - last)
+                    last = t
+                    if (moved >= n) {
+                        win.frameSwapped.disconnect(f)
+                        log("mark", { name: "pace-end", label: label })
+                        const s = frames.slice().sort((x, y) => x - y)
+                        const ms = frames.reduce((x, y) => x + y, 0)
+                        log("pace", { label: label, hovered: list.hoverRow !== undefined ? list.hoverRow !== null : null, frames: frames.length,
+                                      fps: Math.round(frames.length * 10000 / ms) / 10, p50: s[Math.floor(s.length * 0.5)],
+                                      p95: s[Math.floor(s.length * 0.95)], max: s[s.length - 1], scriptMsPerFrame: Math.round(script / moved * 100) / 100,
+                                      moveMs: Math.round(batch * 1000) / 1000 })
+                        cb()
+                        return
+                    }
+                    const a = Date.now()
+                    list.contentY -= step
+                    script += Date.now() - a
+                    moved++
+                }
+                win.frameSwapped.connect(f)
+                list.contentY -= 1
+            })
+        }
+
+        // ---------------------------------------------------------------- the wheel, frame by frame
+        // What the conversation shows at each frame for one input at a time: a wheel notch, quick
+        // spins, a touchpad's stream at 60, 90 and 125 events a second (as Plasma's Wayland gives
+        // them: per event, the finger's move in angle eighths of a degree, 12 for each pixel, and in
+        // whole pixels, the rest carried), a slow touchpad drag, and the scroll bar dragged. Run with
+        // Qt Quick's threaded loop (bench.py): the window is drawn once a vsync of 60 Hz and the
+        // animations step once a frame, as on a screen. The events go by a frame clock (frame n at
+        // n × 1000/60.03 ms, the owner's screen): each is given as the frame it would come before is
+        // about to be drawn (afterAnimating), and the list's place is read then, so every frame's
+        // place is what that frame shows, whatever the offscreen computer's own pace
+        readonly property real frameMs: 1000 / 60.03
+        function touchpad(hz, speed, ms, start) {
+            // (Wayland: a ScrollBegin, ScrollUpdates of the finger's move, then a ScrollEnd as it lifts)
+            const out = [{ t: start, phase: Qt.ScrollBegin, angle: 0, pixel: 0 }]
+            let rest = 0
+            for (let t = start; t <= start + ms; t += 1000 / hz) {
+                const d = speed / hz
+                const px = Math.round(d + rest)
+                rest += d - px
+                out.push({ t: t, phase: Qt.ScrollUpdate, angle: Math.round(12 * d), pixel: px })
+            }
+            out.push({ t: start + ms + 1000 / hz, phase: Qt.ScrollEnd, angle: 0, pixel: 0 })
+            return out
+        }
+        function notches(n, gap) {
+            const out = []
+            for (let i = 0; i < n; i++)
+                out.push({ t: i * gap, phase: Qt.NoScrollPhase, angle: 120, pixel: 0 })
+            return out
+        }
+        function runWheel() {
+            open(ids.long, "long chat", win => {
+                win.limit = 500
+                win.stamp = ""
+                win.load()
+                when(() => win.loaded && win.lastItems.length >= 500 && win.fillBuffer < 0, () => after(3000, () => {
+                    const list = listOf(win)
+                    log("fonts", { chat: fonts(list.contentItem, list), popup: fonts(root.fullRepresentationItem, null) })
+                    const tester = Qt.createQmlObject("import QtTest; TestCase { when: false; name: 'bench' }", bench)
+                    const runs = [
+                        ["one notch", notches(1, 0)],
+                        ["spin, 6 notches 50 ms apart", notches(6, 50)],
+                        ["spin, 8 notches 25 ms apart", notches(8, 25)],
+                        ["touchpad 60 Hz", touchpad(60, 200, 600, 5.3)],
+                        ["touchpad 90 Hz", touchpad(90, 200, 600, 5.3)],
+                        ["touchpad 125 Hz", touchpad(125, 200, 600, 5.3)],
+                        ["touchpad 125 Hz, slow", touchpad(125, 50, 800, 5.3)],
+                        ["scroll bar dragged", "bar"]]
+                    chain(runs.map(r => next => motion(win, list, tester, r[0], r[1], () => after(800, next)))
+                          .concat([next => done()]))
+                }), 60000, "500 items, every row made")
+            })
+        }
+        // The texts in view (in the list: its rows in view) and how they're drawn: render type, family, size in
+        // px (a point is 96/72 px at scale 1), line height, and how many start at a fraction of a pixel
+        function fonts(item, list) {
+            const texts = []
+            const walk = function(o) {
+                if (!o || o.visible === false)
+                    return
+                if (typeof o.renderType === "number" && typeof o.text === "string" && o.text !== "" && o.font)
+                    texts.push(o)
+                const kids = o.children || []
+                for (let i = 0; i < kids.length; i++)
+                    walk(kids[i])
+            }
+            walk(item)
+            const out = { texts: 0, renderTypes: {}, families: {}, px: {}, lineHeights: {}, fractionalY: 0 }
+            for (const t of texts) {
+                const y = t.mapToItem(list || item, 0, 0).y
+                if (list && (y < -t.height || y > list.height))
+                    continue
+                out.texts++
+                out.renderTypes[t.renderType === Text.NativeRendering ? "native" : t.renderType === Text.QtRendering ? "qt" : "curve"] =
+                    (out.renderTypes[t.renderType === Text.NativeRendering ? "native" : t.renderType === Text.QtRendering ? "qt" : "curve"] || 0) + 1
+                out.families[t.font.family] = (out.families[t.font.family] || 0) + 1
+                const px = t.font.pixelSize > 0 ? t.font.pixelSize : Math.round(t.font.pointSize * 96 / 72 * 100) / 100
+                out.px[px] = (out.px[px] || 0) + 1
+                if (t.lineCount > 1) {
+                    const lh = Math.round(t.contentHeight / t.lineCount * 100) / 100
+                    out.lineHeights[lh] = (out.lineHeights[lh] || 0) + 1
+                }
+                const sy = t.mapToItem(null, 0, 0).y
+                if (Math.abs(sy - Math.round(sy)) > 0.001)
+                    out.fractionalY++
+            }
+            return out
+        }
+        function scrollBar(list) {
+            return find(list.parent, o => o !== list && o.orientation === Qt.Vertical && typeof o.position === "number"
+                                          && typeof o.size === "number" && o.minimumSize !== undefined)
+        }
+        function motion(win, list, tester, label, input, cb) {
+            const bottom = Math.max(list.originY, list.originY + list.contentHeight - list.height)
+            list.contentY = Math.max(list.originY, bottom - 6000)
+            const x = list.width / 2, y = list.height / 2
+            tester.mouseMove(list, x, y)   // (the pointer over the list, as it is when you scroll it)
+            const scroller = list.wheelScroller || null   // (a scroller of the list's own, if it has one: given the events with their phases)
+            let events = []
+            if (input === "bar") {
+                const bar = scrollBar(list)
+                const at = bar.topPadding + (bar.position + bar.size / 2) * (bar.height - bar.topPadding - bar.bottomPadding)
+                events.push({ t: 0, fn: () => tester.mousePress(bar, bar.width / 2, at, Qt.LeftButton) })
+                // (the pointer moved 1 px at a time at 125 a second for 0.5 s: 62 px)
+                for (let i = 1; i <= 62; i++)
+                    events.push({ t: 4 + i * 8, fn: (k => () => tester.mouseMove(bar, bar.width / 2, at - k, -1, Qt.LeftButton))(i) })
+                events.push({ t: 4 + 63 * 8, fn: () => tester.mouseRelease(bar, bar.width / 2, at - 62, Qt.LeftButton) })
+            } else {
+                events = input.map(e => ({ t: e.t, fn: () => {
+                    if (scroller)
+                        scroller.take({ angleDelta: Qt.point(0, e.angle), pixelDelta: Qt.point(0, e.pixel), phase: e.phase, modifiers: 0 })
+                    else if (e.angle !== 0)   // (Kirigami's WheelHandler: the angle, whatever the phase)
+                        tester.mouseWheel(list, x, y, 0, e.angle)
+                } }))
+            }
+            // The frame clock is the animation steps (a FrameAnimation's): one a vsync, as on a screen. Just
+            // after each step (Qt.callLater: when the step's animations are all done, before the next frame is
+            // drawn), the events that come before the next step are given and the list's place is read: what
+            // the next frame shows. (Not each frame drawn: the offscreen loop sometimes draws one with no step
+            // since the one before, or takes two steps between two it draws; a pixel of nothing in the window
+            // changes each step, so it draws one a step as far as it can)
+            const poke = Qt.createQmlObject("import QtQuick; Rectangle { width: 1; height: 1; color: 'transparent'; opacity: 0.5 }", win.contentItem)
+            const keep = Qt.createQmlObject("import QtQuick; FrameAnimation { running: true; property Item poke; signal step(); "
+                                            + "onTriggered: { poke.opacity = poke.opacity > 0.55 ? 0.5 : 0.6; step() } }", bench)
+            keep.poke = poke
+            let frames = 0
+            const drawn = function() { frames++ }
+            after(600, () => {
+                const ys = [], ts = [], given = []
+                let i = 0, still = 0, over = false, c = 0, hoverChanges = 0
+                const t0 = Date.now()
+                const onHover = function() { hoverChanges++ }
+                const onStep = function() { Qt.callLater(sample) }
+                win.frameSwapped.connect(drawn)
+                log("mark", { name: "motion-start", label: label })
+                function sample() {
+                    if (over)
+                        return
+                    if (c === 0) {   // (where it was before any input: a scroller that moves at once moves in the next)
+                        given.push(0)
+                        ys.push(list.contentY)
+                        ts.push(Date.now() - t0)
+                    }
+                    let k = 0
+                    while (i < events.length && events[i].t <= (c + 1) * frameMs) {
+                        events[i].fn()
+                        i++
+                        k++
+                    }
+                    c++
+                    given.push(k)
+                    ys.push(list.contentY)
+                    ts.push(Date.now() - t0)
+                    const n = ys.length - 1
+                    still = n > 0 && ys[n] === ys[n - 1] ? still + 1 : 0
+                    if ((i >= events.length && still >= 45) || n > 600) {   // (0.75 s still after the last event)
+                        over = true
+                        keep.step.disconnect(onStep)
+                        win.frameSwapped.disconnect(drawn)
+                        log("mark", { name: "motion-end", label: label })
+                        keep.running = false
+                        keep.destroy()
+                        poke.destroy()
+                        const m = ys.length - 45
+                        log("motion", { label: label, ys: ys.slice(0, m), given: given.slice(0, m), ms: ts.slice(0, m),
+                                        framesDrawn: frames, steps: c, scroller: scroller !== null, hoverRowChanges: hoverChanges })
+                        list.hoverRowChanged.disconnect(onHover)
+                        cb()
+                    }
+                }
+                list.hoverRowChanged.connect(onHover)
+                keep.step.connect(onStep)
             })
         }
         function scrollTab(win, tab, cb) {
@@ -642,7 +871,7 @@
             // widget's first checks to settle
             when(() => rowOf(ids.short) !== null && rowOf(ids.long) !== null, () => {
                 log("start", { scenario: scenario, listed: rowOf(ids.short) !== null })
-                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, idle: runIdle, find: runFind, bookmarks: runBookmarks,
+                after(3000, () => ({ open: runOpen, send: runSend, turn: runTurn, scroll: runScroll, wheel: runWheel, idle: runIdle, find: runFind, bookmarks: runBookmarks,
                                      first: () => open(ids.short, "first window (short chat)", w => after(1500, done)) })[scenario]())
             }, 60000, "the made-up chats listed")
         }

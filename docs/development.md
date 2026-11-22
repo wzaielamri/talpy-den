@@ -4,6 +4,7 @@
 python3 -m unittest discover -s tests           # the test suite
 tools/render_popup.sh /tmp/popup.png            # screenshot of the repo's popup (offscreen), QML messages in /tmp/popup.log
 tools/bench/bench.py all                        # Talpy Chat's timings and idle CPU (offscreen, made-up chats); tools/bench/vscode_bench.py: VS Code's
+tools/bench/bench.py wheel                      # what Talpy Chat shows frame by frame for a wheel notch, a spin, a touchpad, the scroll bar; tools/bench/wheel_vscode.py: VS Code's
 kpackagetool6 -t Plasma/Applet -u package       # reinstall after changes
 plasmawindowed org.wzaielamri.talpyden      # run the installed widget in a window
 ```

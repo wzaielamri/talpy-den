@@ -4,13 +4,18 @@ widget from this repository rendered offscreen (tools/render_popup.sh) on
 made-up chats (fake_chats.py, in a home folder of their own), with
 bench.qml driving its Talpy Chat windows.
 
-    tools/bench/bench.py [open|send|turn|scroll|idle|find|bookmarks|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
+    tools/bench/bench.py [open|send|turn|scroll|wheel|idle|find|bookmarks|reads|all ...] [--out DIR] [--idle-seconds N] [--warm]
 
     open    opening a chat's window: first window, a new one, a closed one again (short and long chat)
     first   the first window only (open's first number, quicker: for comparing two packages often)
     send    Enter → your message shown (5 messages)
     turn    turn's end → shown, and → its chips drawn (5 turns appended line by line to a transcript)
-    scroll  a 500-item chat scrolled end → top → end, on the Chat and Steps tabs
+    scroll  a 500-item chat scrolled end → top → end, on the Chat and Steps tabs; then moved 12 px a frame
+            (a wheel's pace) as fast as it's drawn, the pointer away and over the list: each frame's time,
+            the script a move runs, and Qt's own timing of each frame (polish, render, the rest)
+    wheel   what the 500-item chat shows frame by frame (Qt Quick's threaded loop, a frame a vsync) for a
+            wheel notch, quick spins, a touchpad's stream at 60, 90 and 125 events a second, a slow drag
+            and the scroll bar dragged: each frame's step in px, and how even they are
     idle    CPU of the offscreen plasmawindowed: no window, a window open, closed (60 s each)
     find    Talpy Chat's search on a 500-item chat (Steps tab): till all is searched, the longest the
             window waits meanwhile (a 5 ms timer's late ticks), steps to matches; and Ctrl+O on a chat
@@ -51,8 +56,8 @@ REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
 import fake_chats  # noqa: E402
 
-SCENARIOS = ("open", "send", "turn", "scroll", "idle", "find", "first", "bookmarks")
-SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 90, "find": 90, "first": 30, "bookmarks": 150}   # (the render's limit; each ends sooner)
+SCENARIOS = ("open", "send", "turn", "scroll", "wheel", "idle", "find", "first", "bookmarks")
+SECONDS = {"open": 60, "send": 50, "turn": 70, "scroll": 120, "wheel": 240, "find": 90, "first": 30, "bookmarks": 150}   # (the render's limit; each ends sooner)
 TICK = os.sysconf("SC_CLK_TCK")
 RENDER_ID = "org.wzaielamri.talpyden.rendertest"
 
@@ -177,6 +182,12 @@ def render(scenario, out, idle_s, keep=None):
             .replace("__IDS__", json.dumps(ids)).replace("__IDLE_MS__", str(int(idle_s * 1000)))
         env = env_for(home)
         env.update(EXTRA=extra, PATCH="python3 -I " + str(HERE / "patch_pkg.py"))
+        if scenario == "scroll":   # (Qt's own timing of each frame: polish, render, swap, and the time between)
+            env["QT_LOGGING_RULES"] = "qt.scenegraph.time.renderloop.debug=true"
+        if scenario == "wheel":   # (a frame a vsync, animations a step a frame, as plasmashell draws on a screen; Qt's timing)
+            env["QSG_RENDER_LOOP"] = "threaded"
+            env["QT_LOGGING_RULES"] = "qt.scenegraph.time.renderloop.debug=true"
+            env["QSG_RENDER_TIMING"] = "1"
         if keep:
             env["RENDER_KEEP"] = str(keep)
         png = out / f"{scenario}.png"
@@ -239,8 +250,139 @@ def report_turn(lines, written):
             "max_chips_frame_ms": round(max(chips), 1) if chips else None, "chips_runs": len(chips)}
 
 
-def report_scroll(lines):
-    return {d["tab"]: d for k, d in lines if k == "scroll"}
+FRAME = re.compile(r"Frame rendered with '\w+' renderloop in (\d+)ms, polish=(\d+), sync=(\d+), render=(\d+), swap=(\d+), "
+                   r"frameDelta=(\d+)")
+
+
+def report_scroll(lines, log=None):
+    """The end → top → end sweeps, and the 12 px a frame runs: with Qt's timing of their frames (the log's
+    renderloop lines between their marks): polish (the list laid out), render, and the rest of the time
+    between frames (what ran between them: the script, the hover, the events)."""
+    out = {d["tab"]: d for k, d in lines if k == "scroll"}
+    for k, d in lines:
+        if k == "pace":
+            out[d["label"]] = d
+    if log is not None and log.exists():
+        label, frames = None, {}
+        for line in log.read_text(errors="replace").splitlines():
+            m = re.search(r'BENCH mark \{"name":"pace-(start|end)","label":"([^"]+)"\}', line)
+            if m:
+                label = m.group(2) if m.group(1) == "start" else None
+                continue
+            m = FRAME.search(line)
+            if m and label:
+                frames.setdefault(label, []).append([int(x) for x in m.groups()])
+        for label, fs in frames.items():
+            fs = fs[1:]   # (the first one's delta is from before)
+            if label in out and fs:
+                n = len(fs)
+                rest = [f[5] - f[0] for f in fs if f[5] >= f[0]]
+                out[label]["qt"] = {"frames": n, "polish_ms": round(sum(f[1] for f in fs) / n, 2),
+                                    "render_ms": round(sum(f[3] for f in fs) / n, 2), "swap_ms": round(sum(f[4] for f in fs) / n, 2),
+                                    "between_ms": round(sum(rest) / max(1, len(rest)), 2),
+                                    "frame_delta_ms": round(sum(f[5] for f in fs) / n, 2)}
+    return out
+
+
+def steps_of(ys):
+    """Each frame's step in px (up: the list's place going down), from the first that moved to the last."""
+    steps = [round(a - b, 2) for a, b in zip(ys, ys[1:])]
+    moving = [i for i, s in enumerate(steps) if abs(s) > 0.001]
+    return steps[moving[0]:moving[-1] + 1] if moving else []
+
+
+def frames_of(ys, given, ms, frame=1000 / 60.03):
+    """The samples a frame each: an animation step that came less than 0.6 of a frame after the one kept
+    before isn't a frame of its own (the loop steps again when a step changed nothing: it isn't drawn
+    apart from the next on a screen), its place is the next frame's."""
+    if not ms:
+        return ys, given
+    ky, kg, kt = ys[:1], given[:1], ms[:1]
+    for y, g, t in zip(ys[1:], given[1:], ms[1:]):
+        if len(ky) > 1 and t - kt[-1] < 0.6 * frame:
+            ky[-1] = y
+            kg[-1] += g
+        else:
+            ky.append(y)
+            kg.append(g)
+            kt.append(t)
+    return ky, kg
+
+
+def turns(steps, tol=1.5):
+    """How often the steps change from growing to shrinking or back by more than tol px (whole-pixel rounding
+    is 1): an eased motion turns once (it speeds up, then slows down); every turn more is judder."""
+    n, trend, extreme = 0, 0, steps[0] if steps else 0
+    for s in steps[1:]:
+        if trend >= 0 and s < extreme - tol:
+            n, trend, extreme = n + (trend > 0), -1, s
+        elif trend <= 0 and s > extreme + tol:
+            n, trend, extreme = n + (trend < 0), 1, s
+        elif (trend >= 0 and s > extreme) or (trend <= 0 and s < extreme):
+            extreme = s
+    return n
+
+
+GUI_FRAME = re.compile(r"\[gui thread\] Frame prepared, polish=(\d+) ms, lock=(\d+) ms, blockedForSync=(\d+) ms, animations=(\d+) ms")
+RENDER_FRAME = re.compile(r"\[render thread [^]]*\] syncAndRender: frame rendered in (\d+)ms, sync=(\d+), render=(\d+), swap=(\d+)")
+
+
+def wheel_timing(log):
+    """Qt's own timing of each frame of each motion (the log's renderloop lines between its marks): on the GUI
+    thread, polish (the list laid out) and animations (each step: the animations and all they set off, the
+    script that reads where the list is too), ms a frame; on the render thread, rendering it (offscreen: the
+    software rasterizer, not a GPU)."""
+    out, label = {}, None
+    for line in log.read_text(errors="replace").splitlines():
+        m = re.search(r'BENCH mark \{"name":"motion-(start|end)","label":"([^"]+)"\}', line)
+        if m:
+            label = m.group(2) if m.group(1) == "start" else None
+            continue
+        if not label:
+            continue
+        m = GUI_FRAME.search(line)
+        if m:
+            out.setdefault(label, {"gui": [], "render": []})["gui"].append([int(x) for x in m.groups()])
+        m = RENDER_FRAME.search(line)
+        if m:
+            out.setdefault(label, {"gui": [], "render": []})["render"].append([int(x) for x in m.groups()])
+    res = {}
+    for label, d in out.items():
+        g, r = d["gui"], d["render"]
+        res[label] = {"gui_frames": len(g),
+                      "polish_ms": round(sum(x[0] for x in g) / len(g), 2) if g else None,
+                      "animations_ms": round(sum(x[3] for x in g) / len(g), 2) if g else None,
+                      "animations_max_ms": max((x[3] for x in g), default=None),
+                      "render_ms": round(sum(x[2] for x in r) / len(r), 2) if r else None}
+    return res
+
+
+def report_wheel(lines, log=None):
+    timing = wheel_timing(log) if log is not None and log.exists() else {}
+    out = {d.get("label", "fonts"): d for k, d in lines if k == "fonts"}
+    for k, d in lines:
+        if k != "motion":
+            continue
+        ys, given = frames_of(d["ys"], d["given"], d.get("ms"))
+        steps = steps_of(ys)
+        first_in = next((i for i, g in enumerate(given) if g), None)
+        first_move = next((i + 1 for i, (a, b) in enumerate(zip(ys, ys[1:])) if abs(a - b) > 0.001), None)
+        mid = [abs(s) for s in steps[3:-8]] if len(steps) > 14 else []
+        mean = statistics.mean(mid) if mid else 0
+        out[d["label"]] = {
+            "steps": [round(s) if abs(s - round(s)) < 0.01 else s for s in steps],
+            "distance": round(ys[0] - ys[-1], 1), "frames": len(steps),
+            "still_frames_inside": sum(1 for s in steps if abs(s) < 0.001),
+            "turns": turns([abs(s) for s in steps]),
+            "max_step": max((abs(s) for s in steps), default=0),
+            "frames_to_first_move": None if first_in is None or first_move is None else first_move - first_in,
+            "events_per_frame": given[first_in:first_in + 24] if first_in is not None else [],
+            "frames_drawn_per_step": round(d["framesDrawn"] / d["steps"], 2) if d.get("steps") else None,
+            "hover_row_changes": d.get("hoverRowChanges"),
+            "qt": timing.get(d["label"]),
+            "mid_cv_pct": round(statistics.pstdev(mid) / mean * 100, 1) if mean else None,
+            "scroller": d.get("scroller")}
+    return out
 
 
 def report_idle(lines, sampler):
@@ -345,7 +487,8 @@ def main(argv):
             if keep:
                 shutil.rmtree(keep, ignore_errors=True)
             results[s] = {"open": lambda: report_open(lines), "first": lambda: report_open(lines), "send": lambda: report_send(lines),
-                          "turn": lambda: report_turn(lines, written), "scroll": lambda: report_scroll(lines),
+                          "turn": lambda: report_turn(lines, written), "scroll": lambda: report_scroll(lines, out / "scroll.log"),
+                          "wheel": lambda: report_wheel(lines, out / "wheel.log"),
                           "idle": lambda: report_idle(lines, sampler), "find": lambda: report_find(lines),
                           "bookmarks": lambda: report_bookmarks(lines)}[s]()
             if s != "open":
