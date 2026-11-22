@@ -2021,8 +2021,9 @@ def go_on_waits(cache_root, entry, answer, due, now_ms, out, at=None):
     return True, message
 
 
-REFUSED_AGAIN_MS = 60_000   # a reply its chat's background service refused is tried again this much later
-REFUSALS_UNTIL_IDLE = 3     # and after this many refusals in a row, only once the chat is idle (untilIdle)
+REFUSED_AGAIN_MS = 60_000      # a reply its chat's background service refused is tried again this much later
+REFUSALS_BEFORE_LATER = 3      # and from this many refusals in a row on,
+REFUSED_LATER_MS = 10 * 60_000  # this much later
 
 
 def start_queued(home, extra_dirs, task_id, out=None, now=False):
@@ -2041,10 +2042,10 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     queue as it was, the message is empty and out gets "turnRuns" (a host's
     is tried again once the host has answered a newer check). One whose chat's
     background service refused it while the chat runs something in the
-    background ("refused") is tried again a minute later by the same rule,
-    and after REFUSALS_UNTIL_IDLE refusals only once the chat is idle
-    ("untilIdle": why, in it and in out), then goes as before; one put back
-    with an error waits for you, not for that. A task put back keeps its
+    background ("refused": why, in it and in out) is tried again a minute
+    later by the same rule, and from REFUSALS_BEFORE_LATER refusals on every
+    REFUSED_LATER_MS; one put back with an error waits for you, not for
+    that. A task put back keeps its
     place (a chat's replies go in their order: change_queue). now: it goes
     as it is."""
     out = {} if out is None else out
@@ -2086,15 +2087,13 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 return True, ""
             if answer.get("refused") and not now:
                 # (its service refused it while the chat runs something in the background: never ended for it.
-                # Tried again in a minute by the same rule, its turn over; after REFUSALS_UNTIL_IDLE refusals
-                # it waits for the chat to be idle, then goes as it did before, its service or a go-on)
+                # Tried again later by the same rule, its turn over: a minute later, from the third refusal on
+                # every REFUSED_LATER_MS; never held until all it runs has ended, hours with a watch loop)
                 why = answer.get("message") or "Claude's background service didn't take it"
                 refusals = (entry.get("refusals") or 0) + 1
-                back = dict(entry, refusals=refusals, startAt=now_ms + REFUSED_AGAIN_MS, error="")
-                if refusals >= REFUSALS_UNTIL_IDLE:
-                    back["untilIdle"] = why
-                    out.update(untilIdle=why)
-                td.change_queue(cache_root, put_back=back, at=at)
+                wait = REFUSED_AGAIN_MS if refusals < REFUSALS_BEFORE_LATER else REFUSED_LATER_MS
+                td.change_queue(cache_root, put_back=dict(entry, refusals=refusals, refused=why, startAt=now_ms + wait,
+                                                          error=""), at=at)
                 out.update(refused=why)
                 return True, ""
             ok, message = bool(answer.get("ok")) and answer.get("how") != "ask", answer.get("message") or ""
@@ -2153,8 +2152,8 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             error=f"{(message or 'It could not be reached').rstrip('.')}. It starts once {remote.label(entry['host'])} answers again"),
             at=at)
     elif not ok:
-        # (it waits for you now, Start it now or Cancel: not for the chat to be idle, as a refused one did)
-        entry = {k: v for k, v in entry.items() if k not in ("untilIdle", "refusals")}
+        # (it waits for you now, Start it now or Cancel: not to be tried again, as a refused one was)
+        entry = {k: v for k, v in entry.items() if k not in ("refused", "refusals", "untilIdle")}
         td.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"), at=at)
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start

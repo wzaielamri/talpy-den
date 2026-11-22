@@ -12,7 +12,7 @@ import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
 import type { Answers, Decision, Session } from "../../core/src/shared/types";
-import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../../core/src/shared/model";
+import { agentsNow, agentsRunningFirst, clockText, modeHint, modeText } from "../../core/src/shared/model";
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
 import { MadeLine } from "./components/MadeLine";
@@ -2708,10 +2708,11 @@ function ChatApp() {
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
-              {/* (its background service refused it while the chat ran something in the background: once that's
-                  over; one with an error waits for you, whatever it waited for before) */}
-              <span title={(!chat.queued.error && chat.queued.untilIdle) || undefined}>
-                {chat.queued.untilIdle && !chat.queued.error ? "Sent once the chat is idle" : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
+              {/* (its background service refused it while the chat ran something in the background: tried again
+                  then, why on hover; one with an error waits for you, whatever came before) */}
+              <span title={(!chat.queued.error && chat.queued.refused) || undefined}>
+                {chat.queued.refused && !chat.queued.error && (chat.queued.retryAt ?? 0) > 0
+                  ? `Tries again at ${clockText(chat.queued.retryAt!)}` : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
               </span>
               <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk(unqueueAsk === chat.queued!.id ? "" : chat.queued!.id)}>
                 <Icon name={I.cancel} tone={T.cancel} />Cancel

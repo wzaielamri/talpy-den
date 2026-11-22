@@ -762,6 +762,9 @@ export class Dashboard implements Disposable {
         const chatKey = `${t.host || ""}|${t.chat}`;
         if (firsts.has(chatKey)) continue;
         firsts.add(chatKey);
+        // (one of the chat's out being sent isn't in the queue the status lists meanwhile: none of its
+        // others go till it's back or gone)
+        if (this.startingChats.has(chatKey)) continue;
         // a reply for when the chat's turn ends: now it has, though what it runs in
         // the background may go on (or the chat isn't listed: afterTurnWaits); a host
         // not heard from yet, or whose last check failed, waits
@@ -776,8 +779,8 @@ export class Dashboard implements Disposable {
         const rows = groupsOf(t.host || "").flatMap((g) =>
           g.sessions.filter((s) => s.chatId === t.chat || s.sessionId === t.chat).map((s) => ({ s, own: (g.profileKeys ?? []).includes(t.profile) })));
         const row = (rows.find((r) => r.own) ?? rows[0])?.s;
-        if (t.error || this.starting.has(t.id) || afterTurnWaits(row, !!t.untilIdle)) continue;
-        if (t.startAt > Date.now()) continue; // (it waits for a usage limit to reset, as below)
+        if (t.error || this.starting.has(t.id) || afterTurnWaits(row)) continue;
+        if (t.startAt > Date.now()) continue; // (it waits for a usage limit to reset, as below, or its refused try's next)
       } else if (!t.due || this.starting.has(t.id)) continue;
       // (a reply too: on an account at its usage limit it would stop at once)
       const group = usageGroupsOf(t.host || "").find((g) => (g.profileKeys ?? []).includes(t.profile));
@@ -800,20 +803,24 @@ export class Dashboard implements Disposable {
   }
 
   private starting = new Set<string>();
+  private startingChats = new Set<string>(); // "<host>|<chat>" of a reply out being sent
   private heldBack = new Map<string, number>(); // a reply put back as its chat's turn ran after all -> when
 
   // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so;
   // a reply for when a turn ends goes as it is, and never ends what the chat runs in the background).
-  // A reply whose chat's turn goes on after all is back in the queue where it was ("turnRuns"; one
-  // that waits for its chat to be idle, "untilIdle", too): its answer's message is empty, nothing to
-  // say (jump.py start_queued); a host's waits for the host's next answer (startDueTasks)
+  // A reply whose chat's turn goes on after all is back in the queue where it was ("turnRuns"; one its
+  // chat's service refused, "refused", too, tried again later): its answer's message is empty, nothing
+  // to say (jump.py start_queued); a host's waits for the host's next answer (startDueTasks). While a
+  // reply is out being sent, none of its chat's others start (startingChats)
   async startQueued(t: QueuedTask, now = false): Promise<void> {
     if (this.starting.has(t.id)) return;
     this.starting.add(t.id);
+    const chatKey = t.afterTurn ? `${t.host || ""}|${t.chat}` : "";
+    if (chatKey) this.startingChats.add(chatKey);
     this.emit();
     try {
       const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...(now ? ["--now"] : []), ...configDirArgs()], 120000);
-      if (t.afterTurn && t.host && (answer.turnRuns || answer.untilIdle)) this.heldBack.set(t.id, Date.now());
+      if (t.afterTurn && t.host && answer.turnRuns) this.heldBack.set(t.id, Date.now());
       else this.heldBack.delete(t.id); // (sent, or whatever came of it: nothing of an earlier put-back kept)
       const what = queuedWhat(t, machineStatus(this.state(), t.host)).split("\n")[0];
       if (t.afterTurn) {
@@ -847,6 +854,7 @@ export class Dashboard implements Disposable {
       }
     } finally {
       this.starting.delete(t.id);
+      if (chatKey) this.startingChats.delete(chatKey);
       void this.refresh();
       if (t.host) void this.pollHost(t.host);
     }

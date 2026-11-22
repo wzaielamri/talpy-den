@@ -177,8 +177,8 @@ test("the widgets' Markdown link opens only their runs and Claude's plans", () =
 test("a reply after a chat's turn waits by the same rule as Plasma's", () => {
   const file = path.resolve(__dirname, "..", "..", "..", "tests", "after_turn_cases.json");
   const { cases } = JSON.parse(fs.readFileSync(file, "utf8")) as {
-    cases: { what: string; row: Pick<Session, "state" | "turnOver" | "reply"> | null; untilIdle: boolean; waits: boolean }[];
+    cases: { what: string; row: Pick<Session, "state" | "turnOver" | "reply"> | null; waits: boolean }[];
   };
   assert.ok(cases.length >= 10);
-  for (const c of cases) assert.equal(afterTurnWaits(c.row, c.untilIdle), c.waits, c.what);
+  for (const c of cases) assert.equal(afterTurnWaits(c.row), c.waits, c.what);
 });

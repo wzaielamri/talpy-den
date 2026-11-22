@@ -5115,7 +5115,7 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
                 # it went meanwhile, so the chat's replies keep their order)
                 later = next((i for i, t in enumerate(tasks) if t.get("afterTurn") and t.get("chat") == put_back["chat"]
                               and (t.get("host") or "") == (put_back.get("host") or "")
-                              and (number(t.get("createdAt")) or 0) >= (number(put_back.get("createdAt")) or 0)), None)
+                              and (number(t.get("createdAt")) or 0) > (number(put_back.get("createdAt")) or 0)), None)
                 if later is not None:
                     place = min(place, later)
             tasks.insert(place, put_back)

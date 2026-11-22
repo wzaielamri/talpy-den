@@ -4716,18 +4716,19 @@ Window {
                     PlasmaComponents3.Label {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
-                        // (its background service refused it while the chat ran something in the background:
-                        // once that's over; why, on hover. One with an error waits for you, whatever it waited for)
-                        readonly property bool untilIdle: !!pane.queued && !!pane.queued.untilIdle && !pane.queued.error
+                        // (its background service refused it while the chat ran something in the background: tried
+                        // again then, why on hover. One with an error waits for you, whatever came before)
+                        readonly property bool refused: !!pane.queued && !!pane.queued.refused && !pane.queued.error
+                                                        && pane.queued.startAt > 0
                         text: !pane.queued ? ""
-                              : untilIdle ? i18n("Sent once the chat is idle: %1", pane.queued.prompt)
+                              : refused ? i18n("Tries again at %1: %2", root.clockText(pane.queued.startAt), pane.queued.prompt)
                               : i18n("Sent when this turn ends: %1", pane.queued.prompt)
                         elide: Text.ElideRight
                         color: Kirigami.Theme.focusColor
-                        PlasmaComponents3.ToolTip.text: untilIdle ? pane.queued.untilIdle : ""
-                        PlasmaComponents3.ToolTip.visible: untilIdle && untilIdleHover.hovered
+                        PlasmaComponents3.ToolTip.text: refused ? pane.queued.refused : ""
+                        PlasmaComponents3.ToolTip.visible: refused && refusedHover.hovered
                         HoverHandler {
-                            id: untilIdleHover
+                            id: refusedHover
                         }
                     }
                     PlasmaComponents3.ToolButton {

@@ -4234,24 +4234,26 @@ PlasmoidItem {
     // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
     // in the background with your message only once its Claude is idle, and ending it sooner would end
     // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
-    // untilIdle: its background service refused it while the chat ran something in the background
-    // (the task's untilIdle): it waits for all of that to end, as it did before turnOver. VS Code's
-    // shared/model.ts afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
-    function afterTurnWaits(s, untilIdle) {
-        if (!s)
-            return false
-        if (untilIdle)
-            return s.state === "working" || s.state === "waiting"
-        return s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal"))
+    // VS Code's shared/model.ts afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
+    function afterTurnWaits(s) {
+        return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")))
     }
 
-    // A reply put back as its chat's turn ran after all (jump.py --start-queued's "turnRuns"; one that
-    // waits for its chat to be idle, "untilIdle", too): a host's goes again only once a check of the
-    // host asked after that has answered (its askedAt), not on the row it was sent by, an ssh run each
-    // pass till then (startDueTasks). VS Code's dashboard heldBack: the same
+    // Is a reply of t's chat out being sent (startQueued, till its answer)? It isn't in the queue the
+    // status lists meanwhile, so none of the chat's others start then. VS Code's startingChats the same
+    property var startingChats: ({})   // "<host>|<chat>" -> when one of its replies was started
+    function chatStarting(t) {
+        const at = startingChats[(t.host || "") + "|" + t.chat]
+        return !!at && now - at < startStaleMs
+    }
+
+    // A reply put back as its chat's turn ran after all (jump.py --start-queued's "turnRuns"): a host's
+    // goes again only once a check of the host asked after that has answered (its askedAt), not on the
+    // row it was sent by, an ssh run each pass till then (startDueTasks). (One its chat's service refused,
+    // "refused", is tried again at its startAt.) VS Code's dashboard heldBack: the same
     property var heldBack: ({})   // task id -> when it was put back
     function noteHeldBack(t, result) {
-        if (t && t.afterTurn && t.host && result && (result.turnRuns || result.untilIdle))
+        if (t && t.afterTurn && t.host && result && result.turnRuns)
             heldBack[t.id] = Date.now()
         else if (t)
             delete heldBack[t.id]   // (sent, or whatever came of it: nothing of an earlier put-back kept)
@@ -4281,6 +4283,8 @@ PlasmoidItem {
                 if (firsts[chatKey])
                     continue
                 firsts[chatKey] = true
+                if (chatStarting(t))
+                    continue   // (one of its others is out being sent: not in the queue listed meanwhile)
                 // (an SSH host's: by its last check, which worked; not while it waits for a usage limit;
                 // what the chat runs in the background may go on: afterTurnWaits)
                 const known = !t.host || (remote[t.host] && remote[t.host].result && !remote[t.host].error)
@@ -4290,7 +4294,7 @@ PlasmoidItem {
                     delete heldBack[t.id]
                 }
                 const s = known ? listedRow(t.chat, t.profile, t.host || "") : null
-                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s, !!t.untilIdle))
+                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s))
                     startOrWait(t)
                 continue
             }
@@ -4325,6 +4329,8 @@ PlasmoidItem {
     // is empty, nothing to say (jump.py start_queued)
     function startQueued(t, now) {
         startingTasks = Object.assign({}, startingTasks, { [t.id]: Date.now() })
+        if (t.afterTurn)
+            startingChats[(t.host || "") + "|" + t.chat] = Date.now()   // (its chat's others wait: chatStarting)
         const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --start-queued " + shellQuote(t.id) + (now ? " --now" : "") + configDirArgs
                     + " # " + Date.now()
         queueRuns[cmd] = t
@@ -4351,6 +4357,8 @@ PlasmoidItem {
                 delete rest[t.id]
                 root.startingTasks = rest
                 root.noteHeldBack(t, result)   // (put back as its turn ran after all: a host's waits for its next answer)
+                if (t.afterTurn)
+                    delete root.startingChats[(t.host || "") + "|" + t.chat]
             }
             if (result.ok && result.message && t && t.afterTurn) {   // your reply, sent as its turn ended
                 if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack() && !root.dashboardShown)

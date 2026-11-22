@@ -96,7 +96,7 @@ test("a reply after a chat's turn goes once its turn is over, while its backgrou
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
   const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
-  const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string> };
+  const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string>; startingChats: Set<string> };
   try {
     const result = structuredClone(demoState(NOW).hosts[0].result!);
     Object.assign(result.groups[0], { limits: null, accountLimits: null, cap: null });
@@ -108,7 +108,8 @@ test("a reply after a chat's turn goes once its turn is over, while its backgrou
     const goes = (row: Partial<Session>): boolean => {
       Object.assign(chat, row);
       actions.length = 0;
-      priv.starting.clear();
+      priv.starting.clear(); // (each a pass of its own: the one before isn't out being sent)
+      priv.startingChats.clear();
       priv.startDueTasks(status);
       return actions.some((a) => a[0] === "--start-queued" && a[1] === "q3");
     };
@@ -132,7 +133,12 @@ test("a reply after a chat's turn goes once its turn is over, while its backgrou
 test("a chat's replies go in their order, and one put back waits for the host's next answer", async () => {
   const actions: string[][] = [];
   let answer: Record<string, unknown> = { ok: true, message: "", turnRuns: true };
-  const backend = { action: async (_s: string, args: string[]) => (actions.push(args), answer), status: async () => ({ status: null }) } as unknown as Backend;
+  let pending: Promise<void> | undefined; // (q1's answer waits for it: out being sent)
+  const backend = { action: async (_s: string, args: string[]) => {
+    actions.push(args);
+    if (pending && args[1] === "q1") await pending;
+    return answer;
+  }, status: async () => ({ status: null }) } as unknown as Backend;
   const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
   const priv = dash as unknown as { hosts: Map<string, unknown>; hostAnswered: Map<string, number>; startDueTasks(s: Status): void;
                                     starting: Set<string>; heldBack: Map<string, number>; pollHost(h: string): Promise<void>; refresh(): Promise<void> };
@@ -172,6 +178,17 @@ test("a chat's replies go in their order, and one put back waits for the host's 
     status.queue = [];
     await pass();
     assert.equal(priv.heldBack.size, 0);
+    // one out being sent isn't in the queue the status lists meanwhile: none of its chat's others go
+    let release!: () => void;
+    pending = new Promise<void>((r) => (release = r));
+    answer = { ok: true, message: "Sent" };
+    status.queue = [task("q1", a), task("q2", a), task("q3", b)];
+    assert.equal(await pass(), "q1,q3");
+    status.queue = [task("q2", a), task("q3", b)];
+    assert.equal(await pass(), "q3", "q1 is out being sent");
+    release();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(await pass(), "q2,q3");
   } finally {
     priv.starting.clear();
     dash.dispose();

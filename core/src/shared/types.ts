@@ -143,8 +143,9 @@ export interface QueuedTask {
   how?: string;
   session?: string | null;
   // a reply whose chat's background service refused it while the chat ran something in the
-  // background: why; it's sent once the chat is idle (jump.py start_queued)
-  untilIdle?: string;
+  // background: why (and how often in a row); it's tried again at startAt (jump.py start_queued)
+  refused?: string;
+  refusals?: number;
 }
 
 // A chat of this computer that keeps going until it's done: after each usage

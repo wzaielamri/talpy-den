@@ -1654,6 +1654,13 @@ class SendTests(SendFixture):
         self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn")
         compact = td.load_queue(self.cache)[1]["id"]
 
+        def earlier(tasks):   # (queued a second before the follow-up: not the same moment)
+            for t in tasks:
+                if t["id"] == compact:
+                    t["createdAt"] -= 1000
+            return True
+        td.change_queue(self.cache, edit=earlier)
+
         def meanwhile(answer, other_goes=False):
             def send(*args, **kw):
                 self.cli("--send", SID, "--profile", ".claude-work", "--text", "and then the docs", "--after-turn")
@@ -1674,32 +1681,32 @@ class SendTests(SendFixture):
             self.assertEqual(queue[prompts.index("/compact")].get("error") or "", "")
             td.change_queue(self.cache, take=queue[-1]["id"])
 
-    def test_a_reply_its_service_refused_is_tried_again_in_a_minute_then_once_the_chat_is_idle(self):
+    def test_a_reply_its_service_refused_is_tried_again_in_a_minute_then_every_ten(self):
         # Its chat's background service refused it while the chat ran something in the background: tried
-        # again a minute later by the same rule (its turn over), not held until all that ends; after
-        # three refusals it waits for the chat to be idle (untilIdle, with why). One put back with an
-        # error (Start it now failed) doesn't say it waits for that: it waits for you
+        # again a minute later by the same rule (its turn over), never held until all that ends (hours with
+        # a watch loop, even once the service takes messages again); from the third refusal on, every ten
+        # minutes. "refused" says why (the line: Tries again at 14:31). One put back with an error (Start it
+        # now failed) waits for you: nothing of that kept
         import jump
         self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn")
         (task,) = td.load_queue(self.cache)
         refused = {"ok": False, "refused": True, "message": "its service said no, …: it's tried again later"}
-        for n in (1, 2, 3):
+        for n, wait in ((1, 60_000), (2, 60_000), (3, 600_000), (4, 600_000)):
             with mock.patch.object(pane, "send", return_value=refused), \
                     mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
                     mock.patch.object(jump, "claude_path", return_value="claude"):
                 before, out = int(time.time() * 1000), {}
                 self.assertEqual(jump.start_queued(self.home, [], task["id"], out), (True, ""))
             (back,) = td.load_queue(self.cache)
-            self.assertEqual((back.get("refusals"), back.get("error") or ""), (n, ""), n)
-            self.assertTrue(before + 59_000 <= back["startAt"] <= int(time.time() * 1000) + 60_000, n)
-            self.assertEqual(back.get("untilIdle") or "", refused["message"] if n == 3 else "", n)
-            self.assertEqual(out.get("untilIdle") or "", back.get("untilIdle") or "", n)
+            self.assertEqual((back.get("refusals"), back.get("error") or "", back.get("refused")), (n, "", refused["message"]), n)
+            self.assertTrue(before + wait - 1000 <= back["startAt"] <= int(time.time() * 1000) + wait, n)
+            self.assertEqual((out.get("refused"), "untilIdle" in back, "untilIdle" in out), (refused["message"], False, False), n)
         with mock.patch.object(pane, "send", return_value={"ok": False, "message": "its terminal is gone"}), \
                 mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
                 mock.patch.object(jump, "claude_path", return_value="claude"):
             self.assertEqual(jump.start_queued(self.home, [], task["id"], now=True), (False, "its terminal is gone"))
         (back,) = td.load_queue(self.cache)
-        self.assertEqual((back["error"], "untilIdle" in back, "refusals" in back), ("its terminal is gone", False, False))
+        self.assertEqual((back["error"], "refused" in back, "refusals" in back), ("its terminal is gone", False, False))
 
     def plasma_queue(self, script):
         """main.qml's queue functions (afterTurnWaits, startDueTasks, noteHeldBack), run in node with
@@ -1708,9 +1715,10 @@ class SendTests(SendFixture):
         import re
         qml = (Path(__file__).resolve().parent.parent / "package/contents/ui/main.qml").read_text()
         functions = "".join(re.search(r"\n    (function %s\(.*?\n    \})\n" % f, qml, re.S).group(1) + "\n"
-                            for f in ("afterTurnWaits", "startDueTasks", "noteHeldBack"))
+                            for f in ("afterTurnWaits", "startDueTasks", "noteHeldBack", "chatStarting"))
         head = ("const root = { notifier: true }; const remote = { lab: { result: {}, error: '', askedAt: 0 } };\n"
-                "const heldBack = {}; const starting = {}; let row = null; const started = [];\n"
+                "const heldBack = {}; const starting = {}; const startingChats = {}; let row = null; const started = [];\n"
+                "let now = Date.now(); const startStaleMs = 120000;\n"
                 "function listedRow() { return row } function isStarting(id) { return !!starting[id] }\n"
                 "function startOrWait(t) { started.push(t.id) }\n")
         out = subprocess.run(["node", "-e", head + functions + script], capture_output=True, text=True, timeout=60)
@@ -1724,9 +1732,8 @@ class SendTests(SendFixture):
         cases = json.loads((Path(__file__).resolve().parent / "after_turn_cases.json").read_text())["cases"]
         got = self.plasma_queue(
             "console.log(JSON.stringify(%s.map(c => { row = c.row; started.length = 0;\n"
-            "  const t = { id: 'q3', afterTurn: true, chat: 'c', host: 'lab', profile: '.claude', untilIdle: c.untilIdle ? 'busy' : undefined };\n"
-            "  startDueTasks([t]);\n"
-            "  return [afterTurnWaits(c.row, !!t.untilIdle), started.length === 0] })))" % json.dumps(cases))
+            "  startDueTasks([{ id: 'q3', afterTurn: true, chat: 'c', host: 'lab', profile: '.claude' }]);\n"
+            "  return [afterTurnWaits(c.row), started.length === 0] })))" % json.dumps(cases))
         self.assertEqual(len(got), len(cases))
         for case, (waits, waited) in zip(cases, got):
             self.assertIs(waits, case["waits"], case["what"])
@@ -1753,12 +1760,15 @@ class SendTests(SendFixture):
             # (one with an error waits for you, Start it now or Cancel: it doesn't hold the chat's others)
             "compact.error = 'its terminal is gone'; out.push(pass()); delete compact.error;\n"
             # (one sent, or cancelled: nothing of it kept)
-            "remote.lab.askedAt = 0; noteHeldBack(compact, { turnRuns: true }); noteHeldBack(other, { untilIdle: 'no' });\n"
+            "remote.lab.askedAt = 0; noteHeldBack(compact, { turnRuns: true }); noteHeldBack(other, { turnRuns: true });\n"
             "out.push(String(Object.keys(heldBack).length));\n"
             "noteHeldBack(compact, { ok: true, message: 'Sent to the chat' });\n"
             "started.length = 0; startDueTasks([next]); out.push(String(Object.keys(heldBack).length));\n"
+            # (one out being sent isn't in the queue the status lists meanwhile: none of its chat's others go)
+            "startingChats['lab|c'] = now; out.push((started.length = 0, startDueTasks([next, other]), started.join(',')));\n"
+            "delete startingChats['lab|c']; out.push((started.length = 0, startDueTasks([next, other]), started.join(',')));\n"
             "console.log(JSON.stringify(out))")
-        self.assertEqual(got, ["q1,q3", "q3", "q3", "q1,q3", "q1,q3", "q2,q3", "2", "0"])
+        self.assertEqual(got, ["q1,q3", "q3", "q3", "q1,q3", "q1,q3", "q2,q3", "2", "0", "q3", "q2,q3"])
 
     def test_a_reply_after_the_turn_leaves_keep_going_alone(self):
         # cancelling it, or turning Keep going off meanwhile, is about the reply only

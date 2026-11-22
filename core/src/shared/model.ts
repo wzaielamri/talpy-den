@@ -987,13 +987,9 @@ export function queuedChat(status: Pick<Status, "queue"> | null, chatId: string,
 // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
 // in the background with your message only once its Claude is idle, and ending it sooner would end
 // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
-// untilIdle: its background service refused it while the chat ran something in the background
-// (the task's untilIdle): it waits for all of that to end, as it did before turnOver. Plasma's
-// main.qml afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
-export function afterTurnWaits(s: Pick<Session, "state" | "turnOver" | "reply"> | null | undefined, untilIdle = false): boolean {
-  if (!s) return false;
-  if (untilIdle) return s.state === "working" || s.state === "waiting";
-  return s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal"));
+// Plasma's main.qml afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
+export function afterTurnWaits(s: Pick<Session, "state" | "turnOver" | "reply"> | null | undefined): boolean {
+  return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")));
 }
 
 // Whether a queued task's line would only repeat a row: a chat's go-on whose
