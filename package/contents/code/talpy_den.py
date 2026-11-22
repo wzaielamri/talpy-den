@@ -5094,8 +5094,14 @@ def queued_tasks(cache_root, now_ms):
 
 # ---------------------------------------------------------------- chats that keep going
 #
-# A chat can keep going until it's done: whenever a usage limit stops it, it
-# goes on a minute after the limit resets, as often as that takes. Such chats
+# A chat can keep going: whenever a usage limit stops it, it goes on a minute
+# after the limit resets, after every limit, until you switch Keep going off
+# (jump.py --keep-off; ■'s Stop and turn Keep going off; cancelling its
+# queued go-on), hide the chat, or it's deleted (here or there). Nothing lets
+# it go by itself: a turn that ends by itself (an orchestrating chat ends its
+# turn while its subagents work), one you interrupted and weeks of nothing new
+# leave it kept, and a chat that's idle hits no limit, so that costs nothing
+# (2026-11-22, the user: it resets every time, not only once). Such chats
 # are kept in ~/.cache/talpy-den/keep.json (an SSH host's and a container's
 # too, with their "host": they go on from here, over ssh, as queued tasks
 # there do), and the status run of the copy that notifies looks after them
@@ -5106,8 +5112,7 @@ def queued_tasks(cache_root, now_ms):
 # later stop on a limit that resets sooner: sooner_go_on), tries again after a pause
 # when one didn't take (nothing new in the chat a while after it went on) or
 # when the turn broke off on an API error that isn't a limit (the connection
-# lost), a few times with longer pauses, and lets the chat go once a turn of
-# it has ended by itself. One you interrupted has ended too: you took over.
+# lost), a few times with longer pauses.
 #
 # With a usage cap (--usage-cap N), it also stops what an account has at work
 # once one of its plan windows reaches N%, once in that window: the chats
@@ -5115,7 +5120,6 @@ def queued_tasks(cache_root, now_ms):
 
 KEEP_TAKE_MS = 5 * 60_000  # a go-on that leaves nothing new in its chat after this long didn't take
 KEEP_RETRY_MINUTES = (2, 5, 15, 30, 60)  # the pauses before each try again; then it gives up
-KEEP_IDLE_MS = 7 * 86400_000  # a chat kept this long with nothing new is let go
 TURN_ENDS = ("end_turn", "stop_sequence", "max_tokens")  # a reply's stop_reason that ends its turn
 RETRY_PROMPT = "Your last turn broke off (an API error): go on where you stopped."
 # An SSH host's or a container's id (remote.py's HOST_NAME: ENGINE:NAME[@HOST] for a container)
@@ -5334,7 +5338,8 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     changed in place: tries, note, error), whose newest turn is turn
     (last_turn), whose row in the status (its process) is row, and whose
     account's plan limits are limits: ("go on", when, why, prompt) to queue
-    its go-on, "done" to let it go, or None (nothing for now)."""
+    its go-on, or None (nothing for now). Never that it's done: it keeps
+    going until you switch it off (see above)."""
     k["note"] = ""
     if queued:
         return None  # its go-on waits (or couldn't start, and says why)
@@ -5390,11 +5395,7 @@ def kept_step(k, turn, row, queued, limits, now_ms):
     if not turn["ended"] and not live:
         # a turn with no process to finish it: it broke off (its process ended in it)
         return again("its turn broke off") if now_ms - at > KEEP_TAKE_MS else None
-    if turn["ended"] and at > max(went, k.get("since") or 0):
-        return "done"
-    if now_ms - max(at, went, k.get("since") or 0) > KEEP_IDLE_MS:
-        return "done"  # (nothing new for days: let it go)
-    return None
+    return None  # (a turn that ended by itself, one you interrupted, or nothing new: on after its next limit)
 
 
 def cap_window(group, cap, now_ms):
@@ -5487,7 +5488,7 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
             turn, row, task = last_turn(path) if path is not None else None, rows.get(k["chat"]), queued.get(("", k["chat"]))
             step = None if path is None else kept_step(
                 k, turn, row, task is not None, (g.get("limits") or g.get("accountLimits")) if g else None, now_ms)
-            if path is None or step == "done":
+            if path is None:  # (its transcript is gone: the chat was deleted)
                 data["chats"].remove(k)
                 changed = True
             elif step is not None:
@@ -5720,9 +5721,6 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms, sooner=None):
     # (its go-on queued under the id it had counts too, until remote.py's check follows it: follow_host_moves)
     task = queued.get((k["host"], chat)) or queued.get((k["host"], old))
     step = kept_step(k, turn, rows.get(chat), task is not None, shifted(limits, offset), seen["at"])
-    if step == "done":
-        data["chats"].remove(k)
-        return True
     if step is not None:
         _, start, why, prompt = step
         adds.append(queue_entry(k["profile"], k.get("folder") or "", prompt, int(start), host=k["host"],
@@ -11733,6 +11731,10 @@ def hide_item(cache_root, kind, item_id):
         return False, f"Not a {one}: {item_id}"
     if kind == "chats":
         change_dismissed(cache_root, add=item_id)
+        # (out of sight, it doesn't go on by itself any more: its go-on that's queued stays, in the queue's list)
+        if any(k["chat"] == item_id and not k["host"] for k in load_keep(cache_root)["chats"]):
+            keep_chat(cache_root, "", item_id, on=False)
+            return True, "Hid this chat. It won't go on by itself after later limits any more"
     else:
         change_hidden(cache_root, kind, add=item_id)
     return True, f"Hid this {one}"

@@ -1096,9 +1096,9 @@ export function unseenHostItems(status: Pick<Status, "keep" | "queue"> | null | 
 // What a chat that keeps going does, for its tag's title
 export function keptTitle(kept: KeptChat): string {
   return [
-    "Keeps going until it's done: when a usage limit stops it, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after each later one, until a turn of it ends by itself. When a go-on doesn't take or its turn breaks off (the connection lost), it tries again a few times.",
+    "Keeps going after every usage limit, until you switch it off: when a usage limit stops it, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after every later one; a turn of it that ends by itself doesn't end it. When a go-on doesn't take or its turn breaks off (the connection lost), it tries again a few times.",
     kept.error || kept.note,
-    "Click to stop it keeping going (a go-on that's queued already stays).",
+    "Click to switch Keep going off (a go-on that's queued already stays).",
   ]
     .filter(Boolean)
     .join("\n\n");

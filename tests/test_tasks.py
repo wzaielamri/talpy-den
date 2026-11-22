@@ -1158,12 +1158,12 @@ class ContinueAfterResetTests(TaskFixture):
         answer = self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(at),
                             "--name", "Fix it", "--account", "work · Team")
         self.assertTrue(answer["ok"], answer)
-        self.assertRegex(answer["message"], r"^Queued: it goes on (tomorrow )?at \d\d:\d\d, when the limit resets$")
+        self.assertRegex(answer["message"], r"^Queued: it goes on once, (tomorrow )?at \d\d:\d\d, when the limit resets$")
         self.assertEqual(td.kept_chats(self.cache_root()), [], "once: it doesn't keep going")
         answer = self.queue("--queue-continue", self.SID, "--profile", ".claude-work", "--at", str(at),
                             "--name", "Fix it", "--account", "work · Team", "--keep")  # (twice: queued once)
         self.assertRegex(answer["message"], r"^Queued: it goes on (tomorrow )?at \d\d:\d\d, when the limit resets, "
-                                            r"and after later limits too until it's done$")
+                                            r"and after every later limit too, until you switch Keep going off$")
         (task,) = td.queued_tasks(self.cache_root(), int(time.time() * 1000))
         self.assertEqual((task["chat"], task["name"], task["folder"], task["prompt"], task["account"]),
                          (self.SID, "Fix it", str(self.folder), "", "work · Team"))
@@ -1609,7 +1609,7 @@ class MovedChatTests(TaskFixture):
 class KeptChatListedTests(TaskFixture):
     """A kept chat whose terminal was closed vanished from its account's
     list, its Keeps going and Goes on at with it, while its go-on waited
-    in the queue (2026-11-01): it stays listed until it's let go."""
+    in the queue (2026-11-01): it stays listed while it keeps going."""
 
     SID = ContinueAfterResetTests.SID
     cache_root = QueueTests.cache_root
@@ -2022,8 +2022,10 @@ class BackgroundServiceTests(TaskFixture):
 
 
 class KeepGoingTests(TaskFixture):
-    """A chat that keeps going until it's done: after each usage limit that
-    stops it, it goes on by itself (look_after_kept queues each go-on)."""
+    """A chat that keeps going: after every usage limit that stops it, it
+    goes on by itself (look_after_kept queues each go-on), until you switch
+    Keep going off (2026-11-22, the user: it resets every time, not only
+    once)."""
 
     SID = ContinueAfterResetTests.SID
     queue, cache_root = QueueTests.queue, QueueTests.cache_root
@@ -2052,10 +2054,11 @@ class KeepGoingTests(TaskFixture):
     def kept(self):
         return td.kept_chats(self.cache_root())
 
-    def test_it_goes_on_after_each_limit_until_its_done(self):
+    def test_it_goes_on_after_every_limit_until_you_switch_it_off(self):
         self.say(self.limit(self.now - 60))
         self.assertEqual(self.queue("--keep-going", self.SID, "--profile", ".claude-work", "--name", "Fix it")["message"],
-                         "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done")
+                         "It keeps going: after every usage limit that stops it, it goes on by itself once the limit "
+                         "resets, until you switch Keep going off")
         (task,) = self.look(self.now_ms)
         self.assertEqual((task["chat"], task["name"], task["startAt"], task["why"], task["prompt"]),
                          (self.SID, "Fix it", self.reset + 60_000, "", ""))
@@ -2081,11 +2084,50 @@ class KeepGoingTests(TaskFixture):
         (task,) = self.look(int((after + 660) * 1000))
         self.assertEqual(task["startAt"], self.reset + 60_000)
         self.queue("--start-queued", task["id"])
-        # and once a turn of it ends by itself, it's done
+        # a turn of it that ends by itself doesn't end it: it stays kept, with nothing queued
         went = self.kept()[0]["wentOnAt"] / 1000
         self.say(prompt(td.CONTINUE_PROMPT, went + 5), reply("All done.", went + 10, msg_id="m3"))
-        self.assertEqual(self.look(int((went + 20) * 1000)), [])
-        self.assertEqual((self.kept(), len(self.calls())), ([], 2))
+        self.assertEqual((self.look(int((went + 20) * 1000)), len(self.kept()), len(self.calls())), ([], 1, 2))
+        # nor days of nothing new: you go on with it a week later, a limit stops it, it goes on after that one too
+        later = went + 8 * 86400
+        self.say(prompt("and the docs", later), self.limit(later + 60))
+        self.reset = int((later + 3600) * 1000)
+        (task,) = self.look(int((later + 120) * 1000))
+        self.assertEqual(task["startAt"], self.reset + 60_000)
+        # switching it off ends it (its go-on that's queued stays, said so)
+        self.assertRegex(self.queue("--keep-off", self.SID)["message"], r"as queued, but not after later limits$")
+        self.assertEqual(self.kept(), [])
+
+    def test_a_turn_that_ends_while_its_subagents_run_doesnt_end_it(self):
+        # (an orchestrating chat ends its turn while its subagents work, and their results wake it)
+        self.say(self.limit(self.now - 3000))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 3_000_000)
+        (task,) = self.look(self.now_ms - 2_900_000)
+        self.queue("--start-queued", task["id"])
+        went = self.kept()[0]["wentOnAt"] / 1000
+        self.say(prompt(td.CONTINUE_PROMPT, went + 5),
+                 tool_use("a1", "Task", {"description": "Review", "prompt": "Review it", "run_in_background": True}, went + 10),
+                 tool_result("a1", went + 11),
+                 reply("Two agents are on it; I'll go on when they're done.", went + 20, msg_id="m3"),
+                 dict(reply("Reading src/", went + 30, msg_id="s1"), isSidechain=True))
+        row = {"sessionId": self.SID, "chatId": self.SID, "pid": 4242, "state": "idle", "kind": "bg", "entrypoint": "cli"}
+        self.assertEqual((self.look(int((went + 60) * 1000), [row]), len(self.kept())), ([], 1))
+        self.assertEqual((self.look(int((went + 9 * 86400) * 1000), [row]), len(self.kept())), ([], 1), "nor days later")
+        # woken by their results, a second limit stops it: a second go-on
+        self.say(prompt("The agents are done.", went + 600), self.limit(went + 610))
+        (task,) = self.look(int((went + 620) * 1000), [row])
+        self.assertEqual((task["chat"], task["why"], len(self.kept())), (self.SID, "", 1))
+
+    def test_hiding_it_ends_it(self):
+        # (a chat you hid is out of sight: it doesn't go on by itself any more)
+        for args in (("--dismiss", self.SID), ("--hide", "chats", self.SID)):
+            td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+            self.assertTrue(self.queue(*args)["ok"])
+            self.assertEqual(self.kept(), [], args)
+        # (another chat that keeps going stays)
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder))
+        self.queue("--dismiss", "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b")
+        self.assertEqual(len(self.kept()), 1)
 
     def test_a_go_on_that_didnt_take_is_tried_again_then_given_up(self):
         self.say(self.limit(self.now - 60))
@@ -2138,17 +2180,18 @@ class KeepGoingTests(TaskFixture):
         login = dict(k)
         self.assertIsNone(td.kept_step(login, dict(limit, kind="login"), None, False, limits, self.now_ms))
         self.assertIn("log in again", login["note"])
-        # kept while it works: done once that turn ends by itself, not before
+        # a turn that ends by itself doesn't end it, nor does a month with nothing new
         ended = {"kind": "reply", "at": at, "ended": True}
         self.assertIsNone(td.kept_step(dict(k, since=at + 1000), ended, row, False, limits, self.now_ms), "nothing new since")
-        self.assertEqual(td.kept_step(dict(k), ended, row, False, limits, self.now_ms), "done")
+        self.assertIsNone(td.kept_step(dict(k), ended, row, False, limits, self.now_ms))
+        self.assertIsNone(td.kept_step(dict(k), ended, row, False, limits, self.now_ms + 30 * 86400_000))
         # a turn with no process to finish it broke off: on again
         open_turn = {"kind": "reply", "at": self.now_ms - td.KEEP_TAKE_MS - 1000, "ended": False}
         self.assertIsNone(td.kept_step(dict(k), dict(open_turn, at=self.now_ms - 1000), None, False, limits, self.now_ms))
         self.assertEqual(td.kept_step(dict(k), open_turn, None, False, limits, self.now_ms)[2], "retry")
 
-    def test_a_chat_you_interrupted_is_let_go(self):
-        # (Esc while it works, then the chat closed: you took over)
+    def test_a_chat_you_interrupted_stays_kept(self):
+        # (Esc while it works, then the chat closed: you took over; it goes on after its next limit all the same)
         note = "[Request interrupted by user for tool use]"
         cut = tool_result("b", self.now - 589)
         cut["message"]["content"][0]["content"] = note
@@ -2157,7 +2200,7 @@ class KeepGoingTests(TaskFixture):
         self.assertEqual(td.last_turn(self.path), {"kind": "interrupted", "at": int((self.now - 589) * 1000), "ended": True})
         td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 700_000)
         self.assertEqual(self.look(self.now_ms + td.KEEP_TAKE_MS + 60_000), [])
-        self.assertEqual(self.kept(), [])
+        self.assertEqual(len(self.kept()), 1)
         # a prompt after it: a turn of its own again
         self.say(prompt("go on", self.now - 500))
         self.assertEqual(td.last_turn(self.path)["kind"], "prompt")
@@ -2288,10 +2331,11 @@ class KeepGoingOnHostsTests(TaskFixture):
         return self.queue("--keep-going", self.SID, "--profile", ".claude", "--cwd", "/srv/app", "--name", "Fix it",
                           "--host", host or self.HOST)
 
-    def test_it_goes_on_from_here_after_each_limit_until_its_done(self):
+    def test_it_goes_on_from_here_after_every_limit_until_you_switch_it_off(self):
         import remote
         self.assertEqual(self.keep()["message"],
-                         "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done")
+                         "It keeps going: after every usage limit that stops it, it goes on by itself once the limit "
+                         "resets, until you switch Keep going off")
         self.assertEqual([(k["chat"], k["host"], k["profile"]) for k in self.kept()], [(self.SID, "lab", ".claude")])
         self.answer(self.limit(self.now_ms - 60_000))
         (task,) = self.look(self.now_ms)
@@ -2309,9 +2353,15 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.answer(self.limit(self.now_ms - 60_000), at=went - 1000)
         self.assertEqual(self.look(went + td.KEEP_TAKE_MS * 2), [])
         self.assertEqual((self.kept()[0]["tries"], self.kept()[0]["error"]), (0, ""))
-        # the next one: a turn of it ended by itself after the go-on: it's done
+        # the next one: a turn of it ended by itself after the go-on: it stays kept
         self.answer({"kind": "reply", "at": went + 60_000, "ended": True}, at=went + 120_000)
-        self.assertEqual(self.look(went + 125_000), [])
+        self.assertEqual((self.look(went + 125_000), len(self.kept())), ([], 1))
+        # and a second limit there: a second go-on
+        self.answer(self.limit(went + 3600_000), at=went + 3660_000)
+        (task,) = self.look(went + 3660_000)
+        self.assertEqual((task["host"], task["chat"], task["why"]), ("lab", self.SID, ""))
+        # switched off, it ends
+        self.queue("--keep-off", self.SID, "--host", "lab")
         self.assertEqual(self.kept(), [])
 
     def test_its_times_are_put_on_this_computers_clock(self):
@@ -2320,13 +2370,12 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.answer(self.limit(self.now_ms - 60_000, offset=7200_000), offset=7200_000)
         (task,) = self.look(self.now_ms)
         self.assertEqual(task["startAt"], self.reset + 60_000)
-        # and a turn there that ended after it was kept ended after it, though the host's clock says 2 hours before
+        # and a limit there after it went on is a new one, though the host's clock says 2 hours before
         td.change_queue(self.cache_root(), take=task["id"])
-        td.keep_chat(self.cache_root(), ".claude", self.SID, host="lab", on=False)
-        td.keep_chat(self.cache_root(), ".claude", self.SID, "Fix it", "/srv/app", now_ms=self.now_ms, host="lab")
-        self.answer({"kind": "reply", "at": self.now_ms + 60_000 - 7200_000, "ended": True}, at=self.now_ms + 120_000,
-                    offset=7200_000)
-        self.assertEqual((self.look(self.now_ms + 125_000), self.kept()), ([], []))
+        td.note_went_on(self.cache_root(), self.SID, self.now_ms, host="lab")
+        self.answer(self.limit(self.now_ms + 60_000, offset=7200_000), at=self.now_ms + 120_000, offset=7200_000)
+        (task,) = self.look(self.now_ms + 125_000)
+        self.assertEqual(task["why"], "")
 
     def test_a_go_on_that_didnt_take_there_is_tried_again_whatever_its_newest_turn(self):
         import remote
@@ -2412,11 +2461,30 @@ class KeepGoingOnHostsTests(TaskFixture):
         with self.assertRaises(ValueError):
             td.keep_chat(self.cache_root(), ".claude", self.SID, host="lab; rm -rf /")
 
+    def test_hiding_it_there_ends_it_here(self):
+        import remote
+        for args in (["--dismiss", "lab", self.SID], ["--hide", "lab", "chats", self.SID]):
+            self.keep()
+            self.keep("docker:web@lab")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), mock.patch.object(remote.Path, "home", return_value=self.home), \
+                    mock.patch.object(remote, "run_status_script", return_value=(True, "Hid this chat")):
+                remote.main(args)
+            self.assertTrue(json.loads(out.getvalue())["ok"])
+            self.assertEqual([k["host"] for k in self.kept()], ["docker:web@lab"], args)  # (lab's only)
+        # one the host couldn't hide keeps going
+        self.keep()
+        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(remote.Path, "home", return_value=self.home), \
+                mock.patch.object(remote, "run_status_script", return_value=(False, "lab: Connection timed out")):
+            remote.main(["--dismiss", "lab", self.SID])
+        self.assertEqual(sorted(k["host"] for k in self.kept()), ["docker:web@lab", "lab"])
+
     def test_queued_with_keep_on_a_host(self):
         at = str(self.reset + 60_000)
         self.assertEqual(self.queue("--queue-continue", self.SID, "--profile", ".claude", "--at", at, "--host", "lab",
                                     "--name", "Fix it", "--keep")["message"],
-                         f"Queued: it goes on {jump.start_time(int(at))}, when the limit resets, and after later limits too until it's done")
+                         f"Queued: it goes on {jump.start_time(int(at))}, when the limit resets, and after every later limit "
+                         "too, until you switch Keep going off")
         self.assertEqual([(k["chat"], k["host"]) for k in self.kept()], [(self.SID, "lab")])
 
     def test_a_go_on_that_couldnt_reach_its_host_starts_once_that_answers_again(self):
@@ -2467,12 +2535,35 @@ class KeepGoingOnHostsTests(TaskFixture):
         self.assertNotRegex(row, r"remoteHost \? null : root\.keptChat|row\.kept === null && !row\.remoteHost|kept !== null && !row\.remoteHost")
         self.assertIn("root.remoteEnd(remoteHost, session.sessionId, session.profileDir, busy, keepOff && kept ? kept.chat : \"\")", row)
         self.assertEqual(row.count("root.keepGoing(row.session, "), 2)
-        self.assertEqual(row.count("root.keepGoing(row.session, true, row.remoteHost)") + row.count("root.keepGoing(row.session, false, row.remoteHost)"), 2)
+        # (the row's switch among its actions, on while it keeps going; its tag switches it off)
+        self.assertIn("root.keepGoing(row.session, row.kept === null, row.remoteHost)", row)
+        self.assertEqual(row.count("root.keepGoing(row.session, false, row.remoteHost)"), 1)
         self.assertNotIn('i18n("This happens once.")', row)
         self.assertNotRegex(recent, r"!recentLine\.remoteHost && \(root\.keptChat|kept === null && !recentLine\.remoteHost"
                                     r"|recentLine\.remoteHost \? null : root\.keptChat|recentLine\.remoteHost \? \"\" : \" \" \+ i18n\(\"Keep going")
         self.assertIn("root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost)", recent)
         self.assertIn("root.keptChat(queuedLine.task.chat, queuedLine.task.host) !== null", group)
+
+    def test_both_uis_say_it_goes_on_after_every_limit_until_you_switch_it_off(self):
+        # (2026-11-22, the user: it resets every time, not only once) Nothing says a turn that ends by
+        # itself ends it, the row's actions show it keeps going (a switch that's on), and the one-off
+        # go-on says it's once
+        top = Path(__file__).resolve().parent.parent
+        files = {name: (top / name).read_text() for name in (
+            "package/contents/ui/main.qml", "package/contents/ui/SessionRow.qml", "package/contents/ui/RecentLine.qml",
+            "package/contents/ui/WeekView.qml", "core/src/shared/model.ts", "vscode/webview/components/SessionRow.tsx",
+            "vscode/webview/components/RecentLine.tsx", "vscode/webview/components/WeekView.tsx")}
+        for name, text in files.items():
+            self.assertNotIn("until a turn of it ends by itself", text, name)
+            self.assertNotIn("until it's done", text, name)
+            self.assertTrue("until you switch Keep going off" in text or "until you switch it off" in text, name)
+        row, tsx = files["package/contents/ui/SessionRow.qml"], files["vscode/webview/components/SessionRow.tsx"]
+        self.assertIn("visible: row.kept !== null || root.canKeepGoing(row.session, row.remoteHost)\n"
+                      "                        checked: row.kept !== null", row)
+        self.assertIn('i18n("Go on once, when the limit resets")', row)
+        self.assertIn("pressed={!!kept}", tsx)
+        self.assertIn('onClick={() => post({ type: "keepGoing", chat, on: !kept })}', tsx)
+        self.assertIn("`Go on once, when the limit resets\\n", tsx)
 
     def test_plasma_says_what_keeps_going_on_hosts_that_arent_shown(self):
         # (unpicked, or a container while Show containers is off: it goes on all the same, so the list

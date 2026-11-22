@@ -167,7 +167,7 @@ ColumnLayout {
                 tooltip: (goingOn ? i18n("In the background, in the permission mode it had, telling Claude that the limit has reset (if it didn't go on before then).")
                           : (recentLine.chat.stopped ? recentLine.chat.stopped.text : "")
                             + (goOnAt > 0 ? "\n\n" + i18n("Click to have it go on by itself in the background at %1, a minute after the limit resets, once.", root.startText(goOnAt))
-                                            + " " + i18n("Keep going beside it: after later limits too, until it's done.") : ""))
+                                            + " " + i18n("Keep going beside it: after every later limit too, until you switch it off.") : ""))
                          + (goingOn ? "\n\n" + i18n("Click to cancel it.")
                                       + (root.keptChat(recentLine.chat.sessionId, recentLine.remoteHost) !== null
                                          ? " " + i18n("It stops keeping going after usage limits too.") : "") : "")
@@ -193,9 +193,9 @@ ColumnLayout {
                 active: kept !== null && !kept.error
                 warning: kept !== null && (!!kept.error || !!kept.note)
                 clickable: true
-                tooltipTitle: kept ? i18n("Keeps going until it's done") : i18n("Keep going until it's done")
+                tooltipTitle: kept ? i18n("Keeps going after every usage limit") : i18n("Keep going after every usage limit")
                 tooltip: kept ? root.keptText(kept)
-                              : i18n("Click to have it go on by itself in the background at %1, a minute after the limit resets, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.",
+                              : i18n("Click to have it go on by itself in the background at %1, a minute after the limit resets, in the permission mode it had, and again after every later limit that stops it, until you switch Keep going off.",
                                      root.startText(root.goOnAt(recentLine.chat)))
                 onClicked: {
                     if (kept)

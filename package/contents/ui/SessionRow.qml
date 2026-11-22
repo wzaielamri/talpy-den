@@ -180,7 +180,7 @@ RowLayout {
     // or by itself once the limit resets (queued), when the widget knows when
     readonly property real goOnAt: root.goOnAt(session)
     readonly property var goingOn: goOnAt || stopped ? root.queuedChat(session.chatId, remoteHost) : null
-    // it keeps going until it's done: after each usage limit, it goes on by itself (root.keptChat)
+    // it keeps going: after every usage limit, it goes on by itself, until you switch it off (root.keptChat)
     readonly property var kept: root.keptChat(session.chatId || session.sessionId, remoteHost)
     readonly property bool inContainer: root.isContainer(remoteHost)
     function openHint() {
@@ -723,18 +723,22 @@ RowLayout {
                         }
                     }
                     HoverButton {
-                        // keep going until it's done: on by itself after each usage limit
-                        visible: row.kept === null && root.canKeepGoing(row.session, row.remoteHost)
+                        // keep going: on by itself after every usage limit, until you switch it off
+                        // (on while it keeps going, as its tag says: a click switches it off)
+                        visible: row.kept !== null || root.canKeepGoing(row.session, row.remoteHost)
+                        checked: row.kept !== null
                         icon.name: Icons.plasma.keepGoing
-                        text: i18n("Keep going after usage limits")
+                        text: row.kept !== null ? i18n("Keeps going after every usage limit: switch it off")
+                                                : i18n("Keep going after every usage limit")
                         Layout.alignment: Qt.AlignTop
-                        onClicked: root.keepGoing(row.session, true, row.remoteHost)
+                        onClicked: root.keepGoing(row.session, row.kept === null, row.remoteHost)
 
                         PlasmaCore.ToolTipArea {
                             textFormat: Text.PlainText
                             anchors.fill: parent
-                            mainText: i18n("Keep going until it's done")
-                            subText: i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after each later one, until a turn of it ends by itself. Claude here quits first then (its terminal stays open); open the chat from here to see it.")
+                            mainText: row.kept !== null ? i18n("Keeps going after every usage limit") : i18n("Keep going after every usage limit")
+                            subText: row.kept !== null ? root.keptText(row.kept)
+                                     : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after every later one, until you switch Keep going off. Claude here quits first then (its terminal stays open); open the chat from here to see it.")
                         }
                     }
                     HoverButton {
@@ -1028,7 +1032,7 @@ RowLayout {
                                 readonly property bool waits: !!row.goingOn && !!row.goingOn.waits && !row.goingOn.error
                                 mainText: waits ? i18n("Waits to go on")
                                           : row.goingOn ? i18n("Goes on by itself at %1", root.startText(row.goingOn.startAt))
-                                          : i18n("Go on once the limit resets")
+                                          : i18n("Go on once, when the limit resets")
                                 subText: waits ? row.goingOn.waits + ".\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
                                                                                          : i18n("Click to cancel it."))
                                          : (row.goingOn ? "" : i18n("At %1, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.", root.startText(row.goOnAt)) + " ")
@@ -1037,12 +1041,12 @@ RowLayout {
                                             : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it.")) + " "
                                          + i18n("It goes on in the permission mode it had.") + " "
                                          + i18n("If it went on before then, nothing happens.")
-                                         + (row.goingOn ? "" : " " + i18n("This happens once: to have it go on after later limits too, choose Keep going."))
+                                         + (row.goingOn ? "" : " " + i18n("This happens once: to have it go on after every later limit too, choose Keep going."))
                                          + (row.goingOn ? "\n\n" + (row.kept ? i18n("Click to cancel it: then it doesn't keep going either.")
                                                                              : i18n("Click to cancel it.")) : "")
                             }
                         }
-                        // or go on then, and after each later limit too, until it's done
+                        // or go on then, and after every later limit too, until you switch it off
                         IconTextButton {
                             visible: row.goOnAt > 0 && row.goingOn === null && row.kept === null
                             icon.name: Icons.plasma.keepGoing
@@ -1053,8 +1057,8 @@ RowLayout {
                             PlasmaCore.ToolTipArea {
                                 textFormat: Text.PlainText
                                 anchors.fill: parent
-                                mainText: i18n("Keep going until it's done")
-                                subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.", root.startText(row.goOnAt))
+                                mainText: i18n("Keep going after every usage limit")
+                                subText: i18n("At %1, a minute after the limit resets, the chat goes on in the background, in the permission mode it had, and again after every later limit that stops it, until you switch Keep going off.", root.startText(row.goOnAt))
                                          + " " + (row.session.pid === null || row.session.pid === undefined ? ""
                                                   : row.session.kind === "bg" ? i18n("This background chat is stopped first (claude stop).")
                                                   : i18n("Claude here quits first (its terminal stays open); open the chat from here to see it."))
@@ -1072,7 +1076,7 @@ RowLayout {
                             active: row.kept !== null && !row.kept.error
                             warning: row.kept !== null && (!!row.kept.error || !!row.kept.note)
                             clickable: true
-                            tooltipTitle: i18n("Keeps going until it's done")
+                            tooltipTitle: i18n("Keeps going after every usage limit")
                             tooltip: row.kept ? root.keptText(row.kept) : ""
                             onClicked: root.keepGoing(row.session, false, row.remoteHost)
                         }

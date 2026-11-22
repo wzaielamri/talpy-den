@@ -4141,7 +4141,7 @@ PlasmoidItem {
         return stop.resetsAt + 60000
     }
 
-    // (keep: and after later limits too, until it's done; an SSH host's or a container's chats too)
+    // (keep: and after every later limit too, until you switch it off; an SSH host's or a container's chats too)
     function queueContinue(session, host, account, keep) {
         const at = goOnAt(session)
         if (!at)
@@ -4155,8 +4155,8 @@ PlasmoidItem {
     }
 
     // ---------------------------------------------------------------- chats that keep going
-    // A chat (of this computer, an SSH host or a container) can keep going
-    // until it's done: after each usage limit that stops it, it goes on by
+    // A chat (of this computer, an SSH host or a container) can keep going:
+    // after every usage limit that stops it, until you switch it off, it goes on by
     // itself when that resets (talpy_den.py: look_after_kept, a host's from
     // its last answer; jump.py --keep-going, --keep-off, with --host). One a limit stopped
     // can start keeping going then (jump.py --queue-continue --keep).
@@ -4186,12 +4186,12 @@ PlasmoidItem {
 
     // What a chat that keeps going does, for its tag's tooltip
     function keptText(kept) {
-        const lines = [i18n("When a usage limit stops it, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself. When a go-on doesn't take or its turn breaks off (the connection lost), it tries again a few times.")]
+        const lines = [i18n("After every usage limit that stops it, it goes on by itself in the background a minute after the limit resets, until you switch Keep going off: a turn of it that ends by itself doesn't end it. When a go-on doesn't take or its turn breaks off (the connection lost), it tries again a few times.")]
         if (kept.error)
             lines.push(kept.error)
         else if (kept.note)
             lines.push(kept.note)
-        lines.push(i18n("Click to stop it keeping going (a go-on that's queued already stays)."))
+        lines.push(i18n("Click to switch Keep going off (a go-on that's queued already stays)."))
         return lines.join("\n\n")
     }
 

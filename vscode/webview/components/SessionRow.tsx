@@ -122,10 +122,12 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
   // or by itself once the limit resets (queued; again: cancelled)
   const goOn = goOnAt(s);
   const goingOn = goOn || s.stopped ? queuedChat(view.status, s.chatId || s.sessionId, host) : null;
-  // it keeps going until it's done (after each usage limit, on by itself); one at work can
+  // it keeps going (after every usage limit, on by itself, until you switch it off); one at work can
   // (an SSH host's and a container's too: kept here, they go on from here over ssh)
   const kept = keptChat(view.status, s.chatId || s.sessionId, host);
   const canKeep = !kept && s.state === "working" && s.entrypoint !== "claude-vscode";
+  // (the row's actions show it keeps going too, as a switch that's on: a click switches it off)
+  const keepSwitch = canKeep || !!kept;
   const ending =
     (s.pid === null ? "" : s.kind === "bg" ? " This background chat is stopped first (claude stop)." : " Claude here quits first (its terminal stays open).") +
     " It goes on in the permission mode it had.";
@@ -338,7 +340,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 icon={I.goOnAt}
                 class="text-btn"
                 label={`Go on at ${startText(goOn, now)}`}
-                title={`At ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nThis happens once: to have it go on after later limits too, choose Keep going.`}
+                title={`Go on once, when the limit resets\nAt ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, telling Claude that the limit has reset.${ending} If it went on before then, nothing happens.\n\nThis happens once: to have it go on after every later limit too, choose Keep going.`}
                 onClick={() => post({ type: "queueContinue", chat })}
               >
                 <span class="btn-words">Go on at {startText(goOn, now)}</span>
@@ -349,7 +351,7 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
                 icon={I.keepGoing}
                 class="text-btn"
                 label="Keep going"
-                title={`Keep going until it's done: at ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, and again after each later limit that stops it, until a turn of it ends by itself.${ending}`}
+                title={`Keep going after every usage limit: at ${startText(goOn, now)}, a minute after the limit resets, the chat goes on in the background, and again after every later limit that stops it, until you switch Keep going off.${ending}`}
                 onClick={() => post({ type: "queueContinue", chat, keep: true })}
               >
                 <span class="btn-words">Keep going</span>
@@ -409,12 +411,14 @@ export function SessionRow({ session: s, group, host, showProfile }: { session: 
               onClick={() => post({ type: "star", chat, on: true })}
             />
           )}
-          {canKeep ? (
+          {keepSwitch ? (
             <IconButton
               icon={I.keepGoing}
-              label="Keep going after usage limits"
-              title={"Keep going until it's done\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after each later one, until a turn of it ends by itself. Claude here quits first then (its terminal stays open)."}
-              onClick={() => post({ type: "keepGoing", chat, on: true })}
+              pressed={!!kept}
+              label={kept ? "Keeps going after every usage limit: switch it off" : "Keep going after every usage limit"}
+              title={kept ? keptTitle(kept)
+                : "Keep going after every usage limit\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, in the permission mode it had, and again after every later one, until you switch Keep going off. Claude here quits first then (its terminal stays open)."}
+              onClick={() => post({ type: "keepGoing", chat, on: !kept })}
             />
           ) : null}
           {share ? (

@@ -1114,13 +1114,26 @@ def vscode_account(host, config_dir):
 
 def dismiss(host, session_id=None):
     """Hide a finished chat in the host's list (or show all again)."""
-    return run_status_script(host, ["--dismiss", session_id] if session_id else ["--undismiss-all"])
+    ok, message = run_status_script(host, ["--dismiss", session_id] if session_id else ["--undismiss-all"])
+    return ok, unkept(host, session_id, message) if ok and session_id else message
 
 
 def hide(host, kind, item_id=None):
     """Hide a chat, plan, memory or project in the host's lists (kept on the
     host, as its status leaves them out there), or show that kind again."""
-    return run_status_script(host, ["--hide", kind, item_id] if item_id is not None else ["--show-hidden", kind])
+    ok, message = run_status_script(host, ["--hide", kind, item_id] if item_id is not None else ["--show-hidden", kind])
+    return ok, unkept(host, item_id, message) if ok and kind == "chats" and item_id else message
+
+
+def unkept(host, chat_id, message):
+    """A chat of host you hid there doesn't go on by itself from here any
+    more (its Keep going is kept here, td.keep_chat; as for a chat of this
+    computer, td.hide_item): message, saying so if it kept going."""
+    cache = td.cache_dir(Path.home())
+    if not any(k["chat"] == chat_id and k["host"] == host for k in td.load_keep(cache)["chats"]):
+        return message
+    td.keep_chat(cache, "", chat_id, on=False, host=host)
+    return f"{(message or 'Hid this chat').rstrip('.')}. It won't go on by itself after later limits any more"
 
 
 def delete(host, kind, item, profile=None, describe=False):

@@ -958,12 +958,12 @@ PlasmaComponents3.ScrollView {
         PlasmaCore.ToolTipArea {
             textFormat: Text.PlainText
             anchors.fill: parent
-            mainText: parent.act === "stop" ? i18n("Stop this chat") : i18n("Keep going until it's done")
+            mainText: parent.act === "stop" ? i18n("Stop this chat") : i18n("Keep going after every usage limit")
             subText: parent.act === "stop"
                 ? i18n("Asks first. It's idle: Claude quits, and the chat is kept.")
                 : parent.act === "keepAtReset"
-                ? i18n("It goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself.")
-                : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself.")
+                ? i18n("It goes on by itself a minute after the limit resets, in the background, and again after every later limit, until you switch Keep going off.")
+                : i18n("When a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after every later one, until you switch Keep going off.")
         }
     }
 

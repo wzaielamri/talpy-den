@@ -63,7 +63,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
   const goOn = goOnAt(c);
   const goingOn = queuedChat(view.status, c.sessionId, group.host);
   const kept = keptChat(view.status, c.sessionId, group.host);
-  const later = " Once: Keep going beside it goes on after later limits too, until it's done.";
+  const later = " Once: Keep going beside it goes on after every later limit too, until you switch it off.";
   const canKeep = !kept && !goingOn && goOn > 0;
   // a click opens its tab (else the chat itself, as the switch above says)
   const paneFirst = view.settings.clickOpensPane !== false;
@@ -128,7 +128,7 @@ export function RecentLine({ chat: c, group, how, project, accountTag }:
         <Tag
           icon={I.keepGoing}
           text=""
-          title={`Keep going until it's done\nClick to have it go on by itself in the background at ${startText(goOn, view.now)}, a minute after the limit resets, in the permission mode it had, and again after each later limit that stops it, until a turn of it ends by itself.`}
+          title={`Keep going after every usage limit\nClick to have it go on by itself in the background at ${startText(goOn, view.now)}, a minute after the limit resets, in the permission mode it had, and again after every later limit that stops it, until you switch Keep going off.`}
           onClick={() => post({ type: "queueContinue", chat, keep: true })}
         />
       ) : null}

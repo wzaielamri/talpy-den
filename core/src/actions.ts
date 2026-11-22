@@ -1384,7 +1384,7 @@ export class Actions {
     if (page) await this.host.openExternal(page);
   }
 
-  // A chat keeps going until it's done (after each usage limit, on by itself
+  // A chat keeps going until you switch it off (after every usage limit, on by itself
   // when that resets), or not any more (a go-on of it that's queued already
   // stays: that one is cancelled on its own). An SSH host's or a container's
   // is kept here too, and goes on from here over ssh
@@ -1405,7 +1405,7 @@ export class Actions {
   // A chat a usage limit stopped goes on by itself at `at` (a minute after
   // the limit resets): queued, then started like a queued task (jump.py
   // --queue-continue; an SSH host's goes on there, over ssh). keep: it goes
-  // on after later limits too, until it's done (an SSH host's too)
+  // on after every later limit too, until you switch it off (an SSH host's too)
   async queueContinue(chat: ChatRef, at: number, account: string, keep = false): Promise<void> {
     if (this.demoOnly()) return;
     const answer = await this.backend.action("jump.py", [

@@ -1903,7 +1903,7 @@ def queue_continue(home, extra_dirs, chat_id, profile_dir, folder, text, start_a
     """Queue going on with a chat a usage limit stopped, on the profile
     profile_dir (an SSH host's or a container's with host), to start at
     start_at (ms): then it goes on in the background, in its folder
-    (td.continue_chat). keep: it keeps going from then on, until it's done
+    (td.continue_chat). keep: it keeps going from then on, after every limit, until you switch it off
     (keep_going)."""
     if not host:
         folder, why = chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder)
@@ -1917,13 +1917,14 @@ def queue_continue(home, extra_dirs, chat_id, profile_dir, folder, text, start_a
     td.change_queue(cache_root, add=entry)
     if keep:
         td.keep_chat(cache_root, profile_dir, chat_id, name, folder, host=host)
-        return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets, and after later limits too until it's done"
-    return True, f"Queued: it goes on {start_time(start_at)}, when the limit resets"
+        return True, (f"Queued: it goes on {start_time(start_at)}, when the limit resets, and after every later limit too, "
+                      "until you switch Keep going off")
+    return True, f"Queued: it goes on once, {start_time(start_at)}, when the limit resets"
 
 
 def keep_going(home, extra_dirs, chat_id, profile_dir, folder, name="", host=""):
     """Have a chat (of this computer, or of host: an SSH host or a
-    container) keep going until it's done: after each usage limit that stops
+    container) keep going: after every usage limit that stops
     it, it goes on by itself when that resets. (Whether a host's folder is
     one Claude trusts there is checked as it goes on, td.continue_chat.)"""
     if not td.valid_id(chat_id):
@@ -1933,7 +1934,8 @@ def keep_going(home, extra_dirs, chat_id, profile_dir, folder, name="", host="")
         if folder is None:
             return False, why
     td.keep_chat(td.cache_dir(home), profile_dir, chat_id, name, folder or "", host=host)
-    return True, "It keeps going: when a usage limit stops it, it goes on by itself after the reset, until it's done"
+    return True, ("It keeps going: after every usage limit that stops it, it goes on by itself once the limit "
+                  "resets, until you switch Keep going off")
 
 
 def keep_off(home, extra_dirs, chat_id, host=""):
@@ -3055,11 +3057,11 @@ USAGE = ("usage: jump.py [--stop [--busy] | --interrupt] SESSION_ID [--profile P
          "               (a background task that starts at MS: a limit's reset, or --scheduled: a time you picked)\n"
          "       jump.py --queue-continue CHAT_ID --profile PROFILE --at MS [--cwd FOLDER] [--prompt TEXT] [--name NAME]\n"
          "               [--host HOST] [--account TITLE] [--keep]\n"
-         "               (go on with a chat a usage limit stopped, at MS; --keep: and after later limits, until it's done)\n"
+         "               (go on with a chat a usage limit stopped, at MS; --keep: and after every later limit, until --keep-off)\n"
          "       jump.py --keep-going CHAT_ID --profile PROFILE [--cwd FOLDER] [--name NAME] [--host HOST]\n"
          "               | --keep-off CHAT_ID [--host HOST]\n"
          "       jump.py --stop SESSION_ID [--profile PROFILE] [--busy] --and-keep-off CHAT_ID   (and Keep going off)\n"
-         "               (a chat goes on by itself after each usage limit, until it's done)\n"
+         "               (a chat goes on by itself after every usage limit, until --keep-off)\n"
          "       jump.py --unqueue|--start-queued TASK_ID [--now]\n"
          "               (--now: Start it now; a chat's go-on ends the background commands it waits for at once)\n"
          "       jump.py --star|--unstar CHAT_ID [--host HOST]   (starred: listed under the account's Starred)\n"

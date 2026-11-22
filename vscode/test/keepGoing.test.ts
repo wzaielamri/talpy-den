@@ -43,6 +43,9 @@ test("the chats that keep going: found by their id, and what their tag says", ()
   assert.equal(keptChat({ keep: [k] }, "c2"), null);
   assert.equal(keptChat({}, "c1"), null, "an older backend lists none");
   assert.match(keptTitle(k), /goes on by itself in the background a minute after the limit resets/);
+  // (after every limit until you switch it off: a turn that ends by itself doesn't end it, 2026-11-22)
+  assert.match(keptTitle(k), /^Keeps going after every usage limit, until you switch it off/);
+  assert.doesNotMatch(keptTitle(k), /until a turn of it ends by itself|until it's done/);
   assert.match(keptTitle({ ...k, error: "Gave up after 5 tries: it didn't go on" }), /Gave up after 5 tries/);
   assert.match(keptTitle({ ...k, note: "Its account's login has expired" }), /login has expired/);
 });

@@ -55,6 +55,15 @@
 
 ### Fixed
 
+- **Keep going stays on until you switch it off.** A chat that kept going
+  was let go as soon as a turn of it ended by itself, so a chat that ends its
+  turn while its subagents work stopped keeping going after one go-on. Now it
+  goes on after every usage limit that stops it, until you switch it off: its
+  ↻ Keeps going tag, the row's ↻ button (shown pressed while it keeps going),
+  Stop and turn Keep going off, or cancelling its queued go-on. Hiding or
+  deleting the chat switches it off too. The usage cap still stops kept chats
+  at work. The one-off Go on at … says it goes on once.
+
 - **Keep going goes on when the limit is really gone.** A chat that keeps
   going and that Claude's weekly limit stopped waited three days for the
   reset Claude named, though the account's weekly window was reset within

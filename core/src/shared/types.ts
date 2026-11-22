@@ -144,7 +144,7 @@ export interface QueuedTask {
   session?: string | null;
 }
 
-// A chat of this computer that keeps going until it's done: after each usage
+// A chat that keeps going until you switch it off: after every usage
 // limit that stops it, it goes on by itself (talpy_den.py: look_after_kept)
 export interface KeptChat {
   chat: string;
@@ -1231,7 +1231,7 @@ export type WebviewMessage =
   | { type: "startQueued"; id: string; now?: boolean }
   | { type: "openOverlap"; chat: ChatRef } // the first other chat changing the same files
   | { type: "unqueue"; id: string }
-  | { type: "queueContinue"; chat: ChatRef; keep?: boolean } // go on by itself once the limit resets (keep: and after later limits)
+  | { type: "queueContinue"; chat: ChatRef; keep?: boolean } // go on by itself once the limit resets (keep: and after every later limit, until switched off)
   | { type: "keepGoing"; chat: ChatRef; on: boolean } // keep going after each usage limit (or not any more)
   | { type: "remoteControl"; chat: ChatRef; on: boolean } // Remote Control on or off in a background chat
   | { type: "openRemoteControl"; chat: ChatRef } // its page on claude.ai/code

@@ -944,8 +944,8 @@ function TipChat({ tip, c, offer }: { tip: WeekTip; c: WeekTipChat; offer: Retur
       ) : (act === "keep" || act === "keepAtReset") && ref ? (
         <button type="button" class="chip"
           title={act === "keepAtReset"
-            ? "Keep going until it's done\nIt goes on by itself a minute after the limit resets, in the background, and again after each later limit, until a turn of it ends by itself."
-            : "Keep going until it's done\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after each later one, until a turn of it ends by itself."}
+            ? "Keep going after every usage limit\nIt goes on by itself a minute after the limit resets, in the background, and again after every later limit, until you switch Keep going off."
+            : "Keep going after every usage limit\nWhen a usage limit stops this chat, it goes on by itself in the background a minute after the limit resets, and again after every later one, until you switch Keep going off."}
           onClick={() => post(act === "keepAtReset" ? { type: "queueContinue", chat: ref, keep: true } : { type: "keepGoing", chat: ref, on: true })}>
           <Icon name={I.keepGoing} /> Keep going
         </button>
