@@ -9,7 +9,12 @@ fails, and SHELL is a login shell whose PATH has only that one. A test that
 sets PATH or SHELL itself (a fake bin, the find_claude tests) still gets its
 own, and child processes inherit the guard.
 
-Each test that runs the guard's claude fails, naming what it was asked."""
+Each test that runs the guard's claude fails, naming what it was asked.
+
+No test reaches your desktop's session either: your session bus and your display
+(DBUS_SESSION_BUS_ADDRESS, DISPLAY, WAYLAND_DISPLAY) are taken out of the
+environment, so nothing a test starts (Qt runs offscreen; one that needs a bus
+starts its own, dbus-run-session) can find them."""
 import atexit
 import os
 import shutil
@@ -38,6 +43,8 @@ def _install():
         exe.chmod(0o755)
     os.environ["PATH"] = os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
     os.environ["SHELL"] = str(shell)
+    for k in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY"):
+        os.environ.pop(k, None)
 
     run = unittest.TestCase.run
 

@@ -19,6 +19,7 @@ Chromium applies each as it comes, at the next frame.
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -60,12 +61,21 @@ def main(argv):
     try:
         data = work / "long500.json"
         data.write_text(json.dumps(vscode_bench.conversations(work)["long500"]))
-        r = subprocess.run(["node", str(HERE / "wheel_vscode.mjs"), str(REPO), str(data), browser],
-                           stdout=subprocess.PIPE, text=True, timeout=300)
+        # (no session bus or display of yours; node and its Chromium in a session of their own: if it hangs,
+        # all of it ends with it)
+        env = bench.browser_env(work / "home")
+        env["TALPY_CHROME_FLAGS"] = " ".join(bench.CHROME_FLAGS)
+        node = subprocess.Popen(["node", str(HERE / "wheel_vscode.mjs"), str(REPO), str(data), browser],
+                                stdout=subprocess.PIPE, text=True, env=env, start_new_session=True)
+        try:
+            stdout = node.communicate(timeout=300)[0]
+        except subprocess.TimeoutExpired:
+            os.killpg(node.pid, signal.SIGKILL)
+            stdout = node.communicate()[0] + "\nerror timed out"
     finally:
         shutil.rmtree(work, ignore_errors=True)
     result = {"when": time.strftime("%Y-%m-%d %H:%M"), "load": round(os.getloadavg()[0], 1), "motion": {}, "pace": {}}
-    for line in r.stdout.splitlines():
+    for line in stdout.splitlines():
         what, _, rest = line.partition(" ")
         if what == "error":
             result["error"] = rest

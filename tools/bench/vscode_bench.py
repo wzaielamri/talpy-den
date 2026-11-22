@@ -30,6 +30,7 @@ import http.server
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -110,18 +111,22 @@ def main(argv):
         profile.mkdir()
         url = f"http://127.0.0.1:{server.server_port}/bench.html"
         chrome = os.environ.get("TALPY_BENCH_CHROME")   # (a Chromium to run it in instead: VS Code's own engine)
-        fox = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=760,960", url] if chrome
+        # (no session bus or display of yours; in a session of its own, so all its processes end with it)
+        fox = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=760,960",
+                                *bench.CHROME_FLAGS, url] if chrome
                                else ["firefox", "--headless", "--no-remote", "--profile", str(profile), "--window-size", "760,960", url],
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                               env=bench.browser_env(work / "home"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
         try:
             if not got.wait(180):
                 result["error"] = "no result in 3 minutes"
         finally:
-            fox.terminate()
+            os.killpg(fox.pid, signal.SIGTERM)
             try:
                 fox.wait(10)
             except subprocess.TimeoutExpired:
-                fox.kill()
+                os.killpg(fox.pid, signal.SIGKILL)
+                fox.wait()
             server.shutdown()
     finally:
         shutil.rmtree(work, ignore_errors=True)

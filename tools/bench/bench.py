@@ -90,11 +90,27 @@ def home_for(work):
     return home
 
 
+# (your session's D-Bus and your display: never handed to anything the bench starts)
+YOURS = ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY")
+# (a headless Chromium's: no keyring of yours either)
+CHROME_FLAGS = ["--password-store=basic", "--use-mock-keychain"]
+
+
 def env_for(home):
-    """This environment with the made-up home, and none of your own XDG folders (render_popup.sh sets its own)."""
+    """This environment with the made-up home, none of your own XDG folders (render_popup.sh sets its own),
+    and no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen)."""
     env = {k: v for k, v in os.environ.items()
-           if not k.startswith("XDG_") or k in ("XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS")}
+           if (not k.startswith("XDG_") or k in ("XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and k not in YOURS}
     env["HOME"] = str(home)
+    return env
+
+
+def browser_env(home=None):
+    """A headless browser's: this environment with no session bus or display of yours, none of your XDG
+    folders, and a made-up home when given."""
+    env = {k: v for k, v in os.environ.items() if (not k.startswith("XDG_") or k == "XDG_RUNTIME_DIR") and k not in YOURS}
+    if home is not None:
+        env["HOME"] = str(home)
     return env
 
 
@@ -293,14 +309,14 @@ def steps_of(ys):
 
 def frames_of(ys, given, ms, frame=1000 / 60.03):
     """The samples a frame each: an animation step that came less than 0.6 of a frame after the one kept
-    before isn't a frame of its own (the loop steps again when a step changed nothing: it isn't drawn
-    apart from the next on a screen), its place is the next frame's."""
+    before isn't a frame of its own (the loop steps again as an animation begins, and when a step changed
+    nothing): what it moved is drawn with the next frame, so the frame keeps its own place and the next
+    one counts both."""
     if not ms:
         return ys, given
     ky, kg, kt = ys[:1], given[:1], ms[:1]
     for y, g, t in zip(ys[1:], given[1:], ms[1:]):
         if len(ky) > 1 and t - kt[-1] < 0.6 * frame:
-            ky[-1] = y
             kg[-1] += g
         else:
             ky.append(y)

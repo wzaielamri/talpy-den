@@ -31,6 +31,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+sys.path.insert(0, str(HERE))
+import bench  # noqa: E402
 
 CHECKS = 19
 
@@ -79,11 +81,11 @@ def main(argv):
         home, profile = work / "home", work / "profile"
         home.mkdir()
         profile.mkdir()
-        env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_") or k == "XDG_RUNTIME_DIR"}
-        env["HOME"] = str(home)   # (a made-up home: nothing of yours is read or written)
+        env = bench.browser_env(home)   # (a made-up home: nothing of yours is read or written; no bus or display of yours)
         url = f"http://127.0.0.1:{server.server_port}/newsince.html"
         chrome = os.environ.get("TALPY_BENCH_CHROME")
-        browser = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=800,760", url]
+        browser = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=800,760",
+                                    *bench.CHROME_FLAGS, url]
                                    if chrome else
                                    ["firefox", "--headless", "--no-remote", "--profile", str(profile), "--window-size", "800,760", url],
                                    env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

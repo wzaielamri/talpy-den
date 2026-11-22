@@ -25,14 +25,33 @@
 # jobs file (Talpy Den Display's feed) from a cache with no SSH host's answer
 # in it, which dropped every host's chats from it while a render ran; its
 # watcher could take a chat another program asked to open (opens/); and its
-# SSH connections were your widget's.
+# SSH connections were your widget's. Nor your session's D-Bus or your display:
+# the render runs on a D-Bus of its own (dbus-run-session), with no display of
+# yours, and what it started on that bus (a portal, the activity manager…) is
+# ended by its pid when it's done.
 set -euo pipefail
+if [ "${RENDER_OWN_BUS:-}" != "$PPID" ] || [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+  # (once more, on a bus of its own: dbus-run-session, with this pid as exec keeps it, is its parent there)
+  exec env -u DBUS_SESSION_BUS_ADDRESS -u DISPLAY -u WAYLAND_DISPLAY RENDER_OWN_BUS=$$ QT_QPA_PLATFORM=offscreen \
+    dbus-run-session -- "$BASH" "${BASH_SOURCE[0]}" "$@"
+fi
 umask 077  # the PNG and log show your real chats: keep them private
 out=$(realpath -m "$1"); secs=${2:-7}
 rm -f -- "$out" "${out%.png}.log"  # new files, so an old render's wider mode doesn't stay
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 work=$(mktemp -d)
-trap 'rm -rf "$work"' EXIT
+bus=${DBUS_SESSION_BUS_ADDRESS%%,*}
+# (what's still on its bus once it's done: ended by pid, but not this script and dbus-run-session)
+leftovers() {
+  local p a
+  for p in /proc/[0-9]*; do
+    p=${p#/proc/}
+    [ "$p" = "$$" ] || [ "$p" = "$PPID" ] && continue
+    a=$( { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | cut -d, -f1) || true
+    [ -n "$a" ] && [ "$a" = "$bus" ] && kill "$p" 2>/dev/null || true
+  done
+}
+trap 'leftovers; rm -rf "$work"' EXIT
 cp -a "$repo/package" "$work/pkg"
 python3 -I - "$work/pkg" "$out" "$secs" <<'PY'
 import json, os, sys
@@ -110,10 +129,7 @@ fi
   [ -n "${SSH_HOSTS:-}" ] && printf '\n[Applets][1][Configuration][General]\nsshHosts=%s\nremotePollSeconds=10\n' "$SSH_HOSTS"
 } > "$work/config/plasmawindowedrc"
 # (its runtime folder always in $work, never RENDER_KEEP's: private as the real one is, and short, for ssh's
-# sockets in it, remote.py's SOCKET_DIR_MAX; the session bus stays yours, named whole as before)
-if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]; then
-  export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-fi
+# sockets in it, remote.py's SOCKET_DIR_MAX; its session bus is its own, above)
 mkdir -m 700 "$work/run"
 export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache" \
   XDG_RUNTIME_DIR="$work/run"

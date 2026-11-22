@@ -32,7 +32,8 @@ await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const port = server.address().port;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "talpy-wheel-chrome-"));
 const proc = spawn(chrome, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run",
-  "--no-default-browser-check", "--window-size=760,900", "--enable-smooth-scrolling", "--hide-scrollbars=false", "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
+  "--no-default-browser-check", "--window-size=760,900", "--enable-smooth-scrolling", "--hide-scrollbars=false",
+  ...(process.env.TALPY_CHROME_FLAGS || "").split(" ").filter(Boolean), "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let ws = null;
 try {
