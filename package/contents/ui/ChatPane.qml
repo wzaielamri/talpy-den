@@ -3739,6 +3739,7 @@ Window {
                         contentHeight: stripList.implicitHeight
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
+                        pixelAligned: true   // (its lines move together, as the conversation's)
                         PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {}
 
                         ColumnLayout {
@@ -3886,6 +3887,11 @@ Window {
                     spacing: 0
                     clip: true
                     boundsBehavior: Flickable.StopAtBounds
+                    // whole pixels only, as its rows start on them (gap): Qt snaps each text to the
+                    // nearest pixel on its own, so the wheel's eased steps (Kirigami's: 19.11 px,
+                    // 11.31…) moved some lines a pixel more than the rest in the same frame, a
+                    // shimmer as it scrolled; now it all moves together, by whole pixels
+                    pixelAligned: true
                     // every item made and laid out once (not as it scrolls in), so the
                     // list doesn't jump while you scroll; many come in at once, a few at a
                     // time (fillBuffer)
@@ -3957,7 +3963,7 @@ Window {
 
                     header: Item {
                         width: list.width
-                        implicitHeight: headerColumn.implicitHeight + Kirigami.Units.largeSpacing
+                        implicitHeight: Math.ceil(headerColumn.implicitHeight + Kirigami.Units.largeSpacing)   // (the first row on a whole pixel)
 
                         ColumnLayout {
                             id: headerColumn
@@ -4014,7 +4020,7 @@ Window {
                     // it's doing, in the working color
                     footer: Item {
                         width: list.width
-                        implicitHeight: pane.chatState === "working" || pane.starting ? workingLine.implicitHeight + shellLines.height + Kirigami.Units.gridUnit : 0
+                        implicitHeight: pane.chatState === "working" || pane.starting ? Math.ceil(workingLine.implicitHeight + shellLines.height + Kirigami.Units.gridUnit) : 0
                         visible: pane.chatState === "working" || pane.starting
 
                         RowLayout {
@@ -4124,10 +4130,11 @@ Window {
                         // (a question or a plan you answered: as Claude's, in Chat and Steps)
                         readonly property bool card: kind === "tool" && pane.askedShows(askedData, pane.answeringFor[key] === true)
                         // more room before your prompt (a new turn) than between steps; your answer: right under what it answers
-                        readonly property real gap: index === 0 ? 0
+                        // (whole pixels, its height too: each row starts on one, so they all scroll together, pixelAligned)
+                        readonly property real gap: Math.round(index === 0 ? 0
                             : kind === "you" && answered === "" ? Kirigami.Units.gridUnit * 1.6
                             : (kind === "tool" && (prev === "tool" || prev === "made")) || kind === "made" ? Kirigami.Units.smallSpacing * 1.5
-                            : Kirigami.Units.gridUnit * 0.8
+                            : Kirigami.Units.gridUnit * 0.8)
                         // (the Chat tab: a call you denied with a note too, its note under it)
                         readonly property bool shows: (kind !== "tool" || pane.listTab === "steps" || card
                                                        || (askedData !== null && askedData.state === "denied")) && listed
@@ -4136,7 +4143,7 @@ Window {
                         // by a row put in before it, then removed, was seen still drawn, twice)
                         readonly property bool listed: index >= 0
                         width: list.width
-                        implicitHeight: gap + body.implicitHeight
+                        implicitHeight: gap + Math.ceil(body.implicitHeight)
                         height: shows ? implicitHeight : 0
                         visible: shows
 

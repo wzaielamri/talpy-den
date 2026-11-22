@@ -17,6 +17,9 @@ ColumnLayout {
         Layout.fillHeight: true
         contentWidth: availableWidth
         PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+        // (whole pixels, as the conversation: its changes' lines move together as it scrolls; the
+        // Flickable is the scroll view's own)
+        Component.onCompleted: contentItem.pixelAligned = true
 
         ColumnLayout {
             width: parent.width

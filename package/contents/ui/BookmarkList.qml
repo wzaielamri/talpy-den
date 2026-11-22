@@ -166,6 +166,7 @@ Rectangle {
             Layout.preferredHeight: contentHeight
             clip: true
             boundsBehavior: Flickable.StopAtBounds
+            pixelAligned: true   // (whole pixels, its rows too: its text moves together, as the conversation's)
             model: pane.bookmarks
             cacheBuffer: 0   // (the entries in sight only: the rest as it scrolls)
             PlasmaComponents3.ScrollBar.vertical: PlasmaComponents3.ScrollBar {
@@ -185,7 +186,7 @@ Rectangle {
                 onHoveredChanged: if (hovered) card.tipFor = entry
 
                 width: entries.width - (entriesBar.visible ? entriesBar.width : 0)   // (clear of its scroll bar)
-                height: Math.max(snippet.implicitHeight, side.height) + Kirigami.Units.smallSpacing * 2
+                height: Math.ceil(Math.max(snippet.implicitHeight, side.height) + Kirigami.Units.smallSpacing * 2)
                 onClicked: card.go(mark, where)
 
                 HoverShade {

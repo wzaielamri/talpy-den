@@ -12,7 +12,7 @@ import org.kde.kirigami as Kirigami
 Item {
     property real day: 0
 
-    implicitHeight: line.implicitHeight + Kirigami.Units.gridUnit * 1.1
+    implicitHeight: Math.ceil(line.implicitHeight + Kirigami.Units.gridUnit * 1.1)   // (the rows under it on whole pixels)
 
     RowLayout {
         id: line
