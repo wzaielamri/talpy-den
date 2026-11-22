@@ -980,6 +980,26 @@ export function queuedChat(status: Pick<Status, "queue"> | null, chatId: string,
   return (status?.queue ?? []).find((t) => !!t.chat && t.chat === chatId && !t.afterTurn && (t.host || "") === (host || "")) ?? null;
 }
 
+// Whether a reply queued for when a chat's turn ends still waits (s: the chat's row; none: not
+// listed, it goes): while Claude's turn goes on, or it asks you something. Not while only what it
+// runs in the background goes on after its turn (turnOver: commands, subagents, monitors,
+// talpy_den.turn_over): Claude takes a message in at its prompt then, as Claude Code's own queue
+// does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
+// in the background with your message only once its Claude is idle, and ending it sooner would end
+// them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
+// When a reply its chat's background service refused is tried again (its startAt), for Talpy Chat's
+// "Tries again at 14:31": only while that's to come and it has no error (it waits for you then);
+// else 0, and the line says "Sent when this turn ends". Plasma's main.qml queuedRetryAt: the same
+// (both tested with tests/after_turn_cases.json's "retry")
+export function queuedRetryAt(t: Pick<QueuedTask, "refused" | "error" | "startAt">, now: number): number {
+  return t.refused && !t.error && t.startAt > now ? t.startAt : 0;
+}
+
+// Plasma's main.qml afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
+export function afterTurnWaits(s: Pick<Session, "state" | "turnOver" | "reply"> | null | undefined): boolean {
+  return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")));
+}
+
 // Whether a queued task's line would only repeat a row: a chat's go-on whose
 // chat is one of the account's rows, which says Goes on at … (SessionRow's
 // goingOn); not one that failed (its line says why) nor a reply for when a

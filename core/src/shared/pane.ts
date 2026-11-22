@@ -278,7 +278,7 @@ export interface PaneChat {
   reviewPending: boolean;
   reviewed: boolean; // its changes since its last edit marked reviewed, whether it works now or not (the Reviewed ✓ button)
   review: Review | null;
-  queued: { id: string; prompt: string; error: string } | null; // a reply waiting for its turn to end
+  queued: { id: string; prompt: string; error: string; refused?: string; retryAt?: number } | null; // a reply waiting for its turn to end (refused: why its chat's service didn't take it; retryAt: when it's tried again)
   canMove: boolean; // runs in a terminal, on the account Claude Code is on: it can move to a Claude Code panel
   where: ChatWhere;
   terminalApp: string; // the terminal it runs in, by name (Konsole, kitty…), or ""
@@ -1226,7 +1226,7 @@ export { allIn, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, 
 // Bookmarks (Ctrl+D, the list, Alt+↑ / Alt+↓): the widget's bookmarks.mjs, so Plasma's Talpy Chat
 // bookmarks the same messages and goes to the same one (see there)
 // Quote in reply (a selection's "Reply to this", the right-click menu): the widget's quote.mjs, as Plasma's
-export { QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote } from "../../../vscode/vendor/quote.mjs";
+export { QUOTE_BUTTON, QUOTE_MENU, barY, quoteOf, withQuote } from "../../../vscode/vendor/quote.mjs";
 export { adoptable, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, oneLine, SNIPPET_CHARS, snippetOf, stateOf, staysOpen, step as bookmarkStep, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, type BookmarkStep } from "../../../vscode/vendor/bookmarks.mjs";
 // Side questions (the side panel, "Explain this"): the widget's sides.mjs, as Plasma's
 export { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, pickLabel as sidePickLabel, SIDE_ACTIONS, SIDE_AGAIN, SIDE_BUTTON, SIDE_CLEAR, SIDE_CLEAR_ASK, SIDE_CLOSE, SIDE_COPY, SIDE_COST_TIP, SIDE_EMPTY, SIDE_PENDING, SIDE_PICK_TIP, SIDE_PICKS, SIDE_PLACEHOLDER, SIDE_QUOTE, SIDE_REMOVE, SIDE_TIP, SIDE_TITLE, sideModelLabel, sideState, sideWarm, tokensText, WARM_MS, SIDE_FROM_MENU, SIDE_FROM_TIP, SIDE_FROM_LINE, SIDE_FROM_SHOW, SIDE_FOLD_TIP, SIDE_UNFOLD_TIP, foldedLine, SIDE_WHOLE, SIDE_WHOLE_TIP, SIDE_ASK_WHOLE, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, fromNote, sideSaw, type Side, type SidePart } from "../../../vscode/vendor/sides.mjs";

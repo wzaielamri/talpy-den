@@ -3,5 +3,6 @@
 export declare const QUOTE_BUTTON: string;
 export declare const QUOTE_MENU: string;
 export declare const QUOTE_CHARS: number;
+export declare function barY(endY: number, top: number, bottom: number, gap: number, limit: number): number | null;
 export declare function quoteOf(selected: string): string;
 export declare function withQuote(box: string, selected: string): { text: string; cursor: number };

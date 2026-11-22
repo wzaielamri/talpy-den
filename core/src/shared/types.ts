@@ -138,10 +138,14 @@ export interface QueuedTask {
   model?: string | null; // a new chat's model and effort (claude --model, --effort)
   effort?: string | null;
   // a reply for when the chat's turn ends (pane.py --send --after-turn):
-  // sent once the chat isn't working any more, the way `how` says
+  // sent once Claude's turn is over (afterTurnWaits), the way `how` says
   afterTurn?: boolean;
   how?: string;
   session?: string | null;
+  // a reply whose chat's background service refused it while the chat ran something in the
+  // background: why (and how often in a row); it's tried again at startAt (jump.py start_queued)
+  refused?: string;
+  refusals?: number;
 }
 
 // A chat of this computer that keeps going until it's done: after each usage
@@ -249,6 +253,9 @@ export interface Session {
   jobId: string | null;
   jobSessionId: string | null;
   tmux?: boolean; // runs in a tmux pane: a working one can be interrupted (Ctrl+C)
+  // working on what it runs in the background alone, Claude's own turn over (talpy_den.turn_over):
+  // a reply queued for when the turn ends goes now (afterTurnWaits); older backends leave it out
+  turnOver?: boolean;
   bgStop?: boolean; // a live background session Talpy Chat's Stop can interrupt (Esc through Claude's background service)
   remoteControl?: string | null; // the claude.ai/code page of a live chat with Remote Control on (talpy_den.remote_control_link)
   remoteSwitch?: boolean; // a live background session Talpy Den can turn Remote Control on and off in

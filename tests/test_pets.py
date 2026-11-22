@@ -2494,6 +2494,26 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("Sides.explainQuestion(selected)", explain)
         self.assertIn("pane.showSides(true, true, key)", explain)
 
+    def test_selection_bar_follows_the_text_and_hides_out_of_view(self):
+        # A cheap guard beside tools/bench/selbar.py (which renders it): the bar is anchored to the row the selection
+        # ends in (not a place in the content), bound to the list's scroll and that row; quote.mjs barY places it and
+        # says null (hidden) out of view; a scroll doesn't close it; no timer, animation or polling
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("{ x: Math.max(0, Math.min(end.x, scroll.width - Kirigami.Units.gridUnit * 7)), key: end.key, at: end.at, dy: end.dy }", pane)
+        line = pane[pane.index("    function quoteLineY() {"):]
+        line = line[:line.index("\n    }\n")]
+        self.assertIn("void list.contentY, list.contentHeight, items.count", line)
+        self.assertIn("d.mapToItem(scroll, 0, q.dy).y", line)
+        bar = pane[pane.rindex("Loader {", 0, pane.index("text: Quote.QUOTE_BUTTON")):pane.index("text: Quote.QUOTE_BUTTON")]
+        self.assertIn("Quote.barY(pane.quoteLineY(), 0, scroll.height,", bar)
+        self.assertIn("visible: barY !== null", bar)
+        for word in ("Timer", "Animation", "Behavior"):
+            self.assertNotIn(word, bar)
+        moved = pane[pane.index("onMovementStarted: {"):]
+        self.assertNotIn("quoteAt", moved[:moved.index("onContentHeightChanged")])   # (a scroll or a flick leaves the bar)
+        self.assertIn("export function barY(", (ROOT / "ui/quote.mjs").read_text())
+        self.assertTrue((ROOT.parent.parent / "tools/bench/selbar.py").is_file())
+
     def test_side_questions_ask_take_and_say_it_as_sides_mjs_does(self):
         # The words are sides.mjs's (VS Code's the same), never written again in the QML; asking runs pane.py
         # --side-question (the model picked: sideQuestionModel, every copy's), a removal its --remove; an answer's

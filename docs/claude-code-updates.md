@@ -152,6 +152,34 @@ Then revoke the scratch folder's trust in the Permissions tab. Claude's own clea
   - Breaks: chats show as idle while working, or the reverse. Interrupt sends Ctrl+C at an idle prompt, which
     quits Claude.
   - Test: StateMappingTests.test_interactive, NewClaudeValuesTests (test_talpy_den.py).
+- [ ] **busy also while a background subagent works.** Claude Code writes `busy` while a turn runs and also
+  while a background subagent works after the turn, `shell` when it's otherwise idle but a background shell
+  runs (2.1.330: `MY()` gives `busy` for `isLoading || delegatedActive`, `delegatedActive` any `local_agent`,
+  `remote_agent`, `in_process_teammate` or `local_workflow` task not completed, failed or killed; `shell` is
+  `idle` while a `local_bash` task runs). Its own queue sends what you typed once the turn is over
+  (`RWe`: the turn guard, not the background tasks), so a message for when the turn ends goes while those
+  run: for `busy`, Talpy Den reads the transcript's newest entry of the main thread (a finished reply with
+  no tool call ends the turn, as does a local command's `<local-command-stdout>` after it). A job's
+  `inFlight.tasks` counts the backgrounded tasks but leaves out `remote_agent`, `dream` and
+  `post_turn_memory` (2.1.330: `sK`'s `m()`), so `busy` with an ended transcript counts as running
+  something in the background, and a chat whose service refuses a message is never stopped for it then.
+  - Used in: talpy_den.py turn_over, turn_ended, transcript_turn_ended, runs_in_background, live_row (the
+    row's `turnOver`), peek_from (`turnEnded`); pane.py turn_runs, send_now; main.qml and shared/model.ts
+    afterTurnWaits.
+  - Check: `has delegatedActive`, then find `MY(` with
+    `grep -a -o 'status:[a-zA-Z.]*isLoading||[a-zA-Z.]*delegatedActive?"busy":"idle"' $BIN`, and what
+    `inFlight` counts with `grep -a -o 'function m(e){return Object.values(e).filter(dy)[^}]*}' $BIN`. In a
+    throwaway chat, have Claude start a background subagent that sleeps 60 s and end its turn: `jq .status`
+    on its session file stays `busy` till the subagent ends.
+  - Breaks: a message or `/compact` for when the turn ends waits until every background subagent and shell
+    of the chat has ended, hours for a watch loop; or a chat whose service refused a message is stopped
+    with a remote agent at work.
+  - Test: StateMappingTests.test_its_turn_is_over_while_only_its_background_work_goes_on,
+    test_whether_the_newest_entry_ends_claudes_turn, test_what_runs_in_the_background_ending_the_chat_would_end,
+    TranscriptTurnEndedTests, SessionTests.test_a_chat_at_work_only_on_its_background_work_says_its_turn_is_over
+    (test_talpy_den.py); SendTests.test_a_message_for_when_the_turn_ends_goes_once_claudes_turn_is_over,
+    test_a_message_for_when_the_turn_ends_stops_a_chat_only_once_it_is_idle (test_pane.py); the cases in
+    tests/after_turn_cases.json (test_pane.py for Plasma, vscode/test/queue.test.ts for VS Code).
 - [ ] **waitingFor reasons.** `permission prompt`, `goal proposal`, `sandbox request`, `worker request`,
   `input needed` (a question, MCP elicitation too) and `dialog open` (a dialog you opened yourself,
   deliberately not counted as waiting).

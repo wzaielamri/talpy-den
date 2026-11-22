@@ -87,6 +87,114 @@ test("a reply after a host chat's turn waits while the host's check fails", () =
   }
 });
 
+// A reply (or /compact) queued for when a chat's turn ends goes once Claude's own turn is over,
+// though the chat still counts as working on what it runs in the background (turnOver: commands, a
+// subagent), as Claude Code's own queue takes it at its prompt; not while its turn goes on or it
+// asks you, nor, for a terminal that takes no text, while anything of it runs (going on in the
+// background would end that)
+test("a reply after a chat's turn goes once its turn is over, while its background work goes on", () => {
+  const actions: string[][] = [];
+  const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;
+  const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
+  const priv = dash as unknown as { hosts: Map<string, unknown>; startDueTasks(s: Status): void; starting: Set<string>; startingChats: Set<string> };
+  try {
+    const result = structuredClone(demoState(NOW).hosts[0].result!);
+    Object.assign(result.groups[0], { limits: null, accountLimits: null, cap: null });
+    for (const s of result.groups[0].sessions) s.stopped = null;
+    const chat = result.groups[0].sessions[0];
+    const status = { ...structuredClone(demoState(NOW).status!), queue: [
+      { id: "q3", afterTurn: true, chat: chat.chatId || chat.sessionId, host: "lab", profile: result.groups[0].profileKeys[0], prompt: "/compact" } as never] };
+    priv.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result, updatedAt: NOW });
+    const goes = (row: Partial<Session>): boolean => {
+      Object.assign(chat, row);
+      actions.length = 0;
+      priv.starting.clear(); // (each a pass of its own: the one before isn't out being sent)
+      priv.startingChats.clear();
+      priv.startDueTasks(status);
+      return actions.some((a) => a[0] === "--start-queued" && a[1] === "q3");
+    };
+    assert.equal(goes({ state: "working", turnOver: false, reply: "background" }), false, "its turn goes on");
+    assert.equal(goes({ state: "waiting", turnOver: false, reply: "background" }), false, "it asks you");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "background" }), true, "a background chat");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "tmux" }), true, "in tmux");
+    assert.equal(goes({ state: "working", turnOver: true, reply: "terminal" }), false, "a terminal that takes no text");
+    assert.equal(goes({ state: "idle", turnOver: false, reply: "terminal" }), true, "idle");
+    assert.equal(goes({ state: "working", turnOver: undefined, reply: "background" }), false, "an older backend");
+  } finally {
+    priv.starting.clear();
+    dash.dispose();
+  }
+});
+
+// Only the first reply a chat has in the queue goes in a pass (a /compact put back where it was, then
+// your follow-up); one put back as its turn ran after all goes again only once the host has answered
+// a check asked after that, not on the row it was sent by (an ssh run each pass till then). Plasma's
+// startDueTasks the same (tests/test_pane.py)
+test("a chat's replies go in their order, and one put back waits for the host's next answer", async () => {
+  const actions: string[][] = [];
+  let answer: Record<string, unknown> = { ok: true, message: "", turnRuns: true };
+  let pending: Promise<void> | undefined; // (q1's answer waits for it: out being sent)
+  const backend = { action: async (_s: string, args: string[]) => {
+    actions.push(args);
+    if (pending && args[1] === "q1") await pending;
+    return answer;
+  }, status: async () => ({ status: null }) } as unknown as Backend;
+  const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
+  const priv = dash as unknown as { hosts: Map<string, unknown>; hostAnswered: Map<string, number>; startDueTasks(s: Status): void;
+                                    starting: Set<string>; heldBack: Map<string, number>; pollHost(h: string): Promise<void>; refresh(): Promise<void> };
+  priv.pollHost = async () => {}; // (no real check of lab)
+  priv.refresh = async () => {};
+  try {
+    const result = structuredClone(demoState(NOW).hosts[0].result!);
+    Object.assign(result.groups[0], { limits: null, accountLimits: null, cap: null });
+    for (const s of result.groups[0].sessions) s.stopped = null;
+    const [a, b] = result.groups[0].sessions;
+    Object.assign(a, { state: "idle" });
+    Object.assign(b, { state: "idle" });
+    const task = (id: string, chat: Session) => ({ id, afterTurn: true, chat: chat.chatId || chat.sessionId, host: "lab", profile: result.groups[0].profileKeys[0], prompt: id }) as never;
+    const status = { ...structuredClone(demoState(NOW).status!), queue: [task("q1", a), task("q2", a), task("q3", b)] };
+    priv.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result, updatedAt: NOW });
+    priv.hostAnswered.set("lab", Date.now() - 5000);
+    const pass = async (): Promise<string> => {
+      actions.length = 0;
+      priv.startDueTasks(status);
+      await new Promise((r) => setTimeout(r, 10)); // (its startQueued answers)
+      return actions.filter((x) => x[0] === "--start-queued").map((x) => x[1]).join(",");
+    };
+    assert.equal(await pass(), "q1,q3", "the first of each chat; q1 and q3 come back: their turn ran after all");
+    assert.equal(await pass(), "", "nothing again on the row they were sent by");
+    priv.hostAnswered.set("lab", Date.now() + 1); // (a check asked after the put-back answered)
+    answer = { ok: true, message: "Sent" };
+    assert.equal(await pass(), "q1,q3");
+    assert.equal(priv.heldBack.size, 0, "sent: nothing of them kept");
+    // one with an error waits for you (Start it now or Cancel): it doesn't hold the chat's others
+    (status.queue![0] as { error?: string }).error = "its terminal is gone";
+    assert.equal(await pass(), "q2,q3");
+    // one put back, then cancelled (gone from the queue): nothing of it kept
+    answer = { ok: true, message: "", turnRuns: true };
+    status.queue = [task("q3", b)];
+    assert.equal(await pass(), "q3");
+    assert.equal(priv.heldBack.size, 1);
+    status.queue = [];
+    await pass();
+    assert.equal(priv.heldBack.size, 0);
+    // one out being sent isn't in the queue the status lists meanwhile: none of its chat's others go
+    let release!: () => void;
+    pending = new Promise<void>((r) => (release = r));
+    answer = { ok: true, message: "Sent" };
+    status.queue = [task("q1", a), task("q2", a), task("q3", b)];
+    assert.equal(await pass(), "q1,q3");
+    status.queue = [task("q2", a), task("q3", b)];
+    assert.equal(await pass(), "q3", "q1 is out being sent");
+    release();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(await pass(), "q2,q3");
+  } finally {
+    priv.starting.clear();
+    dash.dispose();
+  }
+});
+
 test("a reply after a chat's turn waits for its account's usage limit to reset, as a queued task does", () => {
   const actions: string[][] = [];
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), { ok: true, message: "" }) } as unknown as Backend;

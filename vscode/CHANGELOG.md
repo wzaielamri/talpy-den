@@ -17,6 +17,11 @@
   page's beat). Whether it helps on a real screen still needs the eye of
   someone who saw it.
 
+- **The Reply to this / Explain this bar in Talpy Chat goes with the
+  selection.** Scrolling with text selected closed the bar. Now it stays under
+  the selection's last line, hides while that line is out of view and comes
+  back with it, and stays inside the list (not over the reply box).
+
 - **↓ Latest in Talpy Chat, and a chat read far back stays quick.** Whenever
   the conversation isn't at its newest part (after going to a bookmark, a
   search's match, or scrolling up), a floating ↓ Latest over its bottom takes
@@ -65,6 +70,25 @@
   still nothing is installed or kept there. Reading a chat over a 300 KB/s
   uplink takes 1.4 s instead of 3.6 s; on a fast network it's as quick as
   before.
+
+### Fixed
+
+- **A message or /compact for when the turn ends goes once Claude's turn is
+  over.** It waited while the chat counted as at work, and Claude Code counts
+  a chat as at work while a background subagent or shell it started runs: a
+  chat waiting on its subagents, with watch loops running for hours, kept
+  *Sent when this turn ends: /compact* for hours, where Claude Code's own
+  queue runs it as soon as the turn is over. Now it goes then, into the
+  chat's prompt or through Claude's background service, and what runs in the
+  background goes on. A message never stops a background chat that runs
+  commands or subagents in the background: when Claude's service doesn't
+  take it, one for when the turn ends is tried again a minute later, and
+  from the third refusal on every ten minutes (*Tries again at 14:31*, the
+  service's reason on hover); a plain Send isn't sent, with the service's
+  reason. A chat's replies go in their order (one that failed
+  waits for you and doesn't hold the others), and one for an SSH host's chat
+  whose turn ran after all is tried again after the host's next check, not
+  at each refresh.
 
 ## 1.23.0
 
