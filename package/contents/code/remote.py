@@ -75,6 +75,7 @@ its stdin, as on a host), over ssh in HOST's shared connection for one on a host
 """
 
 import glob
+import hashlib
 import json
 import os
 import re
@@ -88,6 +89,10 @@ import sys
 import time
 import zlib
 from pathlib import Path
+try:
+    import lzma
+except ImportError:  # (a Python built without liblzma: the code goes with zlib)
+    lzma = None
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the installed widget...
 if sys.version_info >= (3, 8):  # ...but talpy_den.py compiled in the data folder, as poll.py does (never the cache)
@@ -271,14 +276,84 @@ PYTHON_CHECK = ("import sys\n"
 # Talpy Chat's read of a chat is ~920 KB of it, a status check ~630 KB, and
 # through a jump host or a home uplink sending it was most of their time
 # (a chat's read there: 4.1 s, the host's own part 0.3 s; with a quarter of
-# it, 1.6 s, 2026-11-19). zlib's level 6: ~20 ms here for 920 KB.
-UNPACK = "import sys,zlib;exec(compile(zlib.decompress(sys.stdin.buffer.read()),\"<stdin>\",\"exec\"))"
+# it, 1.6 s, 2026-11-19). zlib's level 6: ~20 ms here for 920 KB. With xz
+# it's a fifth smaller again (a chat's read: 264 KB -> 210 KB, the status
+# 183 KB -> 147 KB, 2026-11-22), and it goes so when python3 there has
+# lzma (xz_program). One without it (lzma is optional in a Python built
+# from source) says so first, NO_LZMA and the bytes it read, before it
+# runs anything: the call goes again with zlib (run_script).
+NO_LZMA = "@@talpy-den-no-lzma@@"
+UNPACK = ('import sys,zlib,importlib.util as u;d=sys.stdin.buffer.read();x=d[:6]==b"\\xfd7zXZ\\0";'
+          'x and not u.find_spec("_lzma") and sys.exit("' + NO_LZMA + ' %d"%len(d));'
+          'exec(compile(__import__("lzma").decompress(d) if x else zlib.decompress(d),"<stdin>","exec"))')
 PYTHON = "python3 -I -c " + shlex.quote(UNPACK)
+XZ_MAGIC = b"\xfd7zXZ\x00"
+PACKED_DIR = "packed"   # (here: the code packed with xz, by its hash; the hosts whose python3 has no lzma)
+PACKED_DAYS = 7         # (a copy not used for that long goes; a host's "no lzma" is asked again after it)
 
 
 def packed(script):
     """script as PYTHON takes it on its stdin."""
     return zlib.compress(script.encode("utf-8"), 6)
+
+
+def xz_program(script):
+    """script packed with xz, as PYTHON takes it too: kept here by its hash
+    (in the cache folder, 0600), since xz takes ~0.4 s for a chat's read's
+    ~1 MB, once per version of it; a copy that isn't whole is packed again."""
+    data = script.encode("utf-8")
+    key = hashlib.sha256(data).hexdigest()
+    folder = td.cache_dir(Path.home()) / PACKED_DIR
+    path = folder / (key + ".xz")
+    try:
+        blob = path.read_bytes()
+        if hashlib.sha256(lzma.decompress(blob)).hexdigest() == key:
+            if time.time() - path.stat().st_mtime > 86400:
+                os.utime(str(path))   # (in use: kept)
+            return blob
+    except (OSError, lzma.LZMAError, EOFError):
+        pass
+    blob = lzma.compress(data, preset=6)
+    tmp = folder / f".{key}.{os.getpid()}.tmp"
+    try:
+        td.private_dir(folder)
+        with os.fdopen(os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as f:
+            f.write(blob)
+        os.replace(str(tmp), str(path))
+        for old in folder.iterdir():   # (other versions' copies, not used for a while)
+            if old != path and time.time() - old.stat().st_mtime > PACKED_DAYS * 86400:
+                old.unlink()
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    return blob
+
+
+def no_lzma_file(host):
+    return td.cache_dir(Path.home()) / PACKED_DIR / ("no-lzma-" + hashlib.sha1(host.encode()).hexdigest()[:16])
+
+
+def lzma_there(host):
+    """Whether the code goes to host with xz: this computer's Python has lzma, and host's python3 didn't say it
+    has none in the last PACKED_DAYS."""
+    if lzma is None:
+        return False
+    try:
+        return time.time() - no_lzma_file(host).stat().st_mtime > PACKED_DAYS * 86400
+    except OSError:
+        return True
+
+
+def said_no_lzma(r, sent):
+    """Whether python3 there said it has no lzma (UNPACK), before it ran anything: its last line is NO_LZMA
+    and the bytes it was sent, and nothing answered."""
+    if r.returncode != 1 or not isinstance(r.stderr, bytes) or not isinstance(r.stdout, bytes):
+        return False
+    lines = r.stderr.strip().splitlines()
+    return bool(lines) and lines[-1].strip() == ("%s %d" % (NO_LZMA, len(sent))).encode() \
+        and td.REMOTE_MARK.encode() not in r.stdout and PACKED_MARK.encode() not in r.stdout
 
 
 # And its answer comes back compressed: a chat's read there answers ~1 MB
@@ -1176,11 +1251,13 @@ def with_texts(script, args):
     return line + script, shown
 
 
-def sent_script(script, args):
+def sent_script(script, args, xz=False):
     """(what goes on python3's stdin on a host, the args for its command
     line) for script (host_script's, or one of its own after PYTHON_CHECK)
     run there with args: the texts on stdin (with_texts), and the answer
-    packed (ANSWER_PACKER) once PYTHON_CHECK has passed."""
+    packed (ANSWER_PACKER) once PYTHON_CHECK has passed. xz: with xz, the
+    script (the same for every call of a version: xz_program) after this
+    call's own head, two xz streams that python3 there reads as one."""
     script, args = with_texts(script, list(args))
     head = PYTHON_CHECK if script.startswith(PYTHON_CHECK) else ""
     if head:
@@ -1189,6 +1266,8 @@ def sent_script(script, args):
             head, script = head + line + nl, rest
         else:
             script = script[len(head):]
+    if xz and lzma is not None:
+        return lzma.compress((head + ANSWER_PACKER).encode("utf-8"), preset=6) + xz_program(script), args
     return packed(head + ANSWER_PACKER + script), args
 
 
@@ -1198,9 +1277,23 @@ def run_script(host, args, script, timeout=RUN_TIMEOUT):
     there. Its CompletedProcess as ssh's (text), its answer as the script
     printed it (inflated). Every script a host runs goes this way: the
     status, Talpy Chat's reads and sends, sharing, accounts, the watcher.
-    TimeoutExpired and OSError (TooMuch) as run_on's."""
-    stdin, args = sent_script(script, args)
-    return text_of(ssh(host, python_there(args), stdin, timeout, binary=True))
+    TimeoutExpired and OSError (TooMuch) as run_on's. The code goes with xz
+    where python3 there has lzma (lzma_there); one that says it has none
+    (said_no_lzma: nothing ran) gets it again with zlib, and later calls at
+    once. Nothing else sends a call again: one that may have run never is."""
+    xz = lzma_there(host)
+    stdin, shown = sent_script(script, args, xz)
+    r = ssh(host, python_there(shown), stdin, timeout, binary=True)
+    if xz and said_no_lzma(r, stdin):
+        try:
+            td.private_dir(no_lzma_file(host).parent)
+            no_lzma_file(host).touch(mode=0o600)
+            os.utime(str(no_lzma_file(host)))
+        except OSError:
+            pass
+        stdin, shown = sent_script(script, args, False)
+        r = ssh(host, python_there(shown), stdin, timeout, binary=True)
+    return text_of(r)
 
 
 # Talpy Chat's watcher of a host or a container (--watch): live.py there

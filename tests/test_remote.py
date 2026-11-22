@@ -869,7 +869,7 @@ class PackedAnswerTests(FakeSSH):
             remote.watch("lab", "a1b2c3d4e5f6", 1)
         self.assertEqual(len(seen), 5)
         for call in seen:
-            sent = zlib.decompress(call["stdin"]).decode()
+            sent = (remote.lzma.decompress if call["stdin"].startswith(remote.XZ_MAGIC) else zlib.decompress)(call["stdin"]).decode()
             self.assertTrue(sent.startswith(remote.PYTHON_CHECK), sent[:80])   # (still first)
             self.assertTrue(remote.ANSWER_PACKER in sent)
 
@@ -880,6 +880,104 @@ class PackedAnswerTests(FakeSSH):
         r = remote.run_script("lab", ["--remote"], remote.PYTHON_CHECK + code)
         self.assertEqual(r.stdout.count(td.REMOTE_MARK), 1)
         self.assertEqual(len(remote.answer_after_mark(r.stdout)["items"]), 4000)
+
+
+# A python3 built without liblzma (its _lzma missing), as the host's: runs `python3 -I -c CODE ARGS...` as it would
+NO_LZMA_PYTHON = r"""#!{python} -I
+import sys
+sys.modules["_lzma"] = None
+assert sys.argv[1:3] == ["-I", "-c"], sys.argv
+code, sys.argv = sys.argv[3], ["-c"] + sys.argv[4:]
+exec(compile(code, "<string>", "exec"), {{"__name__": "__main__"}})
+"""
+
+
+class XzProgramTests(FakeSSH):
+    """(2026-11-22) The code sent with every call is most of what goes up
+    now (~270 KB to read a chat): xz makes it a fifth smaller than zlib. It
+    goes as xz when the host's python3 has lzma, packed once here (kept in
+    the cache folder by its hash, as xz takes 0.4 s); a host without it says
+    so before anything runs, and the call goes again with zlib, remembered
+    here. Nothing is kept there."""
+
+    def no_lzma_there(self):
+        shim = Path(self.tmp.name) / "no-lzma"
+        shim.mkdir()
+        (shim / "python3").write_text(NO_LZMA_PYTHON.format(python=sys.executable))
+        (shim / "python3").chmod(0o755)
+        os.environ["FAKE_PATH"] = f"{shim}:{os.environ['FAKE_PATH']}"
+
+    def recorded(self):
+        return PackedAnswerTests.recorded(self)
+
+    def test_the_code_goes_as_xz_packed_once_here(self):
+        seen, recording = self.recorded()
+        with recording, mock.patch.object(remote.lzma, "compress", wraps=remote.lzma.compress) as xz:
+            first = remote.status("lab", tokens=False)
+            again = remote.status("lab", tokens=False)
+        self.assertTrue(first["ok"] and again["ok"], first)
+        self.assertEqual([c["stdin"][:6] for c in seen], [b"\xfd7zXZ\x00"] * 2)
+        zlibbed = len(remote.packed(remote.host_script()))
+        self.assertLess(seen[1]["up"], zlibbed * 0.9, "smaller than zlib's")
+        # (the script packed once, kept here by its hash; each call packs only its own head: PYTHON_CHECK, the packer)
+        self.assertEqual([len(c.args[0]) > 100000 for c in xz.call_args_list], [False, True, False])
+        kept = list((Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed").iterdir())
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(oct(kept[0].stat().st_mode & 0o777), "0o600")
+        # (a copy kept here that isn't whole is packed again, never sent)
+        kept[0].write_bytes(kept[0].read_bytes()[:-100])
+        self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual(len(remote.lzma.decompress(kept[0].read_bytes())), len(remote.host_script().encode()) - len(remote.PYTHON_CHECK))
+
+    def test_your_text_isnt_in_what_is_kept_here(self):
+        # (it goes in each call's own head, on stdin: the copy kept here is the script alone, the same for every call)
+        answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "the secret plan", "--how", "auto", "--after-turn",
+                                            "--profile", ".claude"], name="pane.py")
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual(td.load_queue(self.fake_home / ".cache/talpy-den")[0]["prompt"], "the secret plan")
+        folder = Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed"
+        self.assertEqual(oct(folder.stat().st_mode & 0o777), "0o700")
+        for kept in folder.iterdir():
+            self.assertFalse(b"the secret plan" in remote.lzma.decompress(kept.read_bytes()), kept.name)
+        self.assertNotIn("secret", self.calls()[-1][1])
+
+    def test_a_host_without_lzma_says_so_and_gets_zlib(self):
+        self.no_lzma_there()
+        seen, recording = self.recorded()
+        with recording:
+            answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "go on", "--how", "auto", "--after-turn",
+                                                "--profile", ".claude"], name="pane.py")
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False], "xz, then zlib")
+        self.assertEqual(len(td.load_queue(self.fake_home / ".cache/talpy-den")), 1, "sent once")
+        # (remembered here: the next call goes with zlib at once)
+        with recording:
+            self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False, False])
+
+    def test_a_call_that_may_have_run_isnt_sent_again(self):
+        # (only python3's own word that it has no lzma, said before anything ran, sends it again)
+        seen, recording = self.recorded()
+        for mode in ("unreachable", "slow"):
+            self.mode(mode)
+            with recording, mock.patch.object(remote, "RUN_TIMEOUT", 1):
+                answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "go on", "--profile", ".claude"],
+                                            name="pane.py", timeout=1)
+            self.assertFalse(answer["ok"], mode)
+        self.assertEqual(len(seen), 1, "unreachable: once")   # (the slow one: TimeoutExpired, nothing recorded, once)
+        self.assertEqual(len(self.calls()), 2)
+        self.mode("")
+        failing = remote.PYTHON_CHECK + "import sys\nsys.stderr.write('%s\\n')\nsys.exit(1)\n" % remote.NO_LZMA
+        r = remote.run_script("lab", ["--remote"], failing)
+        self.assertEqual((r.returncode, len(self.calls())), (1, 3), "a script's own words aren't python3's")
+
+    def test_the_command_line_takes_zlib_and_xz(self):
+        command = [sys.executable, *shlex.split(remote.python_there(["--remote", "it's"]))[1:]]
+        script = "import sys\nprint(__name__, sys.argv[1:])\n"
+        for stdin in (remote.packed(script), remote.lzma.compress(script.encode()),
+                      remote.lzma.compress(b"import sys\n") + remote.lzma.compress(b"print(__name__, sys.argv[1:])\n")):
+            r = subprocess.run(command, input=stdin, capture_output=True)
+            self.assertEqual(r.stdout.decode(), "__main__ ['--remote', \"it's\"]\n", r.stderr)
 
 
 class AccountTests(FakeSSH):
