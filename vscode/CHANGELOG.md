@@ -53,6 +53,21 @@
   uplink takes 1.4 s instead of 3.6 s; on a fast network it's as quick as
   before.
 
+### Fixed
+
+- **Keep going goes on when the limit is really gone.** A chat that keeps
+  going and that Claude's weekly limit stopped waited three days for the
+  reset Claude named, though the account's weekly window was reset within
+  the hour; and when it later stopped on a 5-hour limit that reset at 02:00,
+  it still waited for the weekly one (one go-on per chat, and the old one
+  won). Now the window that notifies checks each queued go-on against the
+  account's usage and the chat's newest stop at every check: it goes on now
+  once that limit is over, or a minute after a limit that resets sooner,
+  never into an account still at its limit, and `go-on.log` says each time
+  it was brought forward and why. A chat's limit is over in its row too once
+  its window, read since, is below its limit. As in Plasma; SSH hosts' and
+  containers' chats too.
+
 ## 1.23.0
 
 ### New

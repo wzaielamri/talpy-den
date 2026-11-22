@@ -4858,18 +4858,40 @@ def reset_from_text(text, at_ms):
     return int(reset.timestamp() * 1000)
 
 
+LIMIT_PCT = 95  # a plan window this full is at its limit (the widget's limitReset, limit_reset)
+
+
+def freed_early(stopped, limits):
+    """Whether the account's plan window of the limit that stopped a chat
+    (stopped_by's), read after it stopped, is below its limit: it reset
+    before its time (Anthropic resets a window early now and then). With the
+    reset Claude noted ("resets"), only when that's this window's (not
+    another account's of that name: a shared chat that ran there then)."""
+    at, read = stopped.get("at") or 0, number((limits or {}).get("updatedAt"))
+    if not stopped.get("window") or not at or read is None or read <= at:
+        return False
+    w = next((w for w in (limits or {}).get("windows") or []
+              if isinstance(w, dict) and w.get("key") == stopped["window"]), None)
+    if w is None or w.get("reset") or number(w.get("pct")) is None:
+        return False
+    if stopped.get("resets") and not same_window(stopped["resets"], w.get("resetsAt")):
+        return False
+    return w["pct"] < LIMIT_PCT
+
+
 def limit_stop(stopped, limits, now_ms):
     """A copy of what stopped a chat (stopped_by), with when the usage limit
     it hit resets ("resetsAt") or whether it has since ("over"): from the
     account's plan window of that limit (a window that started after the
-    chat stopped is a new one), else from the time in Claude's message.
+    chat stopped is a new one; one read since below its limit reset early,
+    freed_early), else from the time in Claude's message.
     When it resets as Claude noted it with the stop ("resets") comes first:
     that is the window of the account the chat ran on then."""
     s = dict(stopped, resetsAt=None, over=False)
     if s.get("kind") != "limit":
         return s
     if isinstance(s.get("resets"), int):
-        s["over"] = s["resets"] <= now_ms
+        s["over"] = s["resets"] <= now_ms or freed_early(s, limits)
         s["resetsAt"] = None if s["over"] else s["resets"]
         return s
     at = s.get("at") or 0
@@ -4882,7 +4904,7 @@ def limit_stop(stopped, limits, now_ms):
             s["over"], known = True, True
     elif w is not None and w.get("resetsAt"):
         hours = window_hours(w["key"])
-        if hours and at < w["resetsAt"] - hours * 3600_000:
+        if (hours and at < w["resetsAt"] - hours * 3600_000) or freed_early(s, limits):
             s["over"] = True
         else:
             s["resetsAt"] = w["resetsAt"]
@@ -5043,6 +5065,19 @@ def queue_entry(profile, folder, prompt, start_at, host="", account="", plan=Non
     }
 
 
+def start_time(at_ms, now=None):
+    """When a queued task starts, in words: "at 14:30" today, "tomorrow at
+    09:00", else its day ("on Fri 24 Oct at 09:00")."""
+    at = datetime.fromtimestamp(at_ms / 1000)
+    days = (at.date() - datetime.fromtimestamp(time.time() if now is None else now).date()).days
+    clock = at.strftime("%H:%M")
+    if days <= 0:
+        return f"at {clock}"
+    if days == 1:
+        return f"tomorrow at {clock}"
+    return f"on {at.strftime('%a %d %b')} at {clock}"
+
+
 def queued_tasks(cache_root, now_ms):
     """The queued tasks as the status lists them: each with "due" (its time
     has come, and it didn't fail to start) and "folderShort"."""
@@ -5066,7 +5101,9 @@ def queued_tasks(cache_root, now_ms):
 # there do), and the status run of the copy that notifies looks after them
 # (look_after_kept; a host's chats from its last answer, see
 # look_after_host_kept): it
-# queues each go-on (started like one you queued), tries again after a pause
+# queues each go-on (started like one you queued), brings one queued already
+# forward when what stops the chat is gone sooner (its limit reset early, or a
+# later stop on a limit that resets sooner: sooner_go_on), tries again after a pause
 # when one didn't take (nothing new in the chat a while after it went on) or
 # when the turn broke off on an API error that isn't a limit (the connection
 # lost), a few times with longer pauses, and lets the chat go once a turn of
@@ -5386,8 +5423,10 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
     the usage cap (see above). groups: this computer's accounts, as the
     status lists them. moves: the chats Claude moved to the background
     under a new id (chat_moves): a kept chat and its queued go-on follow
-    it there, and each keeps the name its chat has now. Nothing when
-    another copy is at it right now."""
+    it there, and each keeps the name its chat has now. A queued go-on
+    that can start sooner than it's queued for is brought forward
+    (sooner_go_on, bring_forward). Nothing when another copy is at it
+    right now."""
     moves = moves or {}
     requeue_reached(cache_root)
     profiles = discover_profiles(home, extra_dirs)
@@ -5399,10 +5438,15 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                     rows[i] = s
     names = {i: s["name"] for i, s in rows.items() if isinstance(s.get("name"), str) and s["name"].strip()}
     follow_queue(cache_root, moves, names)
-    queued = {(t.get("host") or "", t["chat"]) for t in load_queue(cache_root) if t.get("chat")}
+    queued = {}  # {(host, chat): its queued task, a go-on before a reply waiting for its turn's end}
+    for t in load_queue(cache_root):
+        if t.get("chat"):
+            key = (t.get("host") or "", t["chat"])
+            if key not in queued or queued[key].get("afterTurn"):
+                queued[key] = t
     # (each host with chats that keep going: its last answer, read once)
     answers = {k["host"]: host_answer_for_keep(cache_root, k["host"]) for k in load_keep(cache_root)["chats"] if k["host"]}
-    adds, stops = [], []
+    adds, stops, sooner = [], [], []
 
     def change(data):
         changed = False
@@ -5425,7 +5469,7 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                             k["cappedUntil"] = w["resetsAt"]
         for k in list(data["chats"]):
             if k["host"]:  # (an SSH host's or a container's)
-                changed = look_after_host_kept(data, k, answers.get(k["host"]), queued, adds, now_ms) or changed
+                changed = look_after_host_kept(data, k, answers.get(k["host"]), queued, adds, now_ms, sooner) or changed
                 continue
             before = dict(k)
             chat = moved_chat(k["chat"], moves)
@@ -5440,9 +5484,9 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
             profile = next((p for p in profiles if matches_profile(p, k["profile"])), None)
             path = transcript_path(profile, k["chat"]) if profile is not None else None
             g = next((g for g in groups if k["profile"] in (g.get("profileKeys") or [])), None)
+            turn, row, task = last_turn(path) if path is not None else None, rows.get(k["chat"]), queued.get(("", k["chat"]))
             step = None if path is None else kept_step(
-                k, last_turn(path), rows.get(k["chat"]), ("", k["chat"]) in queued,
-                (g.get("limits") or g.get("accountLimits")) if g else None, now_ms)
+                k, turn, row, task is not None, (g.get("limits") or g.get("accountLimits")) if g else None, now_ms)
             if path is None or step == "done":
                 data["chats"].remove(k)
                 changed = True
@@ -5452,6 +5496,10 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
                                         account=(g.get("title") or "") if g else "", name=k.get("name") or "",
                                         why=why, now_ms=now_ms))
                 k["cappedUntil"] = None
+            elif task is not None:
+                when = sooner_go_on(k, task, turn, row, g, now_ms)
+                if when is not None:
+                    sooner.append((task, when))
             changed = changed or k != before
         return changed
 
@@ -5459,8 +5507,110 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
         return
     for entry in adds:
         change_queue(cache_root, add=entry, once=True)
+    if sooner:
+        bring_forward(cache_root, sooner, now_ms)
     if stops:
         in_background(lambda: stop_all(home, extra_dirs, stops))
+
+
+GO_ON_SOONER_MS = 120_000  # a queued go-on is brought forward by more than this only (two readings of one reset differ a little)
+
+
+def limit_reset(group, now_ms, offset=0):
+    """When the usage limit an account is at resets, (ms, label of its
+    window), or None: the latest of its plan windows at LIMIT_PCT or more,
+    or of one at the usage cap, else of its chats a limit stopped. As the
+    widget's and VS Code's limitReset, by which a queued task whose time
+    came waits on (jump.py --requeue). offset: what to add to its times
+    for this computer's clock (an SSH host's, a container's)."""
+    best = None
+    limits = group.get("limits") or group.get("accountLimits") or {}
+    for w in limits.get("windows") or []:
+        pct, at = number(w.get("pct")), number(w.get("resetsAt"))
+        if pct is not None and pct >= LIMIT_PCT and at and (best is None or at + offset > best[0]):
+            best = (int(at + offset), w.get("label") or "")
+    cap = group.get("cap") if isinstance(group.get("cap"), dict) else {}
+    if number(cap.get("resetsAt")) and (best is None or cap["resetsAt"] + offset > best[0]):
+        best = (int(cap["resetsAt"] + offset), cap.get("label") or "")
+    if best is None:
+        for s in group.get("sessions") or []:
+            stop = s.get("stopped") if isinstance(s, dict) else None
+            at = number(stop.get("resetsAt")) if isinstance(stop, dict) and stop.get("kind") == "limit" \
+                and not stop.get("over") else None
+            if at and (best is None or at + offset > best[0]):
+                best = (int(at + offset), "")
+    return best if best is not None and best[0] > now_ms else None
+
+
+def sooner_go_on(k, task, turn, row, group, now_ms, offset=0):
+    """When the queued go-on (task) of the chat that keeps going k can
+    start, if that's sooner than it's queued for: (ms, why in words), or
+    None. What frees the chat is its newest stop (turn: last_turn, on this
+    computer's clock), on a usage limit, newer than its last go-on: a minute
+    after that limit resets, or now that it's over (its window, read since,
+    below its limit: limit_stop), so a later stop on a limit that resets
+    sooner moves it earlier too. Never before its account (group, as the
+    status lists it; offset: what to add to its times) is off its limits
+    (limit_reset): a go-on doesn't start into a limit. Not a go-on that
+    tries again (why "retry") or waits for the usage cap ("cap"), one that
+    failed or waits for the chat's background commands, nor while the
+    chat is at work or waiting for you, or open where it can't go on by
+    itself (kept_step says why). One a front end sent back to wait for its
+    account's limit (jump.py --requeue: "requeuedAt"), only by usage read
+    or a stop since: the numbers it weighed then would bring it back, and
+    it would go back and forth."""
+    if not isinstance(task, dict) or task.get("afterTurn") or task.get("why") or task.get("error") \
+            or task.get("waits") or number(task.get("startAt")) is None:
+        return None
+    if row is not None and (row.get("state") in ("working", "waiting") or (row.get("pid") is not None and (
+            row.get("entrypoint") == "claude-vscode" or row.get("sessionId") != row.get("chatId")))):
+        return None
+    if not isinstance(turn, dict) or turn.get("kind") != "limit" or (turn.get("at") or 0) <= (k.get("wentOnAt") or 0):
+        return None  # (no limit stops it now: it goes as queued, and finds nothing to do, continue_chat)
+    group = group or {}
+    limits = shifted(group.get("limits") or group.get("accountLimits"), offset)
+    requeued = number(task.get("requeuedAt"))
+    if requeued and requeued >= max(turn["at"], number((limits or {}).get("updatedAt")) or 0):
+        return None
+    s = limit_stop(turn, limits, now_ms)
+    window = turn.get("window") or ""
+    what = WINDOW_LABELS.get(window, window.replace("_", " ")) + " limit" if window else "usage limit"
+    if s["over"]:
+        start, why = now_ms, f"the {what} that stopped it is over"
+    elif s["resetsAt"]:
+        start, why = s["resetsAt"] + 60_000, f"the {what} that stopped it resets then"
+    else:
+        return None  # (when it resets isn't known)
+    busy = limit_reset(group, now_ms, offset)
+    if busy is not None and busy[0] + 60_000 > start:
+        start = busy[0] + 60_000
+        why = f"its account is at its {busy[1]} limit until then" if busy[1] else "its account is at a usage limit until then"
+    if start + GO_ON_SOONER_MS >= task["startAt"]:
+        return None
+    return int(start), why
+
+
+def bring_forward(cache_root, sooner, now_ms):
+    """Bring queued go-ons forward (sooner: [(the task as read, (when,
+    why))]), each unless it changed since it was read (it started, or a
+    front end sent it back to wait), and say so in go-on.log, a line each."""
+    said = []
+
+    def edit(tasks):
+        for read, (start, why) in sooner:
+            t = next((t for t in tasks if t["id"] == read["id"]), None)
+            if t is None or t.get("startAt") != read["startAt"] or t.get("requeuedAt") != read.get("requeuedAt"):
+                continue
+            t["startAt"] = start
+            t.pop("requeuedAt", None)
+            said.append(f"“{t.get('name') or t['chat'][:8]}” goes on "
+                        + ("now" if start <= now_ms else start_time(start, now_ms / 1000))
+                        + f" instead of {start_time(read['startAt'], now_ms / 1000)}: {why}"
+                        + (f" · {t['host']}" if t.get("host") else ""))
+        return bool(said)
+    change_queue(cache_root, edit=edit)
+    for line in said:
+        log_go_on(cache_root, line)
 
 
 def requeue_reached(cache_root):
@@ -5515,7 +5665,7 @@ def shifted(turn_or_limits, offset):
     if not isinstance(turn_or_limits, dict) or not offset:
         return turn_or_limits
     out = dict(turn_or_limits)
-    for f in ("at", "resets"):
+    for f in ("at", "resets", "updatedAt"):
         if isinstance(out.get(f), (int, float)) and not isinstance(out.get(f), bool) and out[f]:
             out[f] = int(out[f] + offset)
     if isinstance(out.get("windows"), list):
@@ -5525,15 +5675,17 @@ def shifted(turn_or_limits, offset):
     return out
 
 
-def look_after_host_kept(data, k, seen, queued, adds, now_ms):
+def look_after_host_kept(data, k, seen, queued, adds, now_ms, sooner=None):
     """look_after_kept for k, a chat of an SSH host or a container that
     keeps going: as its last answer (seen: host_answer_for_keep) says it
     stands. The host's status run looks up how each of its chats that keep
     going stands (--kept-chats: "keptTurns", kept_turns) and lists them
     while they keep going; all is judged as of when that answer came, so an
     answer from before a go-on never counts as one that didn't take. A go-on
-    goes in the queue for host (adds), as one you queue there. Changes keep.json's
-    data in place; whether it did."""
+    goes in the queue for host (adds), as one you queue there; one queued
+    already that can start sooner goes in sooner (sooner_go_on). queued:
+    {(host, chat): its queued task}. Changes keep.json's data in place;
+    whether it did."""
     before = dict(k)
     if seen is None or now_ms - seen["at"] > KEEP_HOST_STALE_MS:
         k["note"] = (f"Talpy Den hasn't heard from {host_words(k['host'])} for a while: "
@@ -5564,9 +5716,10 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms):
         k["name"] = clean_text(rows[chat]["name"], 80)  # (as it's called now)
     offset = seen["offset"]
     limits = (g.get("limits") or g.get("accountLimits")) if g else None
+    turn = shifted(turns[chat].get("turn"), offset)
     # (its go-on queued under the id it had counts too, until remote.py's check follows it: follow_host_moves)
-    step = kept_step(k, shifted(turns[chat].get("turn"), offset), rows.get(chat),
-                     (k["host"], chat) in queued or (k["host"], old) in queued, shifted(limits, offset), seen["at"])
+    task = queued.get((k["host"], chat)) or queued.get((k["host"], old))
+    step = kept_step(k, turn, rows.get(chat), task is not None, shifted(limits, offset), seen["at"])
     if step == "done":
         data["chats"].remove(k)
         return True
@@ -5575,6 +5728,10 @@ def look_after_host_kept(data, k, seen, queued, adds, now_ms):
         adds.append(queue_entry(k["profile"], k.get("folder") or "", prompt, int(start), host=k["host"],
                                 account=(g.get("title") or "") if g else "", chat=chat, name=k.get("name") or "",
                                 why=why, now_ms=now_ms))
+    elif task is not None and sooner is not None:
+        when = sooner_go_on(k, task, turn, rows.get(chat), g, now_ms, offset)
+        if when is not None:
+            sooner.append((task, when))
     return k != before
 
 

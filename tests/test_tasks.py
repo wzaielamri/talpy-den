@@ -177,6 +177,22 @@ class LimitStopTests(unittest.TestCase):
                           int(datetime(2026, 10, 21, 6, 0).timestamp() * 1000))
         self.assertTrue(s["over"])
 
+    def test_a_window_that_reset_early(self):
+        # (2026-11-22) a weekly limit Claude noted as resetting in three days; the account's
+        # weekly window, read an hour after the stop, is at 46%: that limit is over
+        week = self.NOW + 3 * 86400_000
+        stop = dict(self.stop(self.NOW - 7200_000, window="seven_day"), resets=week)
+        limits = {"updatedAt": self.NOW - 3600_000,
+                  "windows": [{"key": "seven_day", "pct": 46.0, "reset": False, "resetsAt": week + 1000}]}
+        self.assertTrue(td.limit_stop(stop, limits, self.NOW)["over"])
+        self.assertTrue(td.limit_stop(dict(stop, resets=None), limits, self.NOW)["over"])  # (none noted: its window)
+        # still at its limit, read before the stop, or another account's window (a shared chat): it waits
+        for pct, read, resets in ((97.0, self.NOW - 3600_000, week), (46.0, self.NOW - 7300_000, week),
+                                  (46.0, self.NOW - 3600_000, week + 86400_000)):
+            s = td.limit_stop(dict(stop, resets=resets), dict(limits, updatedAt=read,
+                              windows=[dict(limits["windows"][0], pct=pct)]), self.NOW)
+            self.assertEqual((s["over"], s["resetsAt"]), (False, resets), (pct, read))
+
     def test_login_and_unknown_limits_dont_reset(self):
         s = td.limit_stop({"kind": "login", "window": None, "text": "Login expired", "at": 1}, None, self.NOW)
         self.assertEqual((s["resetsAt"], s["over"]), (None, False))
@@ -2521,6 +2537,136 @@ class KeepGoingOnHostsTests(TaskFixture):
             self.assertEqual(end.call_args[0], ("lab", ["--end", self.SID, "--profile", ".claude", "--busy"]))
             self.assertEqual(sorted(k["host"] for k in self.kept()), left)
         self.assertIn("It won't go on by itself any more", json.loads(out.getvalue())["message"])
+
+
+class GoOnSoonerTests(TaskFixture):
+    """(2026-11-22, the user: keep going is somehow not working) A chat that
+    keeps going waited for a weekly limit that Claude said reset in three
+    days. The account's weekly window reset within the hour, and a later stop
+    on a 5-hour limit that reset at 02:00 didn't move its go-on either: one
+    go-on per chat, and the old one won. Each status run of the copy that
+    notifies checks a queued go-on against the account's usage now and the
+    chat's newest stop: it's brought forward (and said in go-on.log), never
+    into an account still at its limit."""
+
+    SID = ContinueAfterResetTests.SID
+    queue, cache_root = QueueTests.queue, QueueTests.cache_root
+    OFF = 7200_000  # (a host's clock, 2 hours behind this one)
+
+    def setUp(self):
+        super().setUp()
+        self.now_ms = int(self.now) * 1000
+        self.week = self.now_ms + 3 * 86400_000  # when the weekly window resets
+        self.five = self.now_ms + 1800_000  # when the 5-hour one does
+        self.stop_ms = self.now_ms - 3600_000  # the weekly limit stopped it an hour ago
+        self.path = self.home / f".claude-work/projects/-repos-app/{self.SID}.jsonl"
+
+    def stop(self, at_ms, window, resets_ms, msg_id="err"):
+        text = {"seven_day": "You've hit your weekly limit", "five_hour": "You've hit your 5-hour limit"}[window]
+        e = dict(limit_error(text, at_ms / 1000),
+                 quotaLimits={"status": "rejected", "resetsAt": resets_ms // 1000, "rateLimitType": window})
+        e["message"]["id"] = msg_id
+        return e
+
+    def say(self, *entries):
+        write(self.path, lines(prompt("fix it", self.stop_ms / 1000 - 60, cwd=str(self.folder)), *entries))
+
+    def limits(self, read_ms, week_pct, five_pct=10, off=0):
+        return {"updatedAt": read_ms - off, "windows": [
+            {"key": "five_hour", "label": "5h", "pct": five_pct, "resetsAt": self.five - off, "reset": False},
+            {"key": "seven_day", "label": "7d", "pct": week_pct, "resetsAt": self.week - off, "reset": False}]}
+
+    def look(self, now_ms, read_ms, week_pct, five_pct=10):
+        groups = [{"profileKeys": [".claude-work"], "title": "work", "sessions": [],
+                   "limits": self.limits(read_ms, week_pct, five_pct)}]
+        td.note_caps(groups, 0, now_ms)
+        td.look_after_kept(self.home, self.cache_root(), [], groups, now_ms)
+        return td.load_queue(self.cache_root())
+
+    def go_on_log(self):
+        path = self.cache_root() / "go-on.log"
+        return path.read_text().splitlines() if path.exists() else []
+
+    def kept_here(self):
+        self.say(self.stop(self.stop_ms, "seven_day", self.week))
+        td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.stop_ms + 1000)
+        (task,) = self.look(self.stop_ms + 120_000, self.stop_ms + 60_000, 100)
+        self.assertEqual(task["startAt"], self.week + 60_000)
+
+    def test_a_weekly_limit_that_reset_early_goes_on_now(self):
+        self.kept_here()
+        # still at its limit, read since: it stays
+        (task,) = self.look(self.now_ms - 300_000, self.now_ms - 400_000, 100)
+        self.assertEqual((task["startAt"], len(self.go_on_log())), (self.week + 60_000, 0))
+        # the weekly window, read since it stopped, is below its limit: it goes now (said once)
+        (task,) = self.look(self.now_ms, self.now_ms - 60_000, 46)
+        self.assertTrue(td.queued_tasks(self.cache_root(), self.now_ms)[0]["due"])
+        self.assertEqual(len(self.go_on_log()), 1)
+        self.assertIn("“Fix it” goes on now instead of on ", self.go_on_log()[0])
+        self.assertTrue(self.go_on_log()[0].endswith(": the 7d limit that stopped it is over"), self.go_on_log()[0])
+        self.look(self.now_ms + 1000, self.now_ms - 60_000, 46)
+        self.assertEqual(len(self.go_on_log()), 1)
+        # (the row says that limit is over, so the widget's limitReset doesn't send it back to the old reset)
+        stopped = td.limit_stop(td.last_turn(self.path), self.limits(self.now_ms - 60_000, 46), self.now_ms)
+        self.assertTrue(stopped["over"])
+        self.assertEqual(self.queue("--start-queued", task["id"])["message"], "Went on in the background on work (1a2b3c4d)")
+
+    def test_a_later_stop_on_a_limit_that_resets_sooner_moves_it_earlier(self):
+        self.kept_here()
+        # you went on with it yourself; a 5-hour limit stopped it a minute ago, which resets in half an hour
+        t = self.now_ms / 1000
+        self.say(self.stop(self.stop_ms, "seven_day", self.week), prompt("go on", t - 600),
+                 reply("On it.", t - 590, msg_id="m2"), self.stop(self.now_ms - 60_000, "five_hour", self.five, "err2"))
+        # while the account is at its weekly limit too, it stays
+        (task,) = self.look(self.now_ms, self.now_ms - 30_000, 100, five_pct=100)
+        self.assertEqual((task["startAt"], len(self.go_on_log())), (self.week + 60_000, 0))
+        (task,) = self.look(self.now_ms + 1000, self.now_ms - 30_000, 40, five_pct=100)
+        self.assertEqual((task["startAt"], len(self.go_on_log())), (self.five + 60_000, 1))
+        self.assertTrue(self.go_on_log()[0].endswith(": the 5h limit that stopped it resets then"), self.go_on_log()[0])
+
+    def test_numbers_older_than_a_front_ends_requeue_dont_bring_it_back(self):
+        # (the widget found the account at its limit by another machine's newer numbers: no back and forth)
+        self.kept_here()
+        (task,) = self.look(self.now_ms, self.now_ms - 60_000, 46)
+        self.assertEqual(task["startAt"], self.now_ms)
+        self.assertTrue(self.queue("--requeue", task["id"], "--at", str(self.week + 60_000))["ok"])
+        (task,) = self.look(self.now_ms + 5000, self.now_ms - 60_000, 46)
+        self.assertEqual((task["startAt"], len(self.go_on_log())), (self.week + 60_000, 1))
+        later = int(time.time() * 1000) + 60_000  # (numbers read since)
+        (task,) = self.look(later + 1000, later, 46)
+        self.assertEqual((task["startAt"], len(self.go_on_log())), (later + 1000, 2))
+
+    def answer(self, turn, read_ms, week_pct, five_pct=10, at=None):
+        """lab's last answer, its times on its own clock (OFF behind this one's)."""
+        result = {"ok": True, "generatedAt": (at or self.now_ms) - self.OFF, "moved": {},
+                  "groups": [{"title": "lab · Max", "profileKeys": [".claude"], "sessions": [],
+                              "limits": self.limits(read_ms, week_pct, five_pct, self.OFF)}],
+                  "keptTurns": {self.SID: {"turn": dict(turn, at=turn["at"] - self.OFF, resets=turn["resets"] - self.OFF)}}}
+        write(self.cache_root() / "hosts/lab.json",
+              {"at": at or self.now_ms, "offset": self.OFF, "answer": {"ok": True, "host": "lab", "result": result}})
+
+    def test_a_hosts_chat_that_keeps_going_too(self):
+        self.queue("--keep-going", self.SID, "--profile", ".claude", "--cwd", "/srv/app", "--name", "Fix it", "--host", "lab")
+        weekly = {"kind": "limit", "window": "seven_day", "text": "You've hit your weekly limit", "at": self.stop_ms,
+                  "resets": self.week, "ended": True}
+        self.answer(weekly, self.stop_ms + 60_000, 100, at=self.stop_ms + 120_000)
+        td.look_after_kept(self.home, self.cache_root(), [], [], self.stop_ms + 120_000)
+        (task,) = td.load_queue(self.cache_root())
+        self.assertEqual((task["host"], task["startAt"]), ("lab", self.week + 60_000))
+        self.answer(weekly, self.now_ms - 400_000, 100)  # (still at its limit)
+        td.look_after_kept(self.home, self.cache_root(), [], [], self.now_ms)
+        self.assertEqual((td.load_queue(self.cache_root())[0]["startAt"], len(self.go_on_log())), (self.week + 60_000, 0))
+        # a later stop there on the 5-hour limit, which resets sooner
+        five = dict(weekly, window="five_hour", text="You've hit your 5-hour limit", at=self.now_ms - 60_000, resets=self.five)
+        self.answer(five, self.now_ms - 30_000, 40, five_pct=100)
+        td.look_after_kept(self.home, self.cache_root(), [], [], self.now_ms)
+        self.assertEqual((td.load_queue(self.cache_root())[0]["startAt"], len(self.go_on_log())), (self.five + 60_000, 1))
+        self.assertTrue(self.go_on_log()[0].endswith(": the 5h limit that stopped it resets then · lab"), self.go_on_log()[0])
+        # then that window reset early too: it goes now
+        self.answer(five, self.now_ms + 60_000, 40, five_pct=3, at=self.now_ms + 90_000)
+        td.look_after_kept(self.home, self.cache_root(), [], [], self.now_ms + 90_000)
+        self.assertEqual((td.load_queue(self.cache_root())[0]["startAt"], len(self.go_on_log())), (self.now_ms + 90_000, 2))
+        self.assertTrue(self.go_on_log()[1].endswith(": the 5h limit that stopped it is over · lab"), self.go_on_log()[1])
 
 
 class PlanFeedbackTests(TaskFixture):

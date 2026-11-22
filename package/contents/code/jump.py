@@ -84,7 +84,6 @@ D-Bus). Prints one JSON line, {"ok": bool, "message": str}.
 
 import ast
 import base64
-import datetime
 import json
 import os
 import re
@@ -1878,17 +1877,7 @@ def queue_task(home, extra_dirs, dirname, folder, task, start_at, host="", accou
     return True, f"Queued: it starts {start_time(start_at)}, when the limit resets"  # (a weekly one: days away)
 
 
-def start_time(at_ms, now=None):
-    """When a queued task starts, in words: "at 14:30" today, "tomorrow at
-    09:00", else its day ("on Fri 24 Oct at 09:00")."""
-    at = datetime.datetime.fromtimestamp(at_ms / 1000)
-    days = (at.date() - datetime.datetime.fromtimestamp(time.time() if now is None else now).date()).days
-    clock = at.strftime("%H:%M")
-    if days <= 0:
-        return f"at {clock}"
-    if days == 1:
-        return f"tomorrow at {clock}"
-    return f"on {at.strftime('%a %d %b')} at {clock}"
+start_time = td.start_time  # when a queued task starts, in words
 
 
 def chat_goes_on_where(home, extra_dirs, chat_id, profile_dir, folder):
@@ -1970,14 +1959,17 @@ def star(home, kind, item_id, host="", on=True):
 
 def requeue(home, extra_dirs, task_id, start_at):
     """A queued task waits on, until start_at (its account is at its usage
-    limit when its time came: it starts after that resets instead)."""
+    limit when its time came: it starts after that resets instead). Noted
+    when ("requeuedAt"): a chat's go-on is brought forward again only by
+    newer usage or a newer stop (td.sooner_go_on), not by the numbers the
+    front end had already weighed."""
     cache_root = td.cache_dir(home)
     entry = td.change_queue(cache_root, take=task_id)
     if entry is None:
         return True, ""
     # (a go-on that waited for its chat's background commands waits for the limit now: from its new time on)
     entry = {k: v for k, v in entry.items() if k not in ("dueAt", "waits")}
-    td.change_queue(cache_root, put_back=dict(entry, startAt=start_at, error=""))
+    td.change_queue(cache_root, put_back=dict(entry, startAt=start_at, error="", requeuedAt=int(time.time() * 1000)))
     return True, f"It waits for the usage limit: it starts {start_time(start_at)}"
 
 
