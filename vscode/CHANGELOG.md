@@ -9,9 +9,10 @@
   to where you left; now a thin line in the accent colour, "New since 14:32"
   (the time you left), marks that place in the conversation, just above the
   first item that came in meanwhile (on Steps, the first step), and the click
-  lands with it in view. It goes once you've been at the newest part for about
-  10 seconds with the tab in front, or when you send a message (not with
-  Recap's /recap); coming back to more moves it to the new point.
+  lands with it in view. Once you've seen it, it goes when you've been at the
+  newest part for about 10 seconds with the tab in front (till then it stays),
+  and at once when you send a message (not with Recap's /recap); coming back
+  to more moves it to the new point.
 
 - **↓ Latest in Talpy Chat, and a chat read far back stays quick.** Whenever
   the conversation isn't at its newest part (after going to a bookmark, a

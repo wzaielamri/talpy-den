@@ -1415,9 +1415,10 @@ Window {
     onAwayChanged: if (!away) recapBefore = null
     // New since … (NewSinceLine.qml: made only while there's one): a thin line in the conversation above
     // the first item since you last looked, where the line's click goes ({key, stepKey, since}: newsince.mjs).
-    // It comes with Since you last looked, stays after its click and moves when you come back to more; it
-    // goes once you've been at the newest part a while with the window shown (newSinceRead, the only timer,
-    // running only then), when you send a message, and with the window (reset). VS Code chat.tsx the same
+    // It comes with Since you last looked, stays after its click and moves when you come back to more; once
+    // it has been in view (seen: NewSinceLine.qml looks), it goes when you've been at the newest part a while
+    // with the window shown (newSinceRead, the only timer, running only then); unseen, it stays. It goes at
+    // once when you send a message, and with the window (reset). VS Code chat.tsx the same
     property var newSince: null
     readonly property string newSinceAt: NewSince.newSinceKey(newSince, listTab === "steps")   // (the item it's above here)
     function tookAway(a) {   // (the --away read's answer: Since you last looked, and where new begins)

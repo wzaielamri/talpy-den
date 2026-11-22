@@ -21,7 +21,7 @@ import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
 import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../../core/src/shared/pane";
-import { NEW_SINCE_READ_MS, newSinceAfterSend, newSinceKey, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
+import { NEW_SINCE_READ_MS, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooked, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import type { ViewState } from "../../core/src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1570,12 +1570,13 @@ test("since you last looked: its steps, files, tests and what it waits for, in a
 });
 
 // New since … (newsince.mjs, Plasma's NewSinceLine.qml too): a thin line in the conversation above the first
-// item since you last looked, where Since you last looked's click goes; it goes once read, or with a message
+// item since you last looked, where Since you last looked's click goes; it goes once read (seen, then 10 s at
+// the newest part), or with a message
 test("new since: the line is where Since you last looked's click goes, stays for it, moves with the next one", () => {
   const a: Away = { from: "seen", since: 1000, key: "m5", stepKey: "t1", steps: 12, replies: 2, files: [], fileCount: 0,
                     test: null, asks: "", partial: false };
   const at = newSinceOf(a, null)!;
-  assert.deepEqual(at, { key: "m5", stepKey: "t1", since: 1000 });
+  assert.deepEqual(at, { key: "m5", stepKey: "t1", since: 1000, seen: false });
   assert.equal(newSinceKey(at, false), awayTarget(a, false));
   assert.equal(newSinceKey(at, true), awayTarget(a, true));
   assert.equal(newSinceKey({ ...at, stepKey: "" }, true), "m5");
@@ -1587,23 +1588,86 @@ test("new since: the line is where Since you last looked's click goes, stays for
   assert.equal(newSinceOf({ ...a, key: "", stepKey: "" }, at), at);
   assert.equal(newSinceOf(null, null), null);
   // back again with more: the new point
-  assert.deepEqual(newSinceOf({ ...a, since: 9000, key: "m9", stepKey: "t7" }, at), { key: "m9", stepKey: "t7", since: 9000 });
+  assert.deepEqual(newSinceOf({ ...a, since: 9000, key: "m9", stepKey: "t7" }, at), { key: "m9", stepKey: "t7", since: 9000, seen: false });
+  // (a line you'd seen: the new point is one you haven't)
+  assert.equal(newSinceOf({ ...a, since: 9000, key: "m9" }, { ...at, seen: true })!.seen, false);
   // only steps since (no reply yet): on Steps only
   const steps = newSinceOf({ ...a, key: "" }, null)!;
   assert.equal(newSinceKey(steps, false), "");
   assert.equal(newSinceKey(steps, true), "t1");
 });
 
-test("new since: one timer, only while there's a line and the window shows the chat's newest part; a message takes it", () => {
-  const at: NewSince = { key: "m5", stepKey: "t1", since: 1000 };
+test("new since: one timer, only once the line has been seen and while the window shows the chat's newest part; a message takes it", () => {
+  const at: NewSince = { key: "m5", stepKey: "t1", since: 1000, seen: true };
   assert.equal(NEW_SINCE_READ_MS, 10000);
   assert.equal(newSinceReading(at, true, true), true);
+  assert.equal(newSinceReading({ ...at, seen: false }, true, true), false);   // (never in view yet)
   assert.equal(newSinceReading(at, false, true), false);   // (the window hidden)
   assert.equal(newSinceReading(at, true, false), false);   // (scrolled up)
   assert.equal(newSinceReading(null, true, true), false);   // (no line: nothing runs)
   assert.equal(newSinceAfterSend(at, "fix the lexer"), null);
   assert.equal(newSinceAfterSend(at, " /recap "), at);   // (Since you last looked's Recap: still catching up)
   assert.equal(newSinceAfterSend(null, "go on"), null);
+  assert.equal(newSinceAfterSend({ ...at, seen: false }, "go on"), null);   // (seen or not)
+});
+
+// Seen: once the line has been in view with the window shown (newSinceLooked); in view: all of it between
+// the view's top and bottom (newSinceInView)
+test("new since: seen once it's been in view with the window shown, not before", () => {
+  const at: NewSince = { key: "m5", stepKey: "t1", since: 1000, seen: false };
+  assert.deepEqual(newSinceLooked(at, true, true), { ...at, seen: true });
+  assert.equal(newSinceLooked(at, true, false), at);    // (out of view)
+  assert.equal(newSinceLooked(at, false, true), at);    // (in view, the window hidden)
+  const seen = newSinceLooked(at, true, true)!;
+  assert.equal(newSinceLooked(seen, true, false), seen);   // (seen stays seen: no new object)
+  assert.equal(newSinceLooked(null, true, true), null);
+  assert.equal(newSinceInView(10, 14, 600), true);
+  assert.equal(newSinceInView(-5, 14, 600), false);   // (cut at the top)
+  assert.equal(newSinceInView(590, 14, 600), false);  // (cut at the bottom)
+  assert.equal(newSinceInView(586, 14, 600), true);
+  assert.equal(newSinceInView(10, 0, 600), false);    // (not drawn)
+});
+
+// Its 10 s, as both front ends run them: one timer, started when newSinceReading turns true, stopped when it
+// turns false, taking the line when it ends; each moment says what the window shows from then on
+type Moment = { at: number; shown: boolean; atEnd: boolean; inView: boolean };
+function lineAfter(at: NewSince | null, moments: Moment[], end: number): NewSince | null {
+  let started: number | null = null;
+  for (const m of moments) {
+    if (started !== null && m.at - started >= NEW_SINCE_READ_MS) return null;   // (it went before this moment)
+    at = newSinceLooked(at, m.shown, m.inView);
+    started = newSinceReading(at, m.shown, m.atEnd) ? started ?? m.at : null;
+  }
+  return started !== null && end - started >= NEW_SINCE_READ_MS ? null : at;
+}
+test("new since: never seen, it stays past 10 s at the end", () => {
+  const at = newSinceOf({ key: "m5", stepKey: "t1", since: 1000 }, null);
+  // (back at the end, the line out of view above it, the bar showing)
+  const back: Moment[] = [{ at: 0, shown: true, atEnd: true, inView: false }];
+  assert.notEqual(lineAfter(at, back, 10_000), null);
+  assert.notEqual(lineAfter(at, back, 600_000), null);
+  // (in view while the window was hidden doesn't count)
+  assert.notEqual(lineAfter(at, [{ at: 0, shown: false, atEnd: true, inView: true }, { at: 1000, shown: true, atEnd: true, inView: false }], 60_000), null);
+});
+test("new since: seen, then 10 s at the end, it goes", () => {
+  const at = newSinceOf({ key: "m5", stepKey: "t1", since: 1000 }, null);
+  // (Since you last looked's click: the line in view, not at the end; then down to the end)
+  const read: Moment[] = [{ at: 0, shown: true, atEnd: false, inView: true }, { at: 3000, shown: true, atEnd: true, inView: false }];
+  assert.notEqual(lineAfter(at, read, 12_999), null);
+  assert.equal(lineAfter(at, read, 13_000), null);
+  // (the new part fits: in view at the end)
+  assert.equal(lineAfter(at, [{ at: 0, shown: true, atEnd: true, inView: true }], 10_000), null);
+});
+test("new since: seen, then scrolled away before the 10 s, it stays", () => {
+  const at = newSinceOf({ key: "m5", stepKey: "t1", since: 1000 }, null);
+  const away: Moment[] = [{ at: 0, shown: true, atEnd: true, inView: true }, { at: 6000, shown: true, atEnd: false, inView: false }];
+  assert.notEqual(lineAfter(at, away, 600_000), null);
+  // (hidden before the 10 s: the same)
+  assert.notEqual(lineAfter(at, [{ at: 0, shown: true, atEnd: true, inView: true }, { at: 6000, shown: false, atEnd: true, inView: false }], 600_000), null);
+  // (back at the end later: 10 s from then)
+  const back = [...away, { at: 20_000, shown: true, atEnd: true, inView: false }];
+  assert.notEqual(lineAfter(at, back, 29_999), null);
+  assert.equal(lineAfter(at, back, 30_000), null);
 });
 
 // A chat's tab tells pane.py how far it showed the chat (--seen), and asks what it did since a

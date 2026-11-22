@@ -2451,6 +2451,11 @@ class NewChatTests(unittest.TestCase):
         self.assertNotIn("forceLayout", line)
         self.assertNotIn("pane.start(", line)
         self.assertNotRegex(line, r"Animation|Behavior")
+        # seen: once it's been in view with the window shown (its timer runs only then), looked at only while
+        # it isn't yet, as the list moves or the line is placed
+        self.assertIn("readonly property bool unseen: pane.newSince !== null && !pane.newSince.seen && pane.shown", line)
+        self.assertIn("NewSince.newSinceLooked(pane.newSince, pane.shown, NewSince.newSinceInView(p.y, it.height, list.height))", line)
+        self.assertIn("enabled: mark.unseen\n        function onContentYChanged()", line)
         # (a jump to its item, Since you last looked's click's, shows it too: above the item, not under the view's top)
         marks = (ROOT / "ui/Bookmarks.qml").read_text()
         top = marks[marks.index("    function topOf(row) {"):]
@@ -2469,6 +2474,12 @@ class NewChatTests(unittest.TestCase):
         self.assertIn("window.setTimeout(() => setNewSince(null), NEW_SINCE_READ_MS)", chat)
         self.assertIn("const newSinceAt = newSinceKey(newSince, tab === \"steps\");", chat)
         self.assertIn('class="pane-new-since"', chat)
+        self.assertIn("const newSinceUnseen = !!newSince && !newSince.seen && shown && conversation;", chat)
+        seen = chat[chat.index("const newSinceUnseen = "):]
+        seen = seen[:seen.index("\n  }, [")]
+        self.assertIn("new IntersectionObserver(", seen)
+        self.assertIn("setNewSince((was) => newSinceLooked(was, shown, newSinceInView(", seen)
+        self.assertIn("return () => io.disconnect();", seen)
         self.assertIn('if (fresh) out.push(fresh);   // (right above it: a jump there shows it, goToRow)\n      out.push(item);', chat)
         self.assertIn('above.classList.contains("pane-new-since") ? above : row', chat)
 

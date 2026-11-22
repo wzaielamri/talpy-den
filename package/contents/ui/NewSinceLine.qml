@@ -7,11 +7,13 @@ import "newsince.mjs" as NewSince
 // ───── New since 14:32: a thin line in Talpy Chat's conversation above the first item that came in while
 // you were away (pane.newSince: Since you last looked's point, where its click goes; newsince.mjs), in the
 // accent colour, as your band and a bookmark's ribbon are. ChatPane makes one only while there's a line, and
-// says when it goes (its one timer). It's put where SideFromLine.qml puts its own: in the room the list
-// already leaves above that row (its gap), so no row changes its height and nothing you read moves; above
-// the list's first row, last in the list's head. Only where that item is in the list: nothing more is read
-// for it (the bar's click reads further back, as a bookmark's); a row not made yet is looked for again as
-// frames are drawn, only then. Nothing in it moves. VS Code chat.tsx .pane-new-since: the same words.
+// says when it goes (its one timer, which runs only once the line has been seen: here, once it's been in the
+// view with the window shown, looked at only till then, as the list moves). It's put where SideFromLine.qml
+// puts its own: in the room the list already leaves above that row (its gap), so no row changes its height
+// and nothing you read moves; above the list's first row, last in the list's head. Only where that item is
+// in the list: nothing more is read for it (the bar's click reads further back, as a bookmark's); a row not
+// made yet is looked for again as frames are drawn, only then. Nothing in it moves. VS Code chat.tsx
+// .pane-new-since: the same words.
 Item {
     id: mark
     visible: false   // (a holder: its line is put in the conversation)
@@ -25,6 +27,29 @@ Item {
     property bool missing: false  // (listed, its row not made yet)
     readonly property bool first: row !== null && row.gap <= 0
     property bool keepTop: false  // (put in the head while the list is at its top: the top stays in view)
+    // Seen once it's been all in the view with the window shown (newsince.mjs newSinceLooked): looked at only
+    // till then, as the list moves, grows or is resized, the line is placed or the window shown again
+    readonly property bool unseen: pane.newSince !== null && !pane.newSince.seen && pane.shown
+    function look() {
+        if (!unseen)
+            return
+        const it = inGap.item && inGap.visible ? inGap.item : inHead.item && inHead.visible ? inHead.item : null
+        if (!it)
+            return
+        const p = it.mapToItem(list, 0, 0)
+        const next = NewSince.newSinceLooked(pane.newSince, pane.shown, NewSince.newSinceInView(p.y, it.height, list.height))
+        if (next !== pane.newSince)
+            pane.newSince = next
+    }
+    onUnseenChanged: Qt.callLater(look)
+    onRowChanged: Qt.callLater(look)
+    Connections {
+        target: list
+        enabled: mark.unseen
+        function onContentYChanged() { Qt.callLater(mark.look) }
+        function onContentHeightChanged() { Qt.callLater(mark.look) }
+        function onHeightChanged() { Qt.callLater(mark.look) }
+    }
 
     function place() {
         if (row && row.listed && row.key === key) {
@@ -120,15 +145,18 @@ Item {
     // after a step), its words reach a little above and below, at the window's right, where a row's text
     // seldom is; the line itself never crosses a row's text
     Loader {
+        id: inGap
         parent: mark.row && !mark.first ? mark.row : mark
         active: mark.row !== null && !mark.first
         visible: active && mark.row.shows
         width: parent ? parent.width : 0
         y: mark.row ? Math.round((mark.row.gap - height) / 2) : 0
         sourceComponent: rule
+        onLoaded: Qt.callLater(mark.look)
     }
     // Above the list's first row: the last thing in its head
     Loader {
+        id: inHead
         readonly property Item head: mark.first ? mark.headOf(list.headerItem) : null
         parent: head || mark
         active: head !== null
@@ -136,5 +164,6 @@ Item {
         Layout.fillWidth: true
         Layout.topMargin: Kirigami.Units.smallSpacing
         sourceComponent: rule
+        onLoaded: Qt.callLater(mark.look)
     }
 }

@@ -24,7 +24,7 @@ import { beatShown, cancelBeat, withNextBeat } from "./pets/beat";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { ribbonCss } from "./util/ribbons";
-import { NEW_SINCE_READ_MS, NEW_SINCE_TIP, newSinceAfterSend, newSinceKey, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
+import { NEW_SINCE_READ_MS, NEW_SINCE_TIP, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooked, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
@@ -698,8 +698,9 @@ function ChatApp() {
   const [away, setAway] = useState<Away | null>(null);
   // New since … (shared/pane.ts newSinceOf; Plasma's NewSinceLine.qml the same): a thin line in the
   // conversation above the first item since you last looked, where the line's click goes. It comes with
-  // Since you last looked, stays after its click and moves when you come back to more; it goes once you've
-  // been at the newest part a while with the tab in front (one timeout, only then) and when you send a message
+  // Since you last looked, stays after its click and moves when you come back to more; once it has been in
+  // view with the tab in front (seen), it goes when you've been at the newest part a while (one timeout, only
+  // then); unseen, it stays. It goes at once when you send a message
   const [newSince, setNewSince] = useState<NewSince | null>(null);
   // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own recap)
   const [recapBefore, setRecapBefore] = useState<ReadonlySet<string> | null>(null);
@@ -1897,8 +1898,8 @@ function ChatApp() {
     if (shownItems.some((it) => String(it.key) === key)) goToMark(key);
     else if (more) reachMark(key);
   };
-  // (New since …'s one timeout: only while there's a line and the tab in front is at the chat's newest
-  // part; scrolling up or another tab in front stops it, a new line starts it again)
+  // (New since …'s one timeout: only while there's a line you've seen and the tab in front is at the chat's
+  // newest part; scrolling up or another tab in front stops it, a new line starts it again)
   const newSinceRuns = newSinceReading(newSince, shown && conversation, !seen);
   useEffect(() => {
     if (!newSinceRuns) return;
@@ -2057,6 +2058,21 @@ function ChatApp() {
     });
     return out;
   }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine, newSinceAt, newSinceLine]);
+  // (New since …, seen: once all of it has been in the list's view with the tab in front, newsince.mjs
+  // newSinceLooked; watched by the browser, not looked for, and only till then)
+  const newSinceUnseen = !!newSince && !newSince.seen && shown && conversation;
+  useEffect(() => {
+    const el = list.current;
+    const line = el?.querySelector<HTMLElement>(".pane-new-since");
+    if (!newSinceUnseen || !el || !line || typeof IntersectionObserver !== "function") return;
+    const io = new IntersectionObserver((entries) => {
+      const e = entries[entries.length - 1], v = e.rootBounds;
+      if (!e.isIntersecting || !v) return;
+      setNewSince((was) => newSinceLooked(was, shown, newSinceInView(e.boundingClientRect.top - v.top, e.boundingClientRect.height, v.height)));
+    }, { root: el, threshold: [0, 1] });
+    io.observe(line);
+    return () => io.disconnect();
+  }, [newSinceUnseen, steps]);
   // (the matches marked in the rows near the view, again as they're drawn again or you scroll)
   useEffect(() => {
     const el = list.current;
