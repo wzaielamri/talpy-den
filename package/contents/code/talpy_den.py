@@ -5089,8 +5089,9 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
     put one back (e.g. with the error it got); edit(tasks) changes the
     tasks in place and says whether it did. The task taken out, or None.
     where (a list): gets the place the task taken out had; at: the place to
-    put one back at (where it was: a chat's replies for when its turn ends go
-    in their order, one queued meanwhile after it), else at the end."""
+    put one back at (where it was), else at the end; a chat's reply for when
+    its turn ends goes before the first of that chat's queued after it (its
+    createdAt) if that comes sooner: a chat's replies go in their order."""
     state = state_dir(cache_root)
     private_dir(state)
     with open(state / "queue.lock", "a") as lock:
@@ -5108,7 +5109,16 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
                     where.append(place)
         if put_back is not None:
             tasks = [t for t in tasks if t["id"] != put_back["id"]]
-            tasks.insert(len(tasks) if at is None else max(0, min(at, len(tasks))), put_back)
+            place = len(tasks) if at is None else max(0, min(at, len(tasks)))
+            if put_back.get("afterTurn") and put_back.get("chat"):
+                # (a reply: before the first of the same chat's queued after it, wherever the tasks before
+                # it went meanwhile, so the chat's replies keep their order)
+                later = next((i for i, t in enumerate(tasks) if t.get("afterTurn") and t.get("chat") == put_back["chat"]
+                              and (t.get("host") or "") == (put_back.get("host") or "")
+                              and (number(t.get("createdAt")) or 0) >= (number(put_back.get("createdAt")) or 0)), None)
+                if later is not None:
+                    place = min(place, later)
+            tasks.insert(place, put_back)
         if add is not None and once and add.get("chat") and any(
                 t.get("chat") == add["chat"] and (t.get("host") or "") == (add.get("host") or "") for t in tasks):
             add = None
@@ -9371,6 +9381,10 @@ def end_for_handover(home, profiles, chat_id, claude=None):
             return False, "It's open in VS Code's Claude: close its tab there first"
         if session_state(entry) != "idle":
             return False, "It's at work again, so it stays where it is"
+        # (idle by its session file, but its job may still have tasks in flight, a shell in its fan: stopping
+        # it would end them)
+        if runs_in_background(entry, live_job(profiles, entry)):
+            return False, "It runs something in the background, so it stays where it is"
         job_id = entry.get("jobId")
         if entry.get("kind") == "bg" and valid_id(job_id):
             return stop_background(runs_on, job_id, read_job([runs_on], job_id), home, claude)

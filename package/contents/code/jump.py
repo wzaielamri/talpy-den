@@ -2021,6 +2021,10 @@ def go_on_waits(cache_root, entry, answer, due, now_ms, out, at=None):
     return True, message
 
 
+REFUSED_AGAIN_MS = 60_000   # a reply its chat's background service refused is tried again this much later
+REFUSALS_UNTIL_IDLE = 3     # and after this many refusals in a row, only once the chat is idle (untilIdle)
+
+
 def start_queued(home, extra_dirs, task_id, out=None, now=False):
     """Start a queued task now, in the background: (ok, message). It's taken
     out of the queue first, so of several copies of the widget only one
@@ -2037,9 +2041,12 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
     queue as it was, the message is empty and out gets "turnRuns" (a host's
     is tried again once the host has answered a newer check). One whose chat's
     background service refused it while the chat runs something in the
-    background goes back to wait until the chat is idle ("untilIdle": why,
-    in it and in out), then goes as before. A task put back keeps its place
-    (a chat's replies go in their order). now: it goes as it is."""
+    background ("refused") is tried again a minute later by the same rule,
+    and after REFUSALS_UNTIL_IDLE refusals only once the chat is idle
+    ("untilIdle": why, in it and in out), then goes as before; one put back
+    with an error waits for you, not for that. A task put back keeps its
+    place (a chat's replies go in their order: change_queue). now: it goes
+    as it is."""
     out = {} if out is None else out
     cache_root = td.cache_dir(home)
     where = []
@@ -2077,12 +2084,18 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
                 td.change_queue(cache_root, put_back=entry, at=at)
                 out.update(turnRuns=True)
                 return True, ""
-            if answer.get("waitsIdle") and not now:
-                # (its service refused it while the chat runs something in the background: never ended for it,
+            if answer.get("refused") and not now:
+                # (its service refused it while the chat runs something in the background: never ended for it.
+                # Tried again in a minute by the same rule, its turn over; after REFUSALS_UNTIL_IDLE refusals
                 # it waits for the chat to be idle, then goes as it did before, its service or a go-on)
-                why = answer.get("message") or "It waits for the chat to be idle"
-                td.change_queue(cache_root, put_back=dict(entry, untilIdle=why, error=""), at=at)
-                out.update(untilIdle=why)
+                why = answer.get("message") or "Claude's background service didn't take it"
+                refusals = (entry.get("refusals") or 0) + 1
+                back = dict(entry, refusals=refusals, startAt=now_ms + REFUSED_AGAIN_MS, error="")
+                if refusals >= REFUSALS_UNTIL_IDLE:
+                    back["untilIdle"] = why
+                    out.update(untilIdle=why)
+                td.change_queue(cache_root, put_back=back, at=at)
+                out.update(refused=why)
                 return True, ""
             ok, message = bool(answer.get("ok")) and answer.get("how") != "ask", answer.get("message") or ""
             if answer.get("how") == "vscode" and isinstance(answer.get("link"), str):
@@ -2140,6 +2153,8 @@ def start_queued(home, extra_dirs, task_id, out=None, now=False):
             error=f"{(message or 'It could not be reached').rstrip('.')}. It starts once {remote.label(entry['host'])} answers again"),
             at=at)
     elif not ok:
+        # (it waits for you now, Start it now or Cancel: not for the chat to be idle, as a refused one did)
+        entry = {k: v for k, v in entry.items() if k not in ("untilIdle", "refusals")}
         td.change_queue(cache_root, put_back=dict(entry, error=message or "It didn't start"), at=at)
     elif entry.get("chat") and not message:
         return True, ""  # it went on already: nothing to start

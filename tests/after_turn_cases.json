@@ -13,6 +13,7 @@
     {"what": "not listed", "row": null, "untilIdle": false, "waits": false},
     {"what": "its service refused it: its turn over, its background work going on", "row": {"state": "working", "turnOver": true, "reply": "background"}, "untilIdle": true, "waits": true},
     {"what": "its service refused it: it asks you", "row": {"state": "waiting", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": true},
-    {"what": "its service refused it: idle", "row": {"state": "idle", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": false}
+    {"what": "its service refused it: idle", "row": {"state": "idle", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": false},
+    {"what": "its service refused it: done (a background chat between turns)", "row": {"state": "done", "turnOver": false, "reply": "background"}, "untilIdle": true, "waits": false}
   ]
 }

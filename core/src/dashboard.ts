@@ -749,11 +749,16 @@ export class Dashboard implements Disposable {
       shared ??= shareUsage(status, this.shownHosts().map((name) => this.hosts.get(name)).filter((h): h is HostState => !!h), settings.sshUsage());
       return (host ? shared.hosts.find((h) => h.name === host)?.result?.groups : shared.status?.groups) ?? groupsOf(host);
     };
+    // (a reply put back that's gone from the queue since, sent or cancelled: nothing of it kept)
+    const queued = new Set((status.queue ?? []).map((t) => t.id));
+    for (const id of [...this.heldBack.keys()]) if (!queued.has(id)) this.heldBack.delete(id);
     const firsts = new Set<string>();
     for (const t of status.queue ?? []) {
       if (t.afterTurn) {
         // (only the first reply a chat has in the queue, a pass: they go in their order, one put
-        // back where it was before one queued meanwhile)
+        // back where it was before one queued meanwhile. One with an error waits for you, Start it
+        // now or Cancel: it doesn't hold the chat's others)
+        if (t.error) continue;
         const chatKey = `${t.host || ""}|${t.chat}`;
         if (firsts.has(chatKey)) continue;
         firsts.add(chatKey);
@@ -809,6 +814,7 @@ export class Dashboard implements Disposable {
     try {
       const answer = await this.backend.action("jump.py", ["--start-queued", t.id, ...(now ? ["--now"] : []), ...configDirArgs()], 120000);
       if (t.afterTurn && t.host && (answer.turnRuns || answer.untilIdle)) this.heldBack.set(t.id, Date.now());
+      else this.heldBack.delete(t.id); // (sent, or whatever came of it: nothing of an earlier put-back kept)
       const what = queuedWhat(t, machineStatus(this.state(), t.host)).split("\n")[0];
       if (t.afterTurn) {
         // your reply, sent as the chat's turn ended

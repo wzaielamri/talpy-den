@@ -1430,8 +1430,8 @@ class SendTests(SendFixture):
                 self.assertIn("it said no", answer["message"])
                 self.assertIn("would end what it runs in the background", answer["message"])
                 self.assertEqual((stopped.call_count, went_on.call_count), (0, 0), status)
-                # one for when the turn ends waits until the chat is idle (waitsIdle), then goes as before
-                self.assertIs(answer.get("waitsIdle"), True if send == self.queued else None, status)
+                # one for when the turn ends is tried again later (refused: jump.py puts it back)
+                self.assertIs(answer.get("refused"), True if send == self.queued else None, status)
 
     def test_a_message_for_when_the_turn_ends_stops_a_chat_only_once_it_is_idle(self):
         # Its service refuses: a background chat is stopped and woken with it only when nothing of it
@@ -1446,13 +1446,21 @@ class SendTests(SendFixture):
             with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped, \
                     mock.patch.object(td, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}):
                 answer = self.queued()
-            self.assertEqual((answer.get("waitsIdle"), stopped.call_count), (True, 0), status)
-        write(job, {"state": "working", "tempo": "idle", "sessionId": SID})
-        self.live(kind="bg", status="idle", jobId="bgjob1")
-        with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped, \
-                mock.patch.object(td, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}) as went_on:
+            self.assertEqual((answer.get("refused"), stopped.call_count), (True, 0), status)
+        # idle, or done (a background chat whose turn ended by itself, as it usually is between turns:
+        # the front ends send it then, so waiting here would come straight back, again and again)
+        for record in ({"state": "working", "tempo": "idle"}, {"state": "done", "tempo": "idle"}):
+            write(job, dict(record, sessionId=SID))
+            self.live(kind="bg", status="idle", jobId="bgjob1")
+            with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped, \
+                    mock.patch.object(td, "continue_chat", return_value={"ok": True, "id": "1a2b3c4d"}) as went_on:
+                answer = self.queued()
+            self.assertEqual((answer.get("how"), stopped.call_count, went_on.call_count), ("background", 1, 1), record["state"])
+        # done, but with tasks still in flight: never stopped, tried again later
+        write(job, {"state": "done", "tempo": "idle", "sessionId": SID, "inFlight": {"tasks": 1}})
+        with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped:
             answer = self.queued()
-        self.assertEqual((answer["how"], stopped.call_count, went_on.call_count), ("background", 1, 1))
+        self.assertEqual((answer.get("refused"), stopped.call_count), (True, 0))
 
     def test_a_background_session_stops_first(self):
         # (one whose service doesn't take it in: there's none here), at work on its turn
@@ -1646,26 +1654,52 @@ class SendTests(SendFixture):
         self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn")
         compact = td.load_queue(self.cache)[1]["id"]
 
-        def meanwhile(answer):
+        def meanwhile(answer, other_goes=False):
             def send(*args, **kw):
                 self.cli("--send", SID, "--profile", ".claude-work", "--text", "and then the docs", "--after-turn")
+                if other_goes:   # (the task before it was taken out and started meanwhile)
+                    td.change_queue(self.cache, take=td.load_queue(self.cache)[0]["id"])
                 return answer
             return send
-        for answer in ({"ok": False, "turnRuns": True, "message": pane.TURN_RUNS},
-                       {"ok": False, "waitsIdle": True, "message": "its service said no, …"}):
-            with mock.patch.object(pane, "send", side_effect=meanwhile(answer)), \
+        for answer, other_goes in (({"ok": False, "turnRuns": True, "message": pane.TURN_RUNS}, False),
+                                   ({"ok": False, "refused": True, "message": "its service said no, …"}, False),
+                                   ({"ok": False, "turnRuns": True, "message": pane.TURN_RUNS}, True)):
+            with mock.patch.object(pane, "send", side_effect=meanwhile(answer, other_goes)), \
                     mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
                     mock.patch.object(jump, "claude_path", return_value="claude"):
-                out = {}
-                self.assertEqual(jump.start_queued(self.home, [], compact, out), (True, ""))
+                self.assertEqual(jump.start_queued(self.home, [], compact, {}), (True, ""))
             queue = td.load_queue(self.cache)
-            self.assertEqual([t["prompt"] for t in queue], ["a task", "/compact", "and then the docs"])
-            self.assertEqual(queue[1].get("error") or "", "")
-            # its service refused it while the chat runs something in the background: it waits until the
-            # chat is idle (untilIdle, with why), then goes as it did before
-            self.assertEqual(queue[1].get("untilIdle") or "", "" if answer.get("turnRuns") else answer["message"])
-            self.assertEqual(out.get("untilIdle") or "", queue[1].get("untilIdle") or "")
-            td.change_queue(self.cache, take=queue[2]["id"])
+            prompts = [t["prompt"] for t in queue]
+            self.assertEqual(prompts, (["a task"] if not other_goes else []) + ["/compact", "and then the docs"])
+            self.assertEqual(queue[prompts.index("/compact")].get("error") or "", "")
+            td.change_queue(self.cache, take=queue[-1]["id"])
+
+    def test_a_reply_its_service_refused_is_tried_again_in_a_minute_then_once_the_chat_is_idle(self):
+        # Its chat's background service refused it while the chat ran something in the background: tried
+        # again a minute later by the same rule (its turn over), not held until all that ends; after
+        # three refusals it waits for the chat to be idle (untilIdle, with why). One put back with an
+        # error (Start it now failed) doesn't say it waits for that: it waits for you
+        import jump
+        self.cli("--send", SID, "--profile", ".claude-work", "--text", "/compact", "--after-turn")
+        (task,) = td.load_queue(self.cache)
+        refused = {"ok": False, "refused": True, "message": "its service said no, …: it's tried again later"}
+        for n in (1, 2, 3):
+            with mock.patch.object(pane, "send", return_value=refused), \
+                    mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
+                    mock.patch.object(jump, "claude_path", return_value="claude"):
+                before, out = int(time.time() * 1000), {}
+                self.assertEqual(jump.start_queued(self.home, [], task["id"], out), (True, ""))
+            (back,) = td.load_queue(self.cache)
+            self.assertEqual((back.get("refusals"), back.get("error") or ""), (n, ""), n)
+            self.assertTrue(before + 59_000 <= back["startAt"] <= int(time.time() * 1000) + 60_000, n)
+            self.assertEqual(back.get("untilIdle") or "", refused["message"] if n == 3 else "", n)
+            self.assertEqual(out.get("untilIdle") or "", back.get("untilIdle") or "", n)
+        with mock.patch.object(pane, "send", return_value={"ok": False, "message": "its terminal is gone"}), \
+                mock.patch.object(jump.td, "cache_dir", return_value=self.cache), \
+                mock.patch.object(jump, "claude_path", return_value="claude"):
+            self.assertEqual(jump.start_queued(self.home, [], task["id"], now=True), (False, "its terminal is gone"))
+        (back,) = td.load_queue(self.cache)
+        self.assertEqual((back["error"], "untilIdle" in back, "refusals" in back), ("its terminal is gone", False, False))
 
     def plasma_queue(self, script):
         """main.qml's queue functions (afterTurnWaits, startDueTasks, noteHeldBack), run in node with
@@ -1716,8 +1750,15 @@ class SendTests(SendFixture):
             "out.push(pass());\n"
             "remote.lab.askedAt = Date.now() + 1; out.push(pass());\n"
             "noteHeldBack(other, { ok: true, message: 'Sent' }); out.push(pass());\n"
+            # (one with an error waits for you, Start it now or Cancel: it doesn't hold the chat's others)
+            "compact.error = 'its terminal is gone'; out.push(pass()); delete compact.error;\n"
+            # (one sent, or cancelled: nothing of it kept)
+            "remote.lab.askedAt = 0; noteHeldBack(compact, { turnRuns: true }); noteHeldBack(other, { untilIdle: 'no' });\n"
+            "out.push(String(Object.keys(heldBack).length));\n"
+            "noteHeldBack(compact, { ok: true, message: 'Sent to the chat' });\n"
+            "started.length = 0; startDueTasks([next]); out.push(String(Object.keys(heldBack).length));\n"
             "console.log(JSON.stringify(out))")
-        self.assertEqual(got, ["q1,q3", "q3", "q3", "q1,q3", "q1,q3"])
+        self.assertEqual(got, ["q1,q3", "q3", "q3", "q1,q3", "q1,q3", "q2,q3", "2", "0"])
 
     def test_a_reply_after_the_turn_leaves_keep_going_alone(self):
         # cancelling it, or turning Keep going off meanwhile, is about the reply only

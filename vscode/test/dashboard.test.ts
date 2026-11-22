@@ -135,7 +135,7 @@ test("a chat's replies go in their order, and one put back waits for the host's 
   const backend = { action: async (_s: string, args: string[]) => (actions.push(args), answer), status: async () => ({ status: null }) } as unknown as Backend;
   const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => true } as unknown as Notifier);
   const priv = dash as unknown as { hosts: Map<string, unknown>; hostAnswered: Map<string, number>; startDueTasks(s: Status): void;
-                                    starting: Set<string>; pollHost(h: string): Promise<void>; refresh(): Promise<void> };
+                                    starting: Set<string>; heldBack: Map<string, number>; pollHost(h: string): Promise<void>; refresh(): Promise<void> };
   priv.pollHost = async () => {}; // (no real check of lab)
   priv.refresh = async () => {};
   try {
@@ -160,6 +160,18 @@ test("a chat's replies go in their order, and one put back waits for the host's 
     priv.hostAnswered.set("lab", Date.now() + 1); // (a check asked after the put-back answered)
     answer = { ok: true, message: "Sent" };
     assert.equal(await pass(), "q1,q3");
+    assert.equal(priv.heldBack.size, 0, "sent: nothing of them kept");
+    // one with an error waits for you (Start it now or Cancel): it doesn't hold the chat's others
+    (status.queue![0] as { error?: string }).error = "its terminal is gone";
+    assert.equal(await pass(), "q2,q3");
+    // one put back, then cancelled (gone from the queue): nothing of it kept
+    answer = { ok: true, message: "", turnRuns: true };
+    status.queue = [task("q3", b)];
+    assert.equal(await pass(), "q3");
+    assert.equal(priv.heldBack.size, 1);
+    status.queue = [];
+    await pass();
+    assert.equal(priv.heldBack.size, 0);
   } finally {
     priv.starting.clear();
     dash.dispose();

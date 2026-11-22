@@ -4717,14 +4717,15 @@ Window {
                         textFormat: Text.PlainText
                         Layout.fillWidth: true
                         // (its background service refused it while the chat ran something in the background:
-                        // once that's over; why, on hover)
+                        // once that's over; why, on hover. One with an error waits for you, whatever it waited for)
+                        readonly property bool untilIdle: !!pane.queued && !!pane.queued.untilIdle && !pane.queued.error
                         text: !pane.queued ? ""
-                              : pane.queued.untilIdle ? i18n("Sent once the chat is idle: %1", pane.queued.prompt)
+                              : untilIdle ? i18n("Sent once the chat is idle: %1", pane.queued.prompt)
                               : i18n("Sent when this turn ends: %1", pane.queued.prompt)
                         elide: Text.ElideRight
                         color: Kirigami.Theme.focusColor
-                        PlasmaComponents3.ToolTip.text: pane.queued && pane.queued.untilIdle ? pane.queued.untilIdle : ""
-                        PlasmaComponents3.ToolTip.visible: !!(pane.queued && pane.queued.untilIdle) && untilIdleHover.hovered
+                        PlasmaComponents3.ToolTip.text: untilIdle ? pane.queued.untilIdle : ""
+                        PlasmaComponents3.ToolTip.visible: untilIdle && untilIdleHover.hovered
                         HoverHandler {
                             id: untilIdleHover
                         }

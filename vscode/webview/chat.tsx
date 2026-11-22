@@ -2708,9 +2708,10 @@ function ChatApp() {
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
-              {/* (its background service refused it while the chat ran something in the background: once that's over) */}
-              <span title={chat.queued.untilIdle || undefined}>
-                {chat.queued.untilIdle ? "Sent once the chat is idle" : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
+              {/* (its background service refused it while the chat ran something in the background: once that's
+                  over; one with an error waits for you, whatever it waited for before) */}
+              <span title={(!chat.queued.error && chat.queued.untilIdle) || undefined}>
+                {chat.queued.untilIdle && !chat.queued.error ? "Sent once the chat is idle" : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
               </span>
               <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk(unqueueAsk === chat.queued!.id ? "" : chat.queued!.id)}>
                 <Icon name={I.cancel} tone={T.cancel} />Cancel

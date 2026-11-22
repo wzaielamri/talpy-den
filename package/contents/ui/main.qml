@@ -4253,6 +4253,8 @@ PlasmoidItem {
     function noteHeldBack(t, result) {
         if (t && t.afterTurn && t.host && result && (result.turnRuns || result.untilIdle))
             heldBack[t.id] = Date.now()
+        else if (t)
+            delete heldBack[t.id]   // (sent, or whatever came of it: nothing of an earlier put-back kept)
     }
 
     // (the copy that notifies starts them; a task whose account is at its
@@ -4260,11 +4262,21 @@ PlasmoidItem {
     function startDueTasks(queue) {
         if (!root.notifier)
             return
+        // (a reply put back that's gone from the queue since, sent or cancelled: nothing of it kept)
+        const queued = {}
+        for (const t of queue)
+            queued[t.id] = true
+        for (const id of Object.keys(heldBack))
+            if (!queued[id])
+                delete heldBack[id]
         const firsts = {}
         for (const t of queue) {
             if (t.afterTurn) {   // a reply for when the chat's turn ends: now it has (or the chat isn't listed)
                 // (only the first reply a chat has in the queue, a pass: they go in their order, one put
-                // back where it was before one queued meanwhile)
+                // back where it was before one queued meanwhile. One with an error waits for you, Start it
+                // now or Cancel: it doesn't hold the chat's others)
+                if (t.error)
+                    continue
                 const chatKey = (t.host || "") + "|" + t.chat
                 if (firsts[chatKey])
                     continue
