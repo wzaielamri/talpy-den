@@ -9,7 +9,8 @@ Text is selected across messages and the bar offered; then the bar's y is compar
 selection's last line really is (found from the text boxes, not from the pane's own anchor):
   - as the list scrolls a little (the bar moves with it), and far (out of view: hidden), and back;
   - after "Show earlier" put rows in above the selection (the bar stays with the text, not where it was);
-  - scrolled to the selection again, where it was put (the bar is there, with it), and once more.
+  - scrolled to the selection again, where it was put (the bar is there, with it), and once more;
+  - its row dropped by the fill (the bar hides) and made again (it has lost its selection: the bar stays hidden).
 It exits 1 if the bar is anywhere else, or shown out of view. --shots: a PNG of each step is kept in DIR.
 Nothing can reach a real chat (patch_pkg.py); your desktop isn't touched; offscreen only.
 """
@@ -60,6 +61,19 @@ RUN = r'''
                 ok = bar.visible && Math.abs(bar.y - Math.min(end + gap, sc.height - Kirigami.Units.gridUnit * 2)) < 3, why = "bar at " + bar.y + ", line end " + end
             log("check", { name: name, ok: ok, why: ok ? "" : why, end: Math.round(end), barY: bar ? Math.round(bar.y) : null, visible: bar ? bar.visible : null })
         }
+        // the anchored row dropped by the fill (a small fillBuffer: only rows near the view are kept), then made again
+        // with the list as it was: the bar hides, and a row made again has lost its selection (the bar stays hidden, not
+        // where the text was)
+        function selDropped(win, list, step) {
+            const y1 = list.contentY
+            win.fillBuffer = 0
+            step("8-row-dropped", () => list.contentY = Math.max(list.originY, y1 - 3000), () => {
+                const dropped = selLineEnd(list, list.parent)
+                log("dropped", { gone: isNaN(dropped) })
+                win.fillBuffer = -1   // (every row made again)
+                step("9-row-made-again-no-selection", () => list.contentY = y1, () => done())
+            })
+        }
         function runSelBar() {
             open(ids.long, "long chat", win => {
                 win.limit = 60
@@ -75,8 +89,7 @@ RUN = r'''
                             win.selectStart(Qt.point(40, y))
                             win.selectAcross(Qt.point(list.width - 60, list.height - 40))
                             if (win.selectionText().trim() !== "") {
-                                const p = list.mapToItem(list.parent, list.width - 60, list.height - 40)
-                                win.offerQuote(Qt.point(p.x, p.y))
+                                win.offerQuote()
                                 found = true
                             }
                         }
@@ -97,7 +110,7 @@ RUN = r'''
                             when(() => win.lastItems.length > before, () => after(2500, () =>
                                 step("5-rows-above-inserted", () => {}, () =>
                                 step("6-scrolled-to-it", () => list.contentY = list.contentY + selLineEnd(list, list.parent) - 250, () =>
-                                step("7-then-scrolled-120", () => list.contentY = list.contentY + 120, () => done())))), 20000, "show earlier")
+                                step("7-then-scrolled-120", () => list.contentY = list.contentY + 120, () => selDropped(win, list, step))))), 20000, "show earlier")
                         }))))
                     })
                 }), 30000, "items")
@@ -129,13 +142,14 @@ def main(argv):
                        stderr=subprocess.STDOUT, text=True)
         lines = bench.bench_lines(log) if log.exists() else []
         if not any(k == "check" for k, _ in lines) and log.exists():
-            print("\n".join(l for l in log.read_text(errors="replace").splitlines() if "Error" in l or "BENCH" in l or "RENDER" in l)[-3000:])
+            print("\n".join(l for l in log.read_text(errors="replace").splitlines() if "rror" in l or "BENCH" in l or "RENDER" in l)[-3000:])
     finally:
         shutil.rmtree(work, ignore_errors=True)
     checks = [d for k, d in lines if k == "check"]
     for d in checks:
         print(("ok   " if d["ok"] else "FAIL ") + d["name"] + ("" if d["ok"] else ": " + d["why"]) + f"  (line end {d['end']}, bar {d['barY']}, shown {d['visible']})")
-    if len(checks) != 7 or not all(d["ok"] for d in checks) or not any(k == "selected" and d["found"] for k, d in lines):
+    if len(checks) != 9 or not all(d["ok"] for d in checks) or not any(k == "selected" and d["found"] for k, d in lines) \
+            or not any(k == "dropped" and d["gone"] for k, d in lines):
         sys.exit("selbar: the bar is not where the selection is (or the render gave no answer)")
 
 

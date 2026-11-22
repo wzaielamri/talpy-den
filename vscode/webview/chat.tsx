@@ -2216,22 +2216,21 @@ function ChatApp() {
   // Where the bar goes, from the live selection: under the bottom of its last line (whichever way it was
   // dragged), by its right end, inside the list's rect (y null: that line is out of the list's view, so the
   // bar is hidden). Reply to this, and Explain this after it where the chat has side questions: as wide as both
-  const barWhere = (h: number) => {
+  const barWhere = (h: number, w: number) => {
     const el = list.current, sel = window.getSelection();
     if (!el || !sel || sel.isCollapsed || !sel.rangeCount) return null;
     const range = sel.getRangeAt(sel.rangeCount - 1);
     let last = range.getBoundingClientRect();
     for (const r of Array.from(range.getClientRects())) if ((r.width > 0 || r.height > 0) && r.bottom >= last.bottom - 0.5) last = r;
     const view = el.getBoundingClientRect();
-    const wide = sideCan ? 250 : 130;
-    return { x: Math.max(4, Math.min(last.right - 40, window.innerWidth - wide)), y: barY(last.bottom, view.top, view.bottom, 6, view.bottom - h) };
+    return { x: Math.max(view.left, Math.min(last.right, view.right - w)), y: barY(last.bottom, view.top, view.bottom, 6, view.bottom - h) };
   };
   const offerQuote = () => {
     const el = list.current;
     const sel = window.getSelection();
     const said = sel && !sel.isCollapsed ? sel.toString() : "";
     if (!el || !sel || !said.trim() || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return setQuoteAt(null);
-    const at = barWhere(30);
+    const at = barWhere(30, sideCan ? 250 : 130);
     setQuoteAt(at ? { x: at.x, y: at.y ?? 0, text: said } : null);
   };
   // The bar goes with the selection (hidden while its last line is out of the list's view) as the list scrolls,
@@ -2240,7 +2239,7 @@ function ChatApp() {
   const quoteBar = useRef<HTMLDivElement>(null);
   const placeQuote = () => {
     const bar = quoteBar.current;
-    const at = bar ? barWhere(bar.offsetHeight || 30) : null;
+    const at = bar ? barWhere(bar.offsetHeight || 30, bar.offsetWidth || (sideCan ? 250 : 130)) : null;
     if (!bar || !at) return;
     bar.style.visibility = at.y === null ? "hidden" : "visible";
     if (at.y !== null) {
@@ -2257,10 +2256,15 @@ function ChatApp() {
     let frame = 0;
     const follow = () => {
       if (frame) return;
-      frame = window.requestAnimationFrame(() => { frame = 0; placeNow.current(); });
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        if (list.current !== list0) setQuoteAt(null);   // (the list was made again: what it watched is gone)
+        else placeNow.current();
+      });
     };
     placeNow.current();   // (before it's drawn: a new selection's bar shows where it goes, whatever the last one's was)
     const el = list.current;
+    const list0 = el;
     const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(follow) : null;
     const rows = new MutationObserver((changes) => {
       for (const c of changes) c.addedNodes.forEach((n) => { if (n instanceof Element) sizes?.observe(n); });

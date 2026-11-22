@@ -3014,6 +3014,7 @@ Window {
     // The bar is anchored to the row the selection ends in (key, and dy: the bottom of the selection's last line
     // in it), not to a place in the list's content: rows made, taken away or resized above it move that place
     property var quoteAt: null   // {x, key, at, dy}: x in the scroll view, or null
+    property int rowsMade: 0     // (counts rows made and dropped: what the bar's binding reads to find its row again)
     // The bottom of the selection's last line, whichever way it was dragged: {x, key, at, dy} or null
     function selectionEnd() {
         let last = -1
@@ -3039,9 +3040,11 @@ Window {
         const q = quoteAt
         if (!q)
             return NaN
-        void list.contentY, list.contentHeight, items.count
+        void list.contentY, list.contentHeight, items.count, rowsMade
         const i = selIndex(q.key, q.at), d = i >= 0 ? list.itemAtIndex(i) : null
-        if (!d)
+        if (i >= 0 && i !== q.at)   // (rows came in above: where it is now, kept, so the next look is quick; not in the binding)
+            Qt.callLater(function() { if (pane.quoteAt === q) pane.quoteAt = { x: q.x, key: q.key, at: i, dy: q.dy } })
+        if (!d || !d.textBox || d.textBox.selectedText === "")   // (a row made again has lost its selection: no bar)
             return NaN
         void d.y, d.height
         return d.mapToItem(scroll, 0, q.dy).y
@@ -4141,6 +4144,9 @@ Window {
                         required property bool thinking     // (Claude's: a thinking line, not its reply: pane.py THOUGHT)
                         required property string fold       // (a long one: where it folds, as JSON: withFold; "" for the rest)
                         property Item textBox: null   // (yours, Claude's reply: its text, selectAcross)
+                        // (a row made or dropped by the fill: the selection's bar looks for its row again)
+                        Component.onCompleted: pane.rowsMade++
+                        Component.onDestruction: pane.rowsMade++
                         property int late: pane.lateDefault   // (Ctrl+O: its turn came, FoldAll.qml)
                         readonly property bool unfolded: pane.openTools[key] === true   // (a step's details: a click, a search's step)
                         readonly property bool allTurn: pane.allOpen && late === pane.allGen
