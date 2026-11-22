@@ -3929,6 +3929,9 @@ body.vscode-high-contrast-light .pane-side {
   display: flex;
   flex-direction: column;
   padding: 4px 6px 8px 0;
+  /* (the page's own background, body.chat-page's: opaque, so Chromium can scroll it on the GPU and keep
+     its text's subpixel edges, where a see-through one composited loses them and looks soft) */
+  background: var(--vscode-editor-background, transparent);
 }
 
 .pane-more {
@@ -4243,14 +4246,10 @@ body.vscode-high-contrast-light .pane-side {
   background: var(--td-failed);
 }
 
-/* (it blinks while it's going or waits for your answer: BlinkDot.tsx, on the page's beat) */
+/* (it blinks while it's going or waits for your answer: BlinkDot.tsx, on the page's beat; a step of its
+   opacity a beat, no layer of its own: one inside the conversation, as it scrolls, is drawn apart from it) */
 .pane-tool.asking .pane-dot {
   background: var(--td-waiting);
-}
-
-.pane-tool.asking .pane-dot,
-.pane-tool.going .pane-dot {
-  will-change: opacity;
 }
 
 .pane-tool-body {
@@ -4468,6 +4467,58 @@ body.vscode-high-contrast-light .pane-side {
   font-weight: 400;
   cursor: default;
   user-select: none;
+}
+
+/* New since 14:32: where what came in since you last looked starts, above that item (Since you last
+   looked's point): a thin line in the accent colour, as your band and a bookmark's ribbon, its words near
+   its right end, its tooltip on all of it; not part of what you copy, nothing in it moves. It takes no
+   room of its own, as Plasma's NewSinceLine.qml: drawn in the middle of the room above the row (its
+   margin), which is at least the line's height there (a reply's 0.8em, a step right after a step's less) */
+.pane-new-since {
+  --room: 1.1em;
+  position: relative;
+  flex: none;
+  height: 0;
+  cursor: default;
+  user-select: none;
+}
+
+.pane-new-since:has(+ .pane-item.turn) {
+  --room: 1.7em;
+}
+
+.pane-new-since + .pane-item:not(.turn) {
+  margin-top: 1.1em;
+}
+
+/* (the room above the row, the line in its middle; its words smaller) */
+.pane-new-since > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--room);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pane-you);
+  white-space: nowrap;
+}
+
+.pane-new-since > span > span {
+  font-size: 0.8em;
+  line-height: 1.2;
+}
+
+.pane-new-since > span::before,
+.pane-new-since > span::after {
+  content: "";
+  flex: 1 1 0;
+  border-top: 1px solid var(--pane-you);
+}
+
+.pane-new-since > span::after {
+  flex: 0 0 8px;
 }
 
 /* The hovered message's time and Copy, over its top right corner (one for the list) */
@@ -4831,6 +4882,7 @@ body.vscode-high-contrast-light .pane-side {
   flex-direction: column;
   padding: 0 6px 8px 0;
   font-family: var(--pane-font, inherit);
+  background: var(--vscode-editor-background, var(--td-bg));   /* (its panel's, opaque: as .pane-list) */
 }
 
 .pane-side-list > * {

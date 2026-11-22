@@ -1101,6 +1101,7 @@ PlasmoidItem {
                                         && Hub.leaderId !== instanceId && !paneWindows.some(w => w.visible)
     property var heldAnswer: null
     property var heldRemote: ({})   // host -> its answer
+    property var hostRunAt: ({})    // host -> when its check that runs now (or ran last) was started
     onHoldAnswersChanged: if (!holdAnswers) Qt.callLater(applyHeld)
     function applyHeld(force) {
         if (holdAnswers && !force)
@@ -1135,15 +1136,18 @@ PlasmoidItem {
             } else if (command === root.command)
                 root.handleOutput(stdout, stderr)
             const host = root.hostOfCommand(command)
+            // (at: when the check that answers was asked: Hub runs one a command at a time, the one started last)
             if (host && root.holdAnswers && root.remote[host] && root.remote[host].result)
-                root.heldRemote[host] = { stdout: stdout, stderr: stderr }
+                root.heldRemote[host] = { stdout: stdout, stderr: stderr, at: root.hostRunAt[host] || 0 }
             else if (host)
-                root.handleRemote(host, { stdout: stdout, stderr: stderr })
+                root.handleRemote(host, { stdout: stdout, stderr: stderr, at: root.hostRunAt[host] || 0 })
         }
         function onStarted(command) {
             const host = root.hostOfCommand(command)
-            if (host)
+            if (host) {
+                root.hostRunAt[host] = Date.now()
                 root.setRemote(host, { loading: true })
+            }
         }
     }
 
@@ -3001,7 +3005,8 @@ PlasmoidItem {
             followMovedRows(host, result.groups)
             // clockOffset: what its times were moved by (0: not moved), for
             // the ones left on its clock (reviewPending)
-            setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(),
+            // (askedAt: when the check that answered was asked, for a reply put back meanwhile: heldBack)
+            setRemote(host, { loading: false, ok: true, error: "", result: result, updatedAt: Date.now(), askedAt: data.at || 0,
                               login: false, loggedIn: !!answer.loggedIn, clockOffset: result === answer.result ? 0 : offset,
                               stopped: false, gone: false, paused: false, cached: false })
             dropHidden(host, result)   // (after: see handleOutput)
@@ -4250,18 +4255,82 @@ PlasmoidItem {
                                                                          && group.profileKeys.indexOf(t.profile) >= 0)
     }
 
+    // Whether a reply queued for when a chat's turn ends still waits (s: the chat's row; none: not
+    // listed, it goes): while Claude's turn goes on, or it asks you something. Not while only what it
+    // runs in the background goes on after its turn (turnOver: commands, subagents, monitors,
+    // talpy_den.turn_over): Claude takes a message in at its prompt then, as Claude Code's own queue
+    // does in a terminal, and they go on. A terminal that takes no text waits for them too: it goes on
+    // in the background with your message only once its Claude is idle, and ending it sooner would end
+    // them. jump.py --start-queued looks again where the chat runs (pane.py turn_runs, the same rule).
+    // When a reply its chat's background service refused is tried again (its startAt), for Talpy Chat's
+    // "Tries again at 14:31": only while that's to come and it has no error (it waits for you then);
+    // else 0, and the line says "Sent when this turn ends". VS Code's shared/model.ts queuedRetryAt:
+    // the same (both tested with tests/after_turn_cases.json's "retry")
+    function queuedRetryAt(t) {
+        return t && t.refused && !t.error && t.startAt > now ? t.startAt : 0
+    }
+
+    // VS Code's shared/model.ts afterTurnWaits: the same (both tested with tests/after_turn_cases.json).
+    function afterTurnWaits(s) {
+        return !!s && (s.state === "waiting" || (s.state === "working" && !(s.turnOver && s.reply !== "terminal")))
+    }
+
+    // Is a reply of t's chat out being sent (startQueued, till its answer)? It isn't in the queue the
+    // status lists meanwhile, so none of the chat's others start then. VS Code's startingChats the same
+    property var startingChats: ({})   // "<host>|<chat>" -> when one of its replies was started
+    function chatStarting(t) {
+        const at = startingChats[(t.host || "") + "|" + t.chat]
+        return !!at && now - at < startStaleMs
+    }
+
+    // A reply put back as its chat's turn ran after all (jump.py --start-queued's "turnRuns"): a host's
+    // goes again only once a check of the host asked after that has answered (its askedAt), not on the
+    // row it was sent by, an ssh run each pass till then (startDueTasks). (One its chat's service refused,
+    // "refused", is tried again at its startAt.) VS Code's dashboard heldBack: the same
+    property var heldBack: ({})   // task id -> when it was put back
+    function noteHeldBack(t, result) {
+        if (t && t.afterTurn && t.host && result && result.turnRuns)
+            heldBack[t.id] = Date.now()
+        else if (t)
+            delete heldBack[t.id]   // (sent, or whatever came of it: nothing of an earlier put-back kept)
+    }
+
     // (the copy that notifies starts them; a task whose account is at its
     // usage limit right now waits on until that resets: jump.py --requeue)
     function startDueTasks(queue) {
         if (!root.notifier)
             return
+        // (a reply put back that's gone from the queue since, sent or cancelled: nothing of it kept)
+        const queued = {}
+        for (const t of queue)
+            queued[t.id] = true
+        for (const id of Object.keys(heldBack))
+            if (!queued[id])
+                delete heldBack[id]
+        const firsts = {}
         for (const t of queue) {
             if (t.afterTurn) {   // a reply for when the chat's turn ends: now it has (or the chat isn't listed)
-                // (an SSH host's: by its last check, which worked; not while it waits for a usage limit)
+                // (only the first reply a chat has in the queue, a pass: they go in their order, one put
+                // back where it was before one queued meanwhile. One with an error waits for you, Start it
+                // now or Cancel: it doesn't hold the chat's others)
+                if (t.error)
+                    continue
+                const chatKey = (t.host || "") + "|" + t.chat
+                if (firsts[chatKey])
+                    continue
+                firsts[chatKey] = true
+                if (chatStarting(t))
+                    continue   // (one of its others is out being sent: not in the queue listed meanwhile)
+                // (an SSH host's: by its last check, which worked; not while it waits for a usage limit;
+                // what the chat runs in the background may go on: afterTurnWaits)
                 const known = !t.host || (remote[t.host] && remote[t.host].result && !remote[t.host].error)
+                if (t.host && heldBack[t.id] !== undefined) {
+                    if (!known || (remote[t.host].askedAt || 0) <= heldBack[t.id])
+                        continue
+                    delete heldBack[t.id]
+                }
                 const s = known ? listedRow(t.chat, t.profile, t.host || "") : null
-                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now())
-                        && (!s || (s.state !== "working" && s.state !== "waiting")))
+                if (known && !t.error && !isStarting(t.id) && !(t.startAt > Date.now()) && !afterTurnWaits(s))
                     startOrWait(t)
                 continue
             }
@@ -4290,9 +4359,14 @@ PlasmoidItem {
         stopper.connectSource(cmd)
     }
 
-    // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so)
+    // now: Start it now (a chat's go-on ends the background commands it waits for at once, and says so;
+    // a reply for when a turn ends goes as it is, and never ends what the chat runs in the background).
+    // A reply whose chat's turn goes on after all is back in the queue as it was: its answer's message
+    // is empty, nothing to say (jump.py start_queued)
     function startQueued(t, now) {
         startingTasks = Object.assign({}, startingTasks, { [t.id]: Date.now() })
+        if (t.afterTurn)
+            startingChats[(t.host || "") + "|" + t.chat] = Date.now()   // (its chat's others wait: chatStarting)
         const cmd = "python3 -I " + shellQuote(codeDir + "jump.py") + " --start-queued " + shellQuote(t.id) + (now ? " --now" : "") + configDirArgs
                     + " # " + Date.now()
         queueRuns[cmd] = t
@@ -4318,6 +4392,9 @@ PlasmoidItem {
                 const rest = Object.assign({}, root.startingTasks)
                 delete rest[t.id]
                 root.startingTasks = rest
+                root.noteHeldBack(t, result)   // (put back as its turn ran after all: a host's waits for its next answer)
+                if (t.afterTurn)
+                    delete root.startingChats[(t.host || "") + "|" + t.chat]
             }
             if (result.ok && result.message && t && t.afterTurn) {   // your reply, sent as its turn ended
                 if (root.notifier && Plasmoid.configuration.notifyDone && !root.holdingBack() && !root.dashboardShown)

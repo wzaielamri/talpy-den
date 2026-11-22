@@ -563,6 +563,104 @@ def session_state(entry, job=None):
     return "working"
 
 
+def turn_over(entry, job=None, ended=False):
+    """Is a live session's own turn over, though it counts as at work
+    (session_state "working") on what it runs in the background alone:
+    shells, subagents, monitors, a recurring job's next runs? Claude takes a
+    message in at its prompt then, as in a terminal, and they go on: a
+    message queued for when the turn ends goes (pane.py turn_runs; the
+    row's "turnOver"). ended: the newest entry of its transcript's main
+    thread ends Claude's turn (turn_ended).
+
+    Claude Code (2.1.330, its MY()) writes "busy" while a turn runs and also
+    while a background subagent works after it (isLoading || delegatedActive),
+    and "shell" when it's otherwise idle but a background shell runs. So a
+    shell, or an idle session (a background job with tasks in flight, a
+    recurring one between runs), says so itself; one just woken (its job's
+    tempo active) only once its transcript says its turn ended too, as
+    "busy" does. Not one that asks you something."""
+    if session_state(entry, job) != "working":
+        return False
+    status = entry.get("status")
+    if status == "shell":
+        return True
+    if status == "idle":
+        return bool(ended) or not (isinstance(job, dict) and job.get("tempo") == "active")
+    return status == "busy" and bool(ended)
+
+
+def turn_ended(e):
+    """Does this transcript entry, the newest of the main thread (user or
+    assistant), end Claude's turn: a finished reply that calls no tool
+    (stop_reason end_turn or stop_sequence), an API error or Claude Code's
+    stand-in reply, or Claude's note that you interrupted it? (turns.py
+    TurnSoFar.over's rule.) Also the output of a local command run after it
+    (/compact, /model: <local-command-stdout>), which starts no turn. A reply
+    that calls a tool or is still streaming, a tool's result, a prompt, a
+    task's notification or the summary Claude compacts to mid-turn goes on
+    with one."""
+    if not isinstance(e, dict):
+        return False
+    msg = e.get("message") if isinstance(e.get("message"), dict) else {}
+    if e.get("type") == "user":
+        return interrupted_note(e) or (not e.get("isMeta") and not e.get("isCompactSummary")
+                                       and message_text(msg).lstrip().startswith("<local-command-stdout>"))
+    if e.get("type") != "assistant":
+        return False
+    if e.get("isApiErrorMessage") is True or msg.get("model") == "<synthetic>":
+        return True
+    content = msg.get("content")
+    return msg.get("stop_reason") in ("end_turn", "stop_sequence") and not (
+        isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_use" for c in content))
+
+
+def transcript_turn_ended(path):
+    """turn_ended of the newest entry of a transcript's main thread (read
+    from its end, more of it while there's none); False without one."""
+    try:
+        size = path.stat().st_size
+    except (OSError, AttributeError):
+        return False
+    nbytes = PEEK_TAIL_BYTES
+    while True:
+        newest = next((e for e in tail_entries(path, size, nbytes)
+                       if e["type"] in ("user", "assistant") and not e.get("isSidechain")), None)
+        if newest is not None or nbytes >= size or nbytes >= PEEK_TAIL_MAX:
+            return turn_ended(newest)
+        nbytes *= 4
+
+
+def runs_in_background(entry, job=None, ended=False):
+    """Does a live session run something in the background that ending it
+    would end: a shell (status "shell"; a shell its job's fan lists), its
+    job's shells, subagents or monitors in flight (inFlight.tasks), or a
+    recurring job's next runs? Also "busy" once its turn ended (ended: its
+    transcript says so, turn_ended): a delegated task works then (Claude
+    Code's MY()), a remote agent too, which its inFlight leaves out (2.1.330:
+    sK's m() filters remote_agent, dream and post_turn_memory). (A message
+    never stops such a session to go on with it: pane.py send_now.)"""
+    if entry.get("status") == "shell" or (entry.get("status") == "busy" and ended):
+        return True
+    if not isinstance(job, dict):
+        return False
+    in_flight = job.get("inFlight") if isinstance(job.get("inFlight"), dict) else {}
+    fan = job.get("fan") if isinstance(job.get("fan"), list) else []
+    return bool(in_flight.get("tasks") or 0) or is_recurring(job) or any(
+        isinstance(f, dict) and f.get("kind") == "shell" and not f.get("doneAt") for f in fan)
+
+
+def live_job(profiles, entry):
+    """A live session's job record (read_job, from the first of profiles
+    with the newest), with the state fields some sessions write into their
+    own entry laid over it; None for a session with neither."""
+    job_id = entry.get("jobId") if valid_id(entry.get("jobId")) else None
+    job = read_job(profiles, job_id) if job_id else None
+    own = {k: entry[k] for k in ("state", "tempo", "needs", "detail") if k in entry}
+    if own:
+        job = {**(job or {}), **own}
+    return job
+
+
 def parked_job_state(job, present, now_ms, keep_done_ms=0):
     """(state, reason) of a job record whose session process is gone, or None to hide it.
 
@@ -892,6 +990,9 @@ def make_session(profile, home, *, sid, pid, name, cwd, kind, entrypoint, state,
         "agents": None,
         "shared": None,
         "tmux": False,  # runs in a tmux pane: it can be interrupted (Esc)
+        # working on what it runs in the background alone, its own turn over (turn_over): a message
+        # queued for when the turn ends goes now
+        "turnOver": False,
         "bgStop": False,  # a live background session Talpy Chat's Stop can interrupt (interrupt_background)
         "remoteControl": None,  # the claude.ai/code page of a live chat with Remote Control on (remote_control_link)
         "remoteSwitch": False,  # a live background session Talpy Den can turn Remote Control on and off in
@@ -1018,10 +1119,7 @@ def live_row(entry, profile, holder, home, ctx):
     # Background jobs keep their lifecycle (state, tempo, what they need, a
     # one-line detail) in jobs/<jobId>/state.json; some sessions write the same
     # fields into their own entry.
-    job = read_job(dict.fromkeys([profile, holder]), job_id) if job_id else None
-    own = {k: entry[k] for k in ("state", "tempo", "needs", "detail") if k in entry}
-    if own:
-        job = {**(job or {}), **own}
+    job = live_job(list(dict.fromkeys([profile, holder])), entry)
     note_unknown(ctx, job, job=True)
     state = session_state(entry, job)
     waiting_for = entry.get("waitingFor") if entry.get("status") == "waiting" else None
@@ -1050,7 +1148,10 @@ def live_row(entry, profile, holder, home, ctx):
     row["remoteSwitch"] = row["bgStop"] and bool(sid)
     if not row["tmux"] and row["entrypoint"] != "claude-vscode" and row["kind"] != "bg":
         row["terminalApp"] = terminal_name(row["pid"]) or None
-    return finish_row(row, job, job_id, profile, ctx, alive=True)
+    row = finish_row(row, job, job_id, profile, ctx, alive=True)
+    # (its turn over, what it runs in the background going on: by its status, else its transcript's end)
+    row["turnOver"] = row["state"] == "working" and turn_over(entry, job, (row["peek"] or {}).get("turnEnded"))
+    return row
 
 
 def job_dirs(profile):
@@ -2063,7 +2164,7 @@ PEEK_PROMPT_CHARS = 300
 PEEK_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt)"')
 PEEK_MORE_LINE = re.compile(rb'"type":\s*"(?:user|assistant|last-prompt|system|permission-mode)"')
 ULTRA_LINE = re.compile(rb'"type":\s*"ultra_effort_(?:enter|exit)"')  # (of all attachments, only these are read)
-PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode", "model", "usage")  # a cached peek without them (an older copy's) is read again
+PEEK_ADDED = ("recap", "mode", "slug", "stopped", "ultracode", "model", "usage", "turnEnded")  # a cached peek without them (an older copy's) is read again
 RECAP_NOTE = re.compile(r"\s*\(disable recaps in /config\)\s*$")
 # Claude's names for the plan windows in "You've hit your … limit" (its
 # rate-limit types: five_hour is the session limit, the 5-hour limit since
@@ -2245,6 +2346,7 @@ def peek_from(entries):
         "stopped": stopped_by(turn) if turn is not None else None,
         "model": transcript_model(convo),
         "usage": reply_usage(entries),
+        "turnEnded": turn_ended(convo[0]) if convo else False,   # (its newest entry ends Claude's turn: turn_over)
     }
     return peek, prompt is not None or (bool(parts) and bool(last_prompt))
 
@@ -2341,7 +2443,7 @@ def stopped_by(e):
 
 def chat_peek(path):
     """{"activity", "prompt", "reply", "replyLine", "at", "recap", "mode", "ultracode",
-    "slug", "stopped", "model", "usage"} of a chat, read from the end of its transcript (more
+    "slug", "stopped", "model", "usage", "turnEnded"} of a chat, read from the end of its transcript (more
     of it while that isn't enough)."""
     try:
         size = path.stat().st_size
@@ -5027,11 +5129,16 @@ def load_queue(cache_root):
     return [t for t in tasks if isinstance(t, dict) and valid_id(t.get("id"))] if isinstance(tasks, list) else []
 
 
-def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None):
+def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edit=None, where=None, after=None):
     """Change queue.json under a lock: add a task (once: unless a go-on of
     the same chat is queued already), take one out by its id (returned), or
     put one back (e.g. with the error it got); edit(tasks) changes the
-    tasks in place and says whether it did. The task taken out, or None."""
+    tasks in place and says whether it did. The task taken out, or None.
+    where (a list): gets the ids of the tasks before the one taken out;
+    after (those ids): one put back goes right after the last of them still
+    queued, where it was, before any added since (a chat's replies for when
+    its turn ends go in their order: one queued while another was out being
+    sent comes after it, the same moment or not); else at the end."""
     state = state_dir(cache_root)
     private_dir(state)
     with open(state / "queue.lock", "a") as lock:
@@ -5041,10 +5148,18 @@ def change_queue(cache_root, add=None, take=None, put_back=None, once=False, edi
         if edit is not None and edit(tasks):
             write_json_atomic(state / "queue.json", {"tasks": tasks})
         if take is not None:
-            taken = next((t for t in tasks if t["id"] == take), None)
-            tasks = [t for t in tasks if t["id"] != take]
+            place = next((i for i, t in enumerate(tasks) if t["id"] == take), None)
+            if place is not None:
+                if where is not None:
+                    where.extend(t["id"] for t in tasks[:place])
+                taken = tasks.pop(place)
+                tasks = [t for t in tasks if t["id"] != take]
         if put_back is not None:
-            tasks = [t for t in tasks if t["id"] != put_back["id"]] + [put_back]
+            tasks = [t for t in tasks if t["id"] != put_back["id"]]
+            before = set(after) if after is not None else None
+            place = len(tasks) if before is None else max((i + 1 for i, t in enumerate(tasks) if t["id"] in before),
+                                                           default=0)
+            tasks.insert(place, put_back)
         if add is not None and once and add.get("chat") and any(
                 t.get("chat") == add["chat"] and (t.get("host") or "") == (add.get("host") or "") for t in tasks):
             add = None
@@ -5253,6 +5368,12 @@ def went_on_undone(cache_root, chat_id, noted, was, host=""):
     change_keep(cache_root, change)
 
 
+# A refused reply's keys (jump.py --start-queued: tried again by itself), and what one says once a stop of
+# yours means it waits for you instead (note_user_stop)
+REFUSED_KEYS = ("refused", "refusals", "untilIdle")
+STOPPED_REPLY = "You stopped the chat after its background service refused this: it waits for you, Start it now or Cancel"
+
+
 def note_user_stop(cache_root, chats, host="", now_ms=None):
     """You stopped or interrupted a chat that keeps going (■ Stop, Interrupt,
     Talpy Chat's Stop, a host's stop command: chats, the ids it may be kept
@@ -5261,7 +5382,8 @@ def note_user_stop(cache_root, chats, host="", now_ms=None):
     go-on with nothing new after it or an API error before the stop doesn't
     go on again (kept_step), and its try again that's queued is taken out
     (one read before this that starts after it: jump.py --start-queued drops
-    it). It goes on after its next usage limit. Whether one was kept (no
+    it); a reply of it its background service refused waits for you instead
+    of trying again by itself. It goes on after its next usage limit. Whether one was kept (no
     write at all for a chat that isn't)."""
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     ids, host = {c for c in chats if valid_id(c or "")}, host or ""
@@ -5278,11 +5400,18 @@ def note_user_stop(cache_root, chats, host="", now_ms=None):
     change_keep(cache_root, change)
 
     def edit(tasks):
-        retries = [t for t in tasks if t.get("chat") in noted and (t.get("host") or "") == host
-                   and t.get("why") == "retry" and not t.get("afterTurn")]
+        mine = [t for t in tasks if t.get("chat") in noted and (t.get("host") or "") == host]
+        retries = [t for t in mine if t.get("why") == "retry" and not t.get("afterTurn")]
         for t in retries:
             tasks.remove(t)
-        return bool(retries)
+        # (a reply for when its turn ends that its background service refused, tried again by itself: it
+        # carries your text, so it isn't dropped; it waits for you, Start it now or Cancel)
+        refused = [t for t in mine if t.get("afterTurn") and t.get("refusals") and not t.get("error")]
+        for t in refused:
+            for key in REFUSED_KEYS:
+                t.pop(key, None)
+            t["error"] = STOPPED_REPLY
+        return bool(retries or refused)
     if noted:
         change_queue(cache_root, edit=edit)
     return bool(noted)
@@ -9625,6 +9754,10 @@ def end_for_handover(home, profiles, chat_id, claude=None):
             return False, "It's open in VS Code's Claude: close its tab there first"
         if session_state(entry) != "idle":
             return False, "It's at work again, so it stays where it is"
+        # (idle by its session file, but its job may still have tasks in flight, a shell in its fan: stopping
+        # it would end them)
+        if runs_in_background(entry, live_job(profiles, entry)):
+            return False, "It runs something in the background, so it stays where it is"
         job_id = entry.get("jobId")
         if entry.get("kind") == "bg" and valid_id(job_id):
             return stop_background(runs_on, job_id, read_job([runs_on], job_id), home, claude)

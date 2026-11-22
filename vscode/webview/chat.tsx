@@ -6,13 +6,13 @@
 
 import { type ComponentChildren, Fragment, render } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
-import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, remoteSwitchTitle } from "../../core/src/shared/pane";
+import { costNote, EXPLAIN_BUTTON, EXPLAIN_TIP, explainQuestion, newerSides, SIDE_BUTTON, SIDE_TIP, SIDE_WIDE, sidePickOf, sidesShown, sideWarm, type AskedSide, type ShownSide, type Side, type SidePick, awayRecap, RECAP_BUTTON, RECAP_HEAD, RECAP_TIP, QUOTE_BUTTON, QUOTE_MENU, withQuote, barY, BOX_IN_USE, COMPACT_KEEP, compactCommand, compactLabel, contextNumbers, HANDOFF_CAPTION, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, adoptable, awayHead, awayParts, awayTarget, awayTip, type Away, answerFor, answerKind, answersTaken, answerText, askedShows, attachedTag, bookmarkStep, BOOKMARKS_MAX, canBookmark, entryOf, keysOf, stateOf, withBookmark, withoutBookmark, type Bookmark, type BookmarkState, findCount, findIn, findStep, foldOf, type FindHit, type Fold, CHAT_EFFORTS, CHAT_MODELS, CHAT_MODES, chipsAfterSend, chipsOf, chipsWanted, clipboardCode, commandHint, commandRun, completionOf, contextHint, contextText, type ContextLeft, copyText, dayBreaks, dayLabel, lastReply, newBelow, newChatHint, newHint, newText, timeText, whereTag, droppedPaths, fileMention, HOLD_MS, numberedPictures, pendingTaken, pickerOf, pickLabel, type PendingAnswer, picturesIn, PICTURE_TYPES, promptHistory, REPLY_ANSWERS, replyAnswers, replyKey, routeHint, shownAsk, stopOf, suggestFor, type Asks, type Offers, type PendingSent, type ReplyChip, type Suggestion, testsText, TEXT_SCALES, THINKING_TIP, type ChatOptions, withPick, type TurnEnded, turnHint, turnText, turnTickIn, type TurnSoFar, type BackgroundShell, SHELL_LINES, shellFold, shellLine, shellsMore, shellsWaiting, type UsualReplies, withoutPicture, type Conversation, type PaneChat, type PaneHostMessage, type PaneItem, type PaneMessage, type ReviewAnswer, fromKeyOk, SIDE_FROM_COMPACTED, SIDE_FROM_GONE, SIDE_FROM_LINE, SIDE_FROM_MENU, SIDE_FROM_TIP, sideLine, type SidePart, REMOTE_CONTROL_TAG, REMOTE_CONTROL_TIP, remoteSwitchTitle } from "../../core/src/shared/pane";
 import { AgentTree } from "./components/AgentTree";
 import { AskBox } from "./components/AskBox";
 import { BookmarkList } from "./components/BookmarkList";
 import { Diff, Listing, ToolDetail } from "./components/CodeView";
 import type { Answers, Decision, Session } from "../../core/src/shared/types";
-import { agentsNow, agentsRunningFirst, modeHint, modeText } from "../../core/src/shared/model";
+import { agentsNow, agentsRunningFirst, clockText, modeHint, modeText } from "../../core/src/shared/model";
 import { sharedTagTitle } from "./util/chat";
 import { IconButton } from "./components/IconButton";
 import { MadeLine } from "./components/MadeLine";
@@ -24,6 +24,7 @@ import { beatShown, cancelBeat, withNextBeat } from "./pets/beat";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { ribbonCss } from "./util/ribbons";
+import { NEW_SINCE_READ_MS, NEW_SINCE_SEEN_MS, NEW_SINCE_TIP, newSinceAfterHide, newSinceAfterSend, newSinceInView, newSinceKey, newSinceLooking, newSinceOf, newSinceReading, newSinceSeen, newSinceSeenOn, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
@@ -695,6 +696,13 @@ function ChatApp() {
   // it, one line over the list's bottom when the tab shows it again; a click goes to where you left,
   // scrolling, sending or × closes it
   const [away, setAway] = useState<Away | null>(null);
+  // New since … (shared/pane.ts newSinceOf; Plasma's NewSinceLine.qml the same): a thin line in the
+  // conversation above the first item since you last looked, where the line's click goes. It comes with
+  // Since you last looked, stays after its click and moves when you come back to more; once seen on this tab
+  // (in view a moment with the list at rest), it goes when you've been at the newest part a while with the
+  // tab in front (one timeout, only then); unseen, it stays. It goes at once when you send a message, and
+  // when another tab comes in front (back with new items, Since you last looked's answer puts it there)
+  const [newSince, setNewSince] = useState<NewSince | null>(null);
   // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own recap)
   const [recapBefore, setRecapBefore] = useState<ReadonlySet<string> | null>(null);
   const [claudeRecap, setClaudeRecap] = useState<{ text: string; at: number } | null>(null);
@@ -1121,9 +1129,15 @@ function ChatApp() {
       else if (m.type === "visible") {
         setShown(m.visible);
         beatShown(m.visible);   // (nothing moves while another tab is in front)
-        if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
+        if (!m.visible) {
+          setAway(null);   // (shown again: what it did meanwhile, asked again)
+          setNewSince((was) => newSinceAfterHide(was));
+        }
       }
-      else if (m.type === "away") setAway(m.away);
+      else if (m.type === "away") {
+        setAway(m.away);
+        setNewSince((was) => newSinceOf(m.away, was));
+      }
       else if (m.type === "prefill") {   // (a new chat's box: Continue in a new chat's note, to read and send)
         setText(m.text);
         window.setTimeout(() => reply.current?.focus(), 0);
@@ -1447,6 +1461,7 @@ function ChatApp() {
       if (next.restUntil) setRestUntil(next.restUntil);
     }
     sentAt.current = Date.now();
+    setNewSince((was) => newSinceAfterSend(was, said));   // (you've read on: the line goes; not for its Recap)
     askUsual();
     // (a background chat that asks you something: your words answer it, as in its own prompt; never stopped for it)
     const asks = replyAnswers(chat);
@@ -1658,7 +1673,10 @@ function ChatApp() {
   const focusColor = useRef("");
   const goToRow = (el: HTMLElement, row: HTMLElement, key: string) => {
     follow.current = false;
-    el.scrollTop = Math.max(0, row.offsetTop - 8);
+    // (New since …'s line just above it: in view too, Since you last looked's click)
+    const above = row.previousElementSibling;
+    const top = above instanceof HTMLElement && above.classList.contains("pane-new-since") ? above : row;
+    el.scrollTop = Math.max(0, top.offsetTop - 8);
     setCurrent(key);
     if (typeof row.animate !== "function") return;
     if (!focusColor.current)
@@ -1878,11 +1896,20 @@ function ChatApp() {
   }, [away]);
   const goAway = () => {
     const key = away ? awayTarget(away, tab === "steps") : "";
+    setNewSince((was) => newSinceOf(away, was));   // (where it takes you: the line's there, read or not)
     setAway(null);
     if (!key) return;
     if (shownItems.some((it) => String(it.key) === key)) goToMark(key);
     else if (more) reachMark(key);
   };
+  // (New since …'s one timeout: only while there's a line you've seen and the tab in front is at the chat's
+  // newest part; scrolling up or another tab in front stops it, a new line starts it again)
+  const newSinceRuns = newSinceReading(newSince, tab === "steps", shown && conversation, !seen);
+  useEffect(() => {
+    if (!newSinceRuns) return;
+    const t = window.setTimeout(() => setNewSince(null), NEW_SINCE_READ_MS);
+    return () => window.clearTimeout(t);
+  }, [newSinceRuns, newSince]);
   // Show more / Show less (now: whether it shows all of it now). Show less keeps its button where it
   // was, under the pointer: the text above it folds away, not what's below
   const keepFold = useRef<{ key: string; top: number } | null>(null);
@@ -2003,6 +2030,9 @@ function ChatApp() {
   // (Ask from here: a line above the message side questions see the chat from, whenever a part is picked,
   // the panel open or not: over a narrow view's chat, the open panel hid it)
   const fromLine = sidePart ? sidePart.key : "";
+  // (New since …: above the first item since you last looked, on this tab; "New since 14:32")
+  const newSinceAt = newSinceKey(newSince, tab === "steps");
+  const newSinceLine = newSince ? newSinceText(timeText(newSince.since, today)) : "";
   const steps = useMemo(() => {
     const out: ComponentChildren[] = [];
     shownItems.forEach((it, i) => {
@@ -2011,22 +2041,66 @@ function ChatApp() {
       const line = it.key === fromLine ? (
         <div key="side-from" class="pane-day pane-from-line" role="separator" title={SIDE_FROM_TIP}><span>{SIDE_FROM_LINE}</span></div>
       ) : null;
+      const fresh = it.key === newSinceAt ? (
+        <div key="new-since" class="pane-new-since" role="separator" title={NEW_SINCE_TIP}><span><span>{newSinceLine}</span></span></div>
+      ) : null;
       // (the first item of a new day the tab shows: its line before it)
       if (breaks.has(it.key) && it.at) {
         out.push(
           <Fragment key={it.key}>
             <div class="pane-day" role="separator"><span>{dayLabel(it.at, today)}</span></div>
             {line}
+            {fresh}
             {item}
           </Fragment>,
         );
         return;
       }
       if (line) out.push(line);
+      if (fresh) out.push(fresh);   // (right above it: a jump there shows it, goToRow)
       out.push(item);
     });
     return out;
-  }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine]);
+  }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine, newSinceAt, newSinceLine]);
+  // (New since …, seen on this tab: all of it in the list's view for NEW_SINCE_SEEN_MS with the list at rest,
+  // the tab in front and the list done going where it goes, newsince.mjs newSinceLooking; a glimpse as it
+  // scrolls past doesn't count: each scroll starts the wait again. Looked at only while it isn't seen here)
+  const newSinceSteps = tab === "steps";
+  const newSinceUnseen = !!newSince && !newSinceSeenOn(newSince, newSinceSteps) && shown && conversation;
+  const newSincePlaced = loaded && !pendingJump && !markGoing;
+  const seenWait = useRef<{ timer: number; at: NewSince | null; steps: boolean }>({ timer: 0, at: null, steps: false });
+  useEffect(() => {
+    const el = list.current, w = seenWait.current;
+    const stop = () => {
+      window.clearTimeout(w.timer);
+      w.timer = 0;
+    };
+    if (!newSinceUnseen || !el) return stop();
+    // (each scroll is a move: the list at rest is NEW_SINCE_SEEN_MS without one)
+    const looking = () => {
+      const line = el.querySelector<HTMLElement>(".pane-new-since > span");
+      const v = el.getBoundingClientRect(), r = line ? line.getBoundingClientRect() : null;
+      const inView = !!r && newSinceInView(r.top - v.top, r.height, el.clientHeight);
+      return newSinceLooking(newSince, newSinceSteps, shown, inView, true, newSincePlaced);
+    };
+    const look = (moved: boolean) => {
+      if (!looking()) return stop();
+      if (w.timer && !moved && w.at === newSince && w.steps === newSinceSteps) return;   // (still waiting)
+      stop();
+      const at = newSince, steps = newSinceSteps;
+      w.at = at;
+      w.steps = steps;
+      w.timer = window.setTimeout(() => {
+        w.timer = 0;
+        if (looking()) setNewSince((was) => (was === at ? newSinceSeen(was, steps) : was));
+      }, NEW_SINCE_SEEN_MS);
+    };
+    look(false);
+    const onScroll = () => look(true);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [newSinceUnseen, newSince, newSinceSteps, newSincePlaced, steps]);
+  useEffect(() => () => window.clearTimeout(seenWait.current.timer), []);
   // (the matches marked in the rows near the view, again as they're drawn again or you scroll)
   useEffect(() => {
     const el = list.current;
@@ -2172,7 +2246,7 @@ function ChatApp() {
   };
   // Quote in reply: what you selected in the conversation, as a Markdown quote at the top of the box, the
   // cursor under it (quote.mjs withQuote); offered by a "Reply to this" button by the selection (it goes
-  // with the selection, a scroll or a click elsewhere) and the right-click menu
+  // with the selection or a click elsewhere, and follows it through a scroll) and the right-click menu
   const [quoteAt, setQuoteAt] = useState<{ x: number; y: number; text: string } | null>(null);
   const quoteIn = (selected: string) => {
     const q = withQuote(text, selected);
@@ -2213,27 +2287,78 @@ function ChatApp() {
     if (!sideWide) closeSide(false);
     quoteIn(s.a);
   };
+  // Where the bar goes, from the live selection: under the bottom of its last line (whichever way it was
+  // dragged), by its right end, inside the list's rect (y null: that line is out of the list's view, so the
+  // bar is hidden). Reply to this, and Explain this after it where the chat has side questions: as wide as both
+  const barWhere = (h: number, w: number) => {
+    const el = list.current, sel = window.getSelection();
+    if (!el || !sel || sel.isCollapsed || !sel.rangeCount) return null;
+    const range = sel.getRangeAt(sel.rangeCount - 1);
+    let last = range.getBoundingClientRect();
+    for (const r of Array.from(range.getClientRects())) if ((r.width > 0 || r.height > 0) && r.bottom >= last.bottom - 0.5) last = r;
+    const view = el.getBoundingClientRect();
+    return { x: Math.max(view.left, Math.min(last.right, view.right - w)), y: barY(last.bottom, view.top, view.bottom, 6, view.bottom - h) };
+  };
   const offerQuote = () => {
     const el = list.current;
     const sel = window.getSelection();
     const said = sel && !sel.isCollapsed ? sel.toString() : "";
     if (!el || !sel || !said.trim() || !el.contains(sel.anchorNode) || !el.contains(sel.focusNode)) return setQuoteAt(null);
-    const r = sel.getRangeAt(sel.rangeCount - 1).getBoundingClientRect();
-    // (Reply to this, and Explain this after it where the chat has side questions: as wide as both)
-    const wide = sideCan ? 250 : 130;
-    setQuoteAt({ x: Math.max(4, Math.min(r.right - 40, window.innerWidth - wide)), y: Math.min(r.bottom + 6, window.innerHeight - 40), text: said });
+    const at = barWhere(30, sideCan ? 250 : 130);
+    setQuoteAt(at ? { x: at.x, y: at.y ?? 0, text: said } : null);
   };
-  useEffect(() => {
+  // The bar goes with the selection (hidden while its last line is out of the list's view) as the list scrolls,
+  // is resized or changes (a fold, rows coming in, a window resized): once a frame at most, straight on the
+  // bar's style (no render), and nothing runs while none of that happens
+  const quoteBar = useRef<HTMLDivElement>(null);
+  const placeQuote = () => {
+    const bar = quoteBar.current;
+    const at = bar ? barWhere(bar.offsetHeight || 30, bar.offsetWidth || (sideCan ? 250 : 130)) : null;
+    if (!bar || !at) return;
+    bar.style.visibility = at.y === null ? "hidden" : "visible";
+    if (at.y !== null) {
+      bar.style.top = `${at.y}px`;
+      bar.style.left = `${at.x}px`;
+    }
+  };
+  const placeNow = useRef(placeQuote);
+  placeNow.current = placeQuote;
+  useLayoutEffect(() => {
     if (!quoteAt) return undefined;
     const gone = () => { const sel = window.getSelection(); if (!sel || sel.isCollapsed) setQuoteAt(null); };
     const away = () => setQuoteAt(null);
+    let frame = 0;
+    const follow = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        if (list.current !== list0) setQuoteAt(null);   // (the list was made again: what it watched is gone)
+        else placeNow.current();
+      });
+    };
+    placeNow.current();   // (before it's drawn: a new selection's bar shows where it goes, whatever the last one's was)
+    const el = list.current;
+    const list0 = el;
+    const sizes = typeof ResizeObserver === "function" ? new ResizeObserver(follow) : null;
+    const rows = new MutationObserver((changes) => {
+      for (const c of changes) c.addedNodes.forEach((n) => { if (n instanceof Element) sizes?.observe(n); });
+      follow();
+    });
+    if (el) {
+      el.addEventListener("scroll", follow, { passive: true });
+      sizes?.observe(el);
+      for (const c of Array.from(el.children)) sizes?.observe(c);
+      rows.observe(el, { childList: true });
+    }
     document.addEventListener("selectionchange", gone);
-    window.addEventListener("scroll", away, true);
     window.addEventListener("blur", away);
     return () => {
       document.removeEventListener("selectionchange", gone);
-      window.removeEventListener("scroll", away, true);
       window.removeEventListener("blur", away);
+      el?.removeEventListener("scroll", follow);
+      sizes?.disconnect();
+      rows.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
     };
   }, [quoteAt]);
 
@@ -2708,7 +2833,11 @@ function ChatApp() {
             onTerminal={chat.where === "background" ? () => post({ type: "openWindow" }) : undefined} /> : null}
           {chat?.queued ? (
             <div class="pane-queued">
-              <span>Sent when this turn ends: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}</span>
+              {/* (its background service refused it while the chat ran something in the background: tried again
+                  then, why on hover, while that's to come; one with an error waits for you: queuedRetryAt) */}
+              <span title={(chat.queued.retryAt && chat.queued.refused) || undefined}>
+                {chat.queued.retryAt ? `Tries again at ${clockText(chat.queued.retryAt)}` : "Sent when this turn ends"}: {chat.queued.prompt}{chat.queued.error ? ` (${chat.queued.error})` : ""}
+              </span>
               <button type="button" class="btn secondary small" onClick={() => setUnqueueAsk(unqueueAsk === chat.queued!.id ? "" : chat.queued!.id)}>
                 <Icon name={I.cancel} tone={T.cancel} />Cancel
               </button>
@@ -2749,7 +2878,7 @@ function ChatApp() {
           ) : null}
           {editMenu ? <EditMenu at={editMenu} marked={!!editMenu.it && !!markedKeys[editMenu.it.key]} explain={sideCan} onDo={editDo} /> : null}
           {quoteAt ? (
-            <div class="pane-quote-at" style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
+            <div class="pane-quote-at" ref={quoteBar} style={{ left: `${quoteAt.x}px`, top: `${quoteAt.y}px` }}
               onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}>
               <button type="button" class="pane-quote-btn"
                 title={`${QUOTE_BUTTON}: what you selected, as a quote at the top of your reply`}

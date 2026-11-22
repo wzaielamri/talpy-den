@@ -22,6 +22,7 @@ import "limits.mjs" as Limits
 // the chat transcripts: no tokens, nothing sent.
 PlasmaComponents3.ScrollView {
     id: view
+    Component.onCompleted: contentItem.pixelAligned = true   // (moved by whole pixels, as Talpy Chat's conversation)
 
     readonly property var recap: root.weekRecap
     readonly property string span: root.weekSpan   // the one picked (its answer may still come)

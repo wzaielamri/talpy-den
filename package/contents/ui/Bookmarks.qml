@@ -281,6 +281,7 @@ Item {
     property bool closeAfter: false   // (gone to from the list: it closes, unless it covers little)
     property string jumpKey: ""
     property int jumpTries: 0
+    readonly property bool jumping: jumpRetry.running   // (its row not made yet: tried again, ChatPane listSettling)
 
     readonly property bool capped: pane.more && pane.limit >= pane.limitMax   // (the most Talpy Chat shows)
     function loadedKeys() {   // key -> its first row
@@ -296,7 +297,10 @@ Item {
         return Bm.stateOf(mark, loaded, pane.more, capped, settled)
     }
     function topOf(row) {   // (where the list goes to show it at the top, as Ctrl+↑ does)
-        return Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, row.y + row.gap - fm.height * 0.5))
+        // (New since …'s line above it, in its gap or the list's head: in view too, Since you last looked's click)
+        const line = row.key === pane.newSinceAt
+        const top = !line ? row.y + row.gap - fm.height * 0.5 : row.gap > 0 ? row.y - fm.height * 0.5 : list.originY
+        return Math.max(list.originY, Math.min(list.originY + list.contentHeight - list.height, top))
     }
 
     // To the message with that key, once it's drawn (fromList: a click in the list; read: just read

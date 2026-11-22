@@ -24,7 +24,7 @@ import type { HostServices } from "./host";
 import { noLinks } from "./notify";
 import type { ChatPage, ChatPanesPort, EditorPort, PaneSurface, PaneSurfaces, TerminalHandle, TerminalPort } from "./ports";
 import { cacheDir, CHAT_FONT_KEYS, chatFont, chatOptionArgs, configDirArgs, setChatOptions, settings } from "./settings";
-import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, recentRef, stateText } from "./shared/model";
+import { chatRefOf, doingText, hostLabel, liveOf, petKeyOf, queuedRetryAt, recentRef, stateText } from "./shared/model";
 import { answersOf, askShownOf, canBookmark, chatWhere, copyCut, HOLD_MS, madeOf, oneLine, PICTURE_TYPES, queuedReply, remoteControlPage, remoteSwitchCan, reviewPending, reviewSeen, sameAsk, shownUpTo, sideAnswerOf, sideKeyOk, sidePartAnswerOf, sidePickOf, sidesOf, stampFresher, textScale, unhookedText, type PaneChat, type PaneHostMessage, type PaneMessage, type SendResult, type SidePick } from "./shared/pane";
 import type { Answers, AskShown, ChatRef, Decision, Group, PlanItem, RecentChat, Session, ViewState } from "./shared/types";
 import { isDecision } from "./shared/types";
@@ -653,7 +653,7 @@ class Pane implements Disposable {
       reviewPending: item ? reviewPending(item, state.status, this.host || undefined) : false,
       reviewed: item ? reviewSeen(item, state.status, this.host || undefined) : true,
       review: session?.review ?? recent?.review ?? null,
-      queued: queued ? { id: queued.id, prompt: queued.prompt, error: queued.error } : null,
+      queued: queued ? { id: queued.id, prompt: queued.prompt, error: queued.error, refused: queued.refused ?? "", retryAt: queuedRetryAt(queued, Date.now()) } : null,
       canMove: !!session && this.owner.ext.actions.canMoveToClaudeCode(this.chat),
       where: starting ? "background" : this.fresh ? "new" : chatWhere(session, this.terminalHere),
       terminalApp: session?.terminalApp ?? "",

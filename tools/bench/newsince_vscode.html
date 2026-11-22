@@ -1,0 +1,143 @@
+<!doctype html>
+<!--
+  tools/bench/newsince_vscode.py's page: VS Code's chat tab (vscode/dev/chat.html, the harness, ?away=seen:
+  Since you last looked's answer) in a frame, its New since … line checked step by step. What it found goes to
+  the server as /result?{json}: [{what, ok, seen}].
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>New since … check</title>
+  </head>
+  <body style="margin: 0">
+    <iframe id="f" style="width: 760px; height: 720px; border: 0"></iframe>
+    <script>
+      const f = document.getElementById("f");
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const out = [];
+      const check = (what, ok, seen) => out.push({ what, ok: !!ok, seen: JSON.stringify(seen === undefined ? "" : seen).slice(0, 300) });
+      let w, d;
+      async function open(query) {
+        const loaded = new Promise((r) => (f.onload = r));
+        f.src = `/vscode/dev/chat.html?${query}`;
+        await loaded;
+        w = f.contentWindow;
+        d = f.contentDocument;
+        await sleep(2500);
+      }
+      const list = () => d.querySelector(".pane-list");
+      // The line: how many, its words, the row right after it, its own height (none), whether the drawn line fits
+      // the room between the rows around it, whether all of it is in the list's view
+      function line() {
+        const l = list(), all = [...d.querySelectorAll(".pane-new-since")];
+        const n = all[0], rule = n ? n.firstElementChild : null, v = l.getBoundingClientRect(), r = rule ? rule.getBoundingClientRect() : null;
+        const prev = n ? n.previousElementSibling : null, next = n ? n.nextElementSibling : null;
+        const fits = !!r && !!next && r.bottom <= next.getBoundingClientRect().top + 0.5 && (!prev || r.top >= prev.getBoundingClientRect().bottom - 0.5);
+        return { count: all.length, text: n ? n.textContent : "", before: next ? next.dataset.key || "" : "", height: n ? n.offsetHeight : -1, fits,
+                 inView: !!r && r.top >= v.top && r.bottom <= v.bottom, top: r ? Math.round(r.top - v.top) : null,
+                 bar: !!d.querySelector(".pane-away"), atEnd: l.scrollHeight - l.scrollTop - l.clientHeight < 40 };
+      }
+      const toEnd = () => { list().scrollTop = list().scrollHeight; };
+      const toTop = () => { list().scrollTop = 0; };
+      // A scroll through the line, 16 ms a step (in view only while the list moves), then back to the end at once
+      async function sweep() {
+        const l = list(), n = d.querySelector(".pane-new-since");
+        const from = l.scrollTop, to = Math.max(0, n.offsetTop - l.clientHeight * 2), steps = 30;
+        let glimpsed = false;
+        for (let i = 1; i <= steps; i++) {
+          l.scrollTop = from + (to - from) * i / steps;
+          await sleep(16);
+          if (line().inView) glimpsed = true;
+        }
+        toEnd();
+        return glimpsed;
+      }
+
+      async function run() {
+        // Back with new items: the bar, and the line above the first item since (m1), at the end of a long chat
+        await open("away=seen&long=40&theme=dark");
+        toEnd();
+        await sleep(11000);
+        let s = line();
+        check("comes with Since you last looked", s.count === 1 && s.bar, s);
+        check("never seen: stays past 10 s at the end", s.count === 1 && s.atEnd && !s.inView, s);
+        check("above Claude's first reply since (m1)", s.before === "m1", s.before);
+        check("says when you left", /^New since \d{1,2}:\d{2}/.test(s.text), s.text);
+        check("takes no room of its own, fits the room above its row", s.height === 0 && s.fits, s);
+        // Scrolled through, in view only mid-scroll, and back to the end: not seen, it stays past 10 s
+        const glimpsed = await sweep();
+        await sleep(11000);
+        s = line();
+        check("a glimpse mid-scroll isn't seen: stays past 10 s at the end", glimpsed && s.count === 1 && s.atEnd, { glimpsed, s });
+        // The bar's click: the jump, the line in view at the top, the bar gone
+        d.querySelector(".pane-away-go").click();
+        await sleep(800);
+        s = line();
+        check("after the jump: still there, in view near the top", s.count === 1 && s.inView && s.top !== null && s.top < 60 && !s.bar, s);
+        // Steps: above the first step since (t1)
+        [...d.querySelectorAll(".pane-tabs [role=tab]")].find((b) => b.textContent.trim() === "Steps").click();
+        await sleep(800);
+        s = line();
+        check("on Steps: above the first step since (t1)", s.count === 1 && s.before === "t1" && s.height === 0 && s.fits, s);
+        // Light theme, after the jump
+        await open("away=seen&long=40&theme=light");
+        d.querySelector(".pane-away-go").click();
+        await sleep(800);
+        s = line();
+        check("light: in view after the jump", s.count === 1 && s.inView, s);
+        // Seen (the jump): 5 s at the end it stays, scrolled away before the 10 s it stays, back at the end 10 s it goes
+        toEnd();
+        await sleep(5000);
+        s = line();
+        check("seen, 5 s at the end: still there", s.count === 1 && s.atEnd, s);
+        toTop();
+        await sleep(7000);
+        s = line();
+        check("seen, scrolled away before the 10 s: stays", s.count === 1, s.count);
+        toEnd();
+        await sleep(5000);
+        s = line();
+        check("back at the end 5 s: still there", s.count === 1 && s.atEnd, s);
+        await sleep(5600);
+        s = line();
+        check("10 s at the end: gone", s.count === 0, s.count);
+        // Another tab in front takes it; back with more, it's at the new point
+        await open("away=seen&long=40&theme=dark");
+        toEnd();
+        w.postMessage({ type: "visible", visible: false }, "*");
+        await sleep(600);
+        s = line();
+        check("hidden: gone", s.count === 0, s.count);
+        w.postMessage({ type: "visible", visible: true }, "*");
+        await sleep(600);
+        s = line();
+        check("shown again, nothing new: none", s.count === 0, s.count);
+        w.postMessage({ type: "away", away: { from: "seen", since: Date.now() - 600000, key: "m2", stepKey: "m2", steps: 3, replies: 1, files: [],
+                                              fileCount: 0, test: null, asks: "", partial: false } }, "*");
+        await sleep(600);
+        s = line();
+        check("back with more: at the new point (m2)", s.count === 1 && s.before === "m2", s);
+        // A message you send takes it (the bar's Recap doesn't)
+        d.querySelector(".pane-away-recap").click();
+        await sleep(600);
+        s = line();
+        check("Recap: stays", s.count === 1, s.count);
+        const box = d.querySelector("textarea");
+        box.focus();
+        box.value = "thanks, go on";
+        box.dispatchEvent(new w.InputEvent("input", { bubbles: true }));
+        await sleep(200);
+        box.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+        await sleep(600);
+        s = line();
+        check("sent a message: gone", s.count === 0 && d.querySelector("textarea").value === "", s.count);
+        // A new tab (a reopen) with nothing new: none
+        await open("long=40&theme=dark");
+        s = line();
+        check("opened again with nothing new: none", s.count === 0, s.count);
+      }
+      run().catch((e) => check("ran to the end", false, String(e && e.stack || e)))
+        .finally(() => fetch("/result?" + encodeURIComponent(JSON.stringify({ checks: out }))));
+    </script>
+  </body>
+</html>

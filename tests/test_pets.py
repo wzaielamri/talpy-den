@@ -2327,7 +2327,7 @@ class NewChatTests(unittest.TestCase):
             self.assertNotIn(key, code)
         memo = chat[chat.index("  const steps = useMemo("):]
         memo = memo[:memo.index("\n  // ")]
-        self.assertIn("[shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine]", memo)
+        self.assertIn("[shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine, newSinceAt, newSinceLine]", memo)
         rows = chat[chat.index("  function shownStep("):]
         self.assertNotRegex(rows[:rows.index("\n  }\n")], r"(?i)bookmark|ribbon")
         self.assertIn("ribbonCss(", chat)
@@ -2399,6 +2399,124 @@ class NewChatTests(unittest.TestCase):
         self.assertIn('sendAsTyped("/recap")', pane)
         self.assertIn("return claudeRecap && claudeRecap.at > away.since ? claudeRecap.text : \"\"", pane)
         self.assertIn("return recap && recap.at > a.since ? recap.text : \"\";", shared)
+
+    def test_new_since_line_is_one_rule_in_both_front_ends(self):
+        # New since … (A9's line in the conversation): above the first item since you last looked, from
+        # newsince.mjs's rules in both front ends (vendored to VS Code). Since you last looked's answer puts it
+        # where its click goes, the click keeps it there, a message you send, hiding the window or a new chat
+        # takes it; seen on a tab once in view 400 ms with the list at rest (a glimpse doesn't count), then one
+        # timer, running only while the window shows the chat's newest part. Plasma's line (NewSinceLine.qml)
+        # is made only while there's one, in a row's gap or the list's head (no row grows but a step right
+        # after a step, given a reply's room), nothing else of it in the delegate, nothing animated, nothing
+        # per frame
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        line = (ROOT / "ui/NewSinceLine.qml").read_text()
+        rules = (ROOT / "ui/newsince.mjs").read_text()
+        chat = (ROOT.parent.parent / "vscode/webview/chat.tsx").read_text()
+        shared = (ROOT.parent.parent / "core/src/shared/pane.ts").read_text()
+        vendored = (ROOT.parent.parent / "vscode/esbuild.mjs").read_text()
+        code = "\n".join(l.split("//")[0] for l in rules.splitlines())
+        self.assertNotIn("?.", code)   # (ES2017: QML imports it as it is)
+        self.assertNotIn("??", code)
+        self.assertIn('import "newsince.mjs" as NewSince', pane)
+        self.assertIn('active: pane.newSince !== null && pane.conversationTab\n            source: active ? "NewSinceLine.qml" : ""', pane)
+        delegate = pane[pane.index("                    delegate: Item {"):pane.index("// A drag in a message that goes on")]
+        self.assertNotIn("newsince", delegate.lower())
+        # (the delegate's one part of it: the row the line is above has at least the room the line takes)
+        self.assertIn("key === pane.roomAbove ? pane.lineRoom : 0)", delegate)
+        self.assertEqual(delegate.count("pane.roomAbove"), 1)
+        self.assertIn("readonly property string roomAbove: newSinceAt", pane)
+        self.assertIn("readonly property real lineRoom: Math.ceil(newSinceFm.height) + 2", pane)
+        self.assertIn("font: pane.newSinceFont", line)
+        took = pane[pane.index("    function tookAway(a) {"):]
+        took = took[:took.index("\n    }\n")]
+        self.assertIn("away = a", took)
+        self.assertIn("newSince = NewSince.newSinceOf(a, newSince)", took)
+        self.assertIn("tookAway(result.away || null)", pane)
+        go = pane[pane.index("    function goAway() {"):]
+        go = go[:go.index("\n    }\n")]
+        self.assertLess(go.index("newSince = NewSince.newSinceOf(away, newSince)"), go.index("away = null"))
+        self.assertIn("newSince = NewSince.newSinceAfterSend(newSince, text)", pane)
+        reset = pane[pane.index("    function reset() {"):]
+        self.assertIn("newSince = null", reset[:reset.index("\n    }\n")])
+        timer = pane[pane.index("        id: newSinceRead"):]
+        timer = timer[:timer.index("\n    }\n")]
+        self.assertIn("interval: NewSince.NEW_SINCE_READ_MS", timer)
+        self.assertIn('running: NewSince.newSinceReading(pane.newSince, pane.listTab === "steps", pane.shown && pane.conversationTab, pane.atEnd)', timer)
+        self.assertIn("onTriggered: pane.newSince = null", timer)
+        self.assertNotIn("repeat: true", timer)
+        self.assertIn("onNewSinceChanged: if (newSinceRead.running)\n        newSinceRead.restart()", pane)
+        # (hidden: it goes; back with new items, the --away answer puts it at the new point)
+        shown = pane[pane.index("    onShownChanged: {"):]
+        self.assertIn("newSince = NewSince.newSinceAfterHide(newSince)", shown[:shown.index("\n    }\n")])
+        # (the list going where it goes: the end as the window opens and follows it, a jump, a read further back)
+        self.assertIn('readonly property bool listSettling: !loaded || settle.running || holdTop.running || reachKey !== ""\n'
+                      '                                       || (bookmarkLogic.item !== null && bookmarkLogic.item.jumping)', pane)
+        self.assertIn("readonly property bool jumping: jumpRetry.running", (ROOT / "ui/Bookmarks.qml").read_text())
+        # the line: where SideFromLine.qml puts its own, its words and key from the rules, in the accent colour
+        self.assertIn('readonly property string newSinceAt: NewSince.newSinceKey(newSince, listTab === "steps")', pane)
+        self.assertIn("readonly property string key: pane.newSinceAt", line)
+        self.assertIn("NewSince.newSinceText(pane.timeText(pane.newSince.since))", line)
+        self.assertIn("color: pane.youColor", line)
+        self.assertIn("parent: mark.row && !mark.first ? mark.row : mark", line)
+        self.assertIn("y: mark.row ? Math.round((mark.row.gap - height) / 2) : 0", line)
+        self.assertIn("parent: head || mark", line)
+        # (a row not made yet: looked for again as rows are made, the one index only; nothing per frame)
+        self.assertNotIn("onFrameSwapped", line)
+        self.assertIn("target: list.contentItem\n        enabled: mark.missing\n        function onChildrenChanged()", line)
+        self.assertNotRegex(line, r"\.(gap|height|implicitHeight)\s*=[^=]")
+        self.assertNotIn("forceLayout", line)
+        self.assertNotIn("pane.start(", line)
+        self.assertNotRegex(line, r"Animation|Behavior")
+        # seen: in view 400 ms with the list at rest and done going where it goes, on this tab (its read timer
+        # runs only then), looked at only while it isn't yet, as the list moves or the line is placed
+        self.assertIn("readonly property bool unseen: pane.newSince !== null && !NewSince.newSinceSeenOn(pane.newSince, mark.steps) && pane.shown", line)
+        self.assertIn("NewSince.newSinceLooking(pane.newSince, mark.steps, pane.shown, NewSince.newSinceInView(p.y, it.height, list.height),\n"
+                      "                                         !pane.scrolling(), !pane.listSettling)", line)
+        self.assertIn("interval: NewSince.NEW_SINCE_SEEN_MS", line)
+        self.assertIn("pane.newSince = NewSince.newSinceSeen(pane.newSince, mark.steps)", line)
+        self.assertIn("enabled: mark.unseen\n        function onContentYChanged()", line)
+        self.assertIn("function onMovingChanged()", line)
+        self.assertIn("function onListSettlingChanged()", line)
+        # (its tooltip: on the whole line)
+        rule = line[line.index("        id: rule"):]
+        self.assertLess(rule.index("HoverHandler"), rule.index("Rectangle {"))
+        self.assertLess(rule.index("PlasmaComponents3.ToolTip.text: NewSince.NEW_SINCE_TIP"), rule.index("Rectangle {"))
+        # (a jump to its item, Since you last looked's click's, shows it too: above the item, not under the view's top)
+        marks = (ROOT / "ui/Bookmarks.qml").read_text()
+        top = marks[marks.index("    function topOf(row) {"):]
+        top = top[:top.index("\n    }\n")]
+        self.assertIn("const line = row.key === pane.newSinceAt", top)
+        self.assertIn("!line ? row.y + row.gap - fm.height * 0.5 : row.gap > 0 ? row.y - fm.height * 0.5 : list.originY", top)
+        # VS Code: the same rules (vendored), the line a sibling of its message's row, one timeout
+        self.assertIn("|newsince|quote|sides)\\.(mjs|d\\.mts)$", vendored)
+        self.assertIn('from "../../../vscode/vendor/newsince.mjs"', shared)
+        self.assertIn("setNewSince((was) => newSinceOf(m.away, was))", chat)
+        go = chat[chat.index("  const goAway = () => {"):]
+        go = go[:go.index("\n  };\n")]
+        self.assertLess(go.index("setNewSince((was) => newSinceOf(away, was))"), go.index("setAway(null)"))
+        self.assertIn("setNewSince((was) => newSinceAfterSend(was, said))", chat)
+        self.assertIn('const newSinceRuns = newSinceReading(newSince, tab === "steps", shown && conversation, !seen);', chat)
+        self.assertIn("setNewSince((was) => newSinceAfterHide(was))", chat)
+        self.assertIn("window.setTimeout(() => setNewSince(null), NEW_SINCE_READ_MS)", chat)
+        self.assertIn("const newSinceAt = newSinceKey(newSince, tab === \"steps\");", chat)
+        self.assertIn('class="pane-new-since"', chat)
+        self.assertIn("const newSinceUnseen = !!newSince && !newSinceSeenOn(newSince, newSinceSteps) && shown && conversation;", chat)
+        self.assertIn("const newSincePlaced = loaded && !pendingJump && !markGoing;", chat)
+        seen = chat[chat.index("const newSinceUnseen = "):]
+        seen = seen[:seen.index("\n  }, [")]
+        self.assertIn("newSinceLooking(newSince, newSinceSteps, shown, inView, true, newSincePlaced)", seen)
+        self.assertIn("NEW_SINCE_SEEN_MS", seen)
+        self.assertIn('el.addEventListener("scroll", onScroll, { passive: true });', seen)
+        self.assertNotIn("IntersectionObserver", chat)
+        # (VS Code's line takes no room of its own, as Plasma's: drawn in the room above the row, at least the
+        # line's height there)
+        css = (ROOT.parent.parent / "vscode/webview/styles.css").read_text()
+        block = css[css.index(".pane-new-since {"):]
+        self.assertIn("height: 0;", block[:block.index("}")])
+        self.assertIn(".pane-new-since + .pane-item:not(.turn) {\n  margin-top: 1.1em;", css)
+        self.assertIn('if (fresh) out.push(fresh);   // (right above it: a jump there shows it, goToRow)\n      out.push(item);', chat)
+        self.assertIn('above.classList.contains("pane-new-since") ? above : row', chat)
 
     def test_quote_in_reply_is_one_rule_in_both_front_ends(self):
         # Quote in reply: quote.mjs's rules and words in both (vendored to VS Code), the button made only
@@ -2493,6 +2611,26 @@ class NewChatTests(unittest.TestCase):
         explain = explain[:explain.index("\n    }\n")]
         self.assertIn("Sides.explainQuestion(selected)", explain)
         self.assertIn("pane.showSides(true, true, key)", explain)
+
+    def test_selection_bar_follows_the_text_and_hides_out_of_view(self):
+        # A cheap guard beside tools/bench/selbar.py (which renders it): the bar is anchored to the row the selection
+        # ends in (not a place in the content), bound to the list's scroll and that row; quote.mjs barY places it and
+        # says null (hidden) out of view; a scroll doesn't close it; no timer, animation or polling
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertIn("{ x: Math.max(0, Math.min(end.x, scroll.width - Kirigami.Units.gridUnit * 7)), key: end.key, at: end.at, dy: end.dy }", pane)
+        line = pane[pane.index("    function quoteLineY() {"):]
+        line = line[:line.index("\n    }\n")]
+        self.assertIn("void list.contentY, list.contentHeight, items.count", line)
+        self.assertIn("d.mapToItem(scroll, 0, q.dy).y", line)
+        bar = pane[pane.rindex("Loader {", 0, pane.index("text: Quote.QUOTE_BUTTON")):pane.index("text: Quote.QUOTE_BUTTON")]
+        self.assertIn("Quote.barY(pane.quoteLineY(), 0, scroll.height,", bar)
+        self.assertIn("visible: barY !== null", bar)
+        for word in ("Timer", "Animation", "Behavior"):
+            self.assertNotIn(word, bar)
+        moved = pane[pane.index("onMovementStarted: {"):]
+        self.assertNotIn("quoteAt", moved[:moved.index("onContentHeightChanged")])   # (a scroll or a flick leaves the bar)
+        self.assertIn("export function barY(", (ROOT / "ui/quote.mjs").read_text())
+        self.assertTrue((ROOT.parent.parent / "tools/bench/selbar.py").is_file())
 
     def test_side_questions_ask_take_and_say_it_as_sides_mjs_does(self):
         # The words are sides.mjs's (VS Code's the same), never written again in the QML; asking runs pane.py

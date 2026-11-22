@@ -301,6 +301,7 @@ PlasmaExtras.Representation {
                 contentWidth: availableWidth
                 contentHeight: content.implicitHeight
                 PlasmaComponents3.ScrollBar.horizontal.policy: PlasmaComponents3.ScrollBar.AlwaysOff
+                Component.onCompleted: contentItem.pixelAligned = true   // (moved by whole pixels, as Talpy Chat's conversation)
 
                 ColumnLayout {
                     id: content

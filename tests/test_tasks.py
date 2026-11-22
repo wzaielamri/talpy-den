@@ -844,6 +844,21 @@ class HandoverTests(Fixture):
         self.assertEqual(td.end_for_handover(self.home, td.discover_profiles(self.home), "nobody"),
                          (True, "Nothing had it open"))
 
+    def test_a_background_chat_running_things_in_the_background_stays(self):
+        # Idle by its session file, but its job still has tasks in flight (a watch loop, a subagent):
+        # stopping it to move the chat would end them. Idle with nothing of it running: stopped
+        w = self.home / ".claude-work"
+        write(w / "sessions/41.json", session("bgtasks", kind="bg", jobId="job9"))
+        for job, stops in (({"state": "working", "tempo": "idle", "inFlight": {"tasks": 2, "kinds": ["local_bash"]}}, False),
+                           ({"state": "done", "tempo": "idle", "fan": [{"id": "b1", "kind": "shell", "label": "watch 600"}]}, False),
+                           ({"state": "done", "tempo": "idle"}, True)):
+            write(w / "jobs/job9/state.json", dict(job, sessionId="bgtasks"))
+            with mock.patch.object(td, "stop_background", return_value=(True, "Stopped")) as stopped:
+                ok, message = td.end_for_handover(self.home, td.discover_profiles(self.home), "bgtasks")
+            self.assertEqual((ok, stopped.call_count), (stops, int(stops)), job["state"])
+            if not stops:
+                self.assertEqual(message, "It runs something in the background, so it stays where it is")
+
     def test_an_idle_chat_in_a_terminal_quits(self):
         proc = subprocess.Popen([sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(60)"],
                                 stdout=subprocess.PIPE, text=True)

@@ -79,16 +79,21 @@ its permission prompt and its review.
         cut at TEXT_CHARS: all of it, from the transcript (replies.whole_text).
         {"ok", "text"}
   --send CHAT --profile P --text T [--session ID] [--how auto|background|copy|enter] [--after-turn] [--name N]
+         [--if-turn-over]
         your message to the chat, the way it can take one (send) (or
         --text-file F: a long one in F, a text-*.txt of the cache folder,
         removed once read); typed into its tmux pane; put in the input of its VS Code tab; or
         Claude goes on with it in the background (claude --bg --resume),
-        after a background session that has it stops. A chat in a terminal
+        after a background session that has it stops (never one that runs
+        something in the background: that would end it). A chat in a terminal
         that takes no text from outside asks first (how background: it goes
         on in the background; copy: the message goes to the clipboard).
         How enter (Enter in the pane): auto, but a terminal that takes no
         text gets the copy (Claude there never quits on an Enter).
         --after-turn: queued, it's sent once the chat's turn ends.
+        --if-turn-over (that message, sent by jump.py --start-queued): only
+        once Claude's own turn is over (what it runs in the background goes
+        on), else {"ok": false, "turnRuns": true} (turn_runs)
   --start PROFILE --cwd FOLDER --text T [--model M] [--effort E] [--permission-mode MODE] [--plan SLUG [--plan-profile P]]
         a new chat Talpy Chat starts, with T as its first message (or
         --text-file F): in the background on that profile, in FOLDER (claude
@@ -1586,7 +1591,7 @@ def trust_ask(home, folder):
 
 
 def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="auto", claude=None, scoped=True,
-         hooked=True, hook_source=None, predict=False):
+         hooked=True, hook_source=None, predict=False, if_turn_over=False):
     """Send your message to a chat the way it takes one (td.reply_route):
     {"ok", "message", "how": "typed"|"background"|"vscode"|"copy"|"ask",
     "link" (vscode), "copied" (copy); woken in the background: "hooked",
@@ -1595,7 +1600,15 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
     scoped: a chat it wakes in the background in a systemd scope of its own
     (go_on_in_background; not on an SSH host or in a container); hooked:
     with the permission hook for it (chat_hook_of; hook_source: its code,
-    from the computer that asks, for a host's copy)."""
+    from the computer that asks, for a host's copy). if_turn_over (a message
+    queued for when the turn ends, jump.py --start-queued; --if-turn-over):
+    it goes only once Claude's own turn is over (turn_runs: what runs in the
+    background goes on), else {"ok": False, "turnRuns": True} and it waits
+    on in the queue. A chat is never stopped to go on with a message while
+    it runs something in the background (td.runs_in_background), nor for
+    one for when the turn ends while it's at work: {"ok": False, "refused":
+    True}, with its background service's reason, and jump.py tries it again
+    later."""
     text = (text or "").strip()
     if not text:
         return {"ok": False, "message": "Write your message first"}
@@ -1616,12 +1629,42 @@ def send(home, extra_dirs, profile_key, chat_id, text, session_id=None, how="aut
         if waited:
             td.wake_settle(home, extra_dirs, chat_id)
         return send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
-                        hooked, hook_source, predict)
+                        hooked, hook_source, predict, if_turn_over, path)
+
+
+TURN_RUNS = "Its turn isn't over yet: it's sent when it is"
+# (why: what Claude's background service said; queued: a message for when the turn ends, which waits)
+STOP_WOULD_END = "{why}, and stopping the chat to go on with it would end what it runs in the background: {then}"
+
+
+def stop_would_end(why, queued=False):
+    """Why a message didn't go into a background chat that runs something
+    in the background, its service's own reason first."""
+    return STOP_WOULD_END.format(why=(why or "Claude's background service didn't take it").rstrip(". "),
+                                 then="it's tried again later" if queued else "send it again in a moment")
+
+
+def turn_runs(entry, job, route, path):
+    """Does a message queued for when a chat's turn ends (send's
+    if_turn_over) wait on: while Claude's own turn goes on, or it asks you
+    something (td.session_state with its job), but not while only what it
+    runs in the background goes on after its turn (td.turn_over, by its
+    status, else the end of its transcript at path: Claude takes it in at
+    its prompt, as in a terminal, and that goes on). A terminal that takes
+    no text waits for all of it: it goes on in the background with the
+    message only once its Claude is idle, and ending it sooner would end
+    what it runs (the front ends' afterTurnWaits, the same rule)."""
+    state = td.session_state(entry, job)
+    if state == "waiting":
+        return True
+    if state != "working":
+        return False
+    return route == "terminal" or not td.turn_over(entry, job, td.transcript_turn_ended(path))
 
 
 def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, claude, scoped, profiles, profile,
-             hooked=True, hook_source=None, predict=False):
-    """send's sending, under its lock."""
+             hooked=True, hook_source=None, predict=False, if_turn_over=False, path=None):
+    """send's sending, under its lock (path: the chat's transcript)."""
     entry = None
     for sid in (session_id, chat_id):
         if td.valid_id(sid or ""):
@@ -1632,6 +1675,9 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
            "entrypoint": entry.get("entrypoint") if entry else "", "tmux": bool(entry and entry.get("tmux"))}
     route = td.reply_route(row)
     state = td.session_state(entry) if entry else "done"
+    job = td.live_job(profiles, entry) if entry is not None else None
+    if if_turn_over and entry is not None and turn_runs(entry, job, route, path):
+        return {"ok": False, "turnRuns": True, "message": TURN_RUNS}
     if route == "tmux":
         if state == "waiting":
             return {"ok": False, "message": "It's asking you something: answer that first"}
@@ -1657,8 +1703,21 @@ def send_now(home, extra_dirs, profile_key, chat_id, text, session_id, how, clau
         runs_on = next((p for p in profiles if td.matches_profile(p, profile_key)), profile)
         # (its session takes it in where it is, as `claude agents` answers one, queued while it works: no
         # stop, so a terminal that shows it stays on it)
-        if td.reply_to_background(runs_on, job_id, text)[0]:
+        took, why = td.reply_to_background(runs_on, job_id, text)
+        if took:
             return {"ok": True, "how": "typed", "message": "Sent (typed into the background chat)"}
+        # (its service didn't take it: stopped and woken with it only when that ends nothing it runs in the
+        # background, the commands and subagents it left running after its turn, a watch loop for hours say;
+        # "busy" with its turn ended is a delegated task at work. One for when the turn ends got here as its
+        # turn was over: also not while the chat is at work (busy with Stop hooks, or a moment before a
+        # wake's prompt); idle or done (between turns, as the front ends send it) it goes as before. Else
+        # "refused", tried again later (jump.py), never "turnRuns": the front ends would send it at once)
+        ended = entry.get("status") == "busy" and td.transcript_turn_ended(path)
+        busy = td.runs_in_background(entry, job, ended)
+        if if_turn_over and (busy or td.session_state(entry, job) == "working"):
+            return {"ok": False, "refused": True, "message": stop_would_end(why, queued=True)}
+        if busy:
+            return {"ok": False, "message": stop_would_end(why)}
         ok, message = td.stop_background(runs_on, job_id, td.read_job([runs_on], job_id), home, claude)
         if not ok:
             return {"ok": False, "message": message}
@@ -2804,6 +2863,7 @@ def main(argv=None):
     seen, away, since = 0, False, None   # (--conversation's --seen MS, --away and, on a host, --since)
     side_remove, history = None, []   # (--side-question's --remove ID, and --history, on a host)
     side_from, part_key, side_fold = None, None, None   # (--side-question's --from KEY, --part KEY, --fold ID)
+    if_turn_over = False   # (--send's --if-turn-over: a message queued for when the turn ends, jump.py's)
     while args:
         arg = args.pop(0)
         if arg in actions and args and action is None:
@@ -2900,6 +2960,8 @@ def main(argv=None):
             action, target = arg, ""
         elif arg == "--after-turn":
             after = True
+        elif arg == "--if-turn-over":
+            if_turn_over = True
         elif arg == "--osd":
             osd = True
         elif arg == "--suggest":
@@ -3030,7 +3092,7 @@ def main(argv=None):
                 result = {"ok": ok, "message": said}
             else:
                 result = send(home, config_dirs, profile, target, text, session, how, scoped=not remote,
-                              hook_source=source, predict=suggest)
+                              hook_source=source, predict=suggest, if_turn_over=if_turn_over)
                 if how == "enter" and result.get("how") == "ask" and not remote:  # (on a host: copied here, above)
                     result = copy_answer((text or "").strip(), ENTER_COPIES)
         elif action == "--start":
