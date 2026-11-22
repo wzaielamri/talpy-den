@@ -1599,8 +1599,8 @@ Window {
     function followEnd() {
         list.contentY = Math.max(list.originY, list.originY + list.contentHeight - list.height)
     }
-    function scrolling() {   // (a drag, or its scroll bar; the wheel: list's WheelHandler)
-        return list.moving || scroll.PlasmaComponents3.ScrollBar.vertical.pressed
+    function scrolling() {   // (a drag, or its scroll bar, or the wheel or a touchpad: WheelScroll.qml moving it)
+        return list.moving || scroll.PlasmaComponents3.ScrollBar.vertical.pressed || wheelScroll.moving
     }
     Timer {
         id: settle

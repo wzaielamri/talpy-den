@@ -6,6 +6,13 @@ export interface Wheel {
   curve: { p0: number; v0: number; p1: number; d: number; t: number } | null;
   pad: object | null;
   fling: number | null;
+  written: number;
+  clock: { frame: number; gaps: number[]; first: boolean; late: number };
+}
+export interface WheelEvent {
+  angle: number;
+  pixel: number;
+  phase: "none" | "begin" | "update" | "end";
 }
 export const FLING_DECEL: number;
 export const PAD_LAG: number;
@@ -13,9 +20,12 @@ export const PAD_RATE: number;
 export const PAD_IDLE: number;
 export const PAD_GLIDE: number;
 export function create(y: number): Wheel;
+export function input(s: Wheel, ev: WheelEvent, at: number, lo: number, hi: number, step: number, long: number):
+  { put: number; starting: boolean; scrolled: boolean };
+export function tick(s: Wheel, gap: number, at: number, lo: number, hi: number): number;
 export function moving(s: Wheel): boolean;
 export function stop(s: Wheel, y: number): void;
-export function notch(s: Wheel, dist: number, long: number, step: number): void;
+export function notch(s: Wheel, dist: number, long: number, step: number, lo: number, hi: number): void;
 export function padBegin(s: Wheel): void;
 export function padMove(s: Wheel, dist: number): void;
 export function padEnd(s: Wheel): void;

@@ -19,7 +19,88 @@ export const PAD_IDLE = 150;         // ms: no move for this long and no lift se
 export const PAD_GLIDE = 40;         // ms: lifted this soon after its last move, it glides on (later: the fingers had stopped)
 
 export function create(y) {
-    return { y: y, v: 0, curve: null, pad: null, fling: null };
+    return { y: y, v: 0, curve: null, pad: null, fling: null, written: NaN,
+             clock: { frame: 1000 / 60, gaps: [], first: false, late: 0 } };
+}
+
+// One event of the wheel or a touchpad, as WheelScroll.qml takes it: { angle, pixel, phase } (its
+// angleDelta.y, pixelDelta.y, and "none", "begin", "update" or "end"), the list at `at` (its contentY),
+// between `lo` and `hi`, a notch `step` px eased over `long` ms. What follows: { put: the list's place
+// now (whole px; NaN: it stays), starting: it begins to move (put is its first step, shown in the next
+// frame), scrolled: the event moves the list }
+export function input(s, ev, at, lo, hi, step, long) {
+    follow(s, at);
+    const was = moving(s);
+    const touch = ev.phase !== "none" || (ev.pixel !== 0 && ev.pixel !== ev.angle);
+    let scrolled = false;
+    if (ev.phase === "begin") {
+        padBegin(s);
+    } else if (ev.phase === "end") {
+        padEnd(s);
+    } else {
+        const dist = -(ev.angle !== 0 ? ev.angle / 120 * step : ev.pixel);
+        if (dist === 0)
+            return { put: NaN, starting: false, scrolled: false };
+        if (touch)
+            padMove(s, dist);
+        else
+            notch(s, dist, long, step, lo, hi);
+        scrolled = true;
+    }
+    if (!moving(s))
+        return { put: put(s, frame(s, 0, lo, hi)), starting: false, scrolled: scrolled };   // (no ease: there at once)
+    if (!was) {
+        s.clock.first = true;
+        return { put: put(s, frame(s, s.clock.frame, lo, hi)), starting: true, scrolled: scrolled };
+    }
+    return { put: NaN, starting: false, scrolled: scrolled };
+}
+
+// A step of the animations (WheelScroll.qml's FrameAnimation), `gap` ms after the one before (its
+// frameTime), the list at `at`: the list's place now (whole px), or NaN (no move this step)
+export function tick(s, gap, at, lo, hi) {
+    const dt = clockStep(s.clock, gap);
+    follow(s, at);
+    if (!moving(s))
+        return NaN;
+    return put(s, frame(s, dt, lo, hi));
+}
+
+// How far on this step goes, in ms: a frame of the screen's, as Qt's own animations go (a vsync a step:
+// a millisecond or two early or late, or a frame drawn late, doesn't make it jump); the time it took
+// when it came well within a frame (a screen faster than the frame known so far, or a second step in a
+// frame: the loop steps again when an animation begins, and twice at once after a stall); frames
+// missed again and again (ten in a row: a busy computer), all the time that passed. A frame is the
+// screen's, as its steps come: the middle of the last nine gaps between them (16.7 ms at 60 a second,
+// 6.9 at 144, whatever the screen; a window's first motion learns it, 60 a second weighing in meanwhile)
+function clockStep(c, gap) {
+    if (c.first) {   // (its first step, the frame after the one it began in: its gap is from the event)
+        c.first = false;
+        c.late = 0;
+        return c.frame;
+    }
+    c.gaps.push(gap);
+    if (c.gaps.length > 9)
+        c.gaps.shift();
+    const pool = (c.gaps.length < 9 ? c.gaps.concat([1000 / 60, 1000 / 60]) : c.gaps.slice())
+        .sort(function (x, y) { return x - y; });
+    c.frame = Math.max(3, Math.min(50, pool[pool.length >> 1]));
+    c.late = gap > 1.5 * c.frame ? c.late + 1 : 0;
+    if (gap < 0.75 * c.frame || c.late >= 10)
+        return Math.min(gap, 6 * c.frame);
+    return c.frame;
+}
+
+// (whole pixels: every line moves the same; remembered, so a move by anything else is seen)
+function put(s, y) {
+    s.written = Math.round(y);
+    return s.written;
+}
+
+// (moved by anything else since it last put it there, or at rest: from where it is)
+function follow(s, at) {
+    if (!(Math.abs(at - s.written) < 0.5))
+        stop(s, at);
 }
 
 // (a touch with no move yet doesn't move it: its first move does, at once)
@@ -37,12 +118,13 @@ export function stop(s, y) {
 }
 
 // A wheel's notch, or a part of one: `dist` px further than where it was going (from where it is, at
-// rest), in an ease of `long` ms for a notch of `step` px (Kirigami's: shorter for less, 50 ms at least,
-// none for 2 px or less or when `long` is 0: the desktop's animations off)
-export function notch(s, dist, long, step) {
+// rest), but not past the list's ends `lo` and `hi` (it eases into an end, as Kirigami's did), in an ease
+// of `long` ms for a notch of `step` px (Kirigami's: shorter for less, 50 ms at least, none for 2 px or
+// less or when `long` is 0: the desktop's animations off)
+export function notch(s, dist, long, step, lo, hi) {
     s.pad = null;
     s.fling = null;
-    const target = (s.curve !== null ? s.curve.p1 : s.y) + dist;
+    const target = Math.max(lo, Math.min(hi, (s.curve !== null ? s.curve.p1 : s.y) + dist));
     const r = target - s.y;
     const ms = Math.abs(r) <= 2 || long <= 0 ? 0 : Math.max(50, Math.min(Math.round(Math.abs(r) * long / step), long));
     if (ms === 0) {
@@ -106,7 +188,7 @@ function padAt(hist, x) {
     return a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
 }
 
-function padFrame(s, dt) {
+function padFrame(s, dt, lo, hi) {
     const p = s.pad;
     const y0 = s.y;
     if (p.n === 0) {   // (fingers down, no move yet)
@@ -148,7 +230,7 @@ function padFrame(s, dt) {
         s.pad = null;
         if (Math.abs(v) > 0.02) {
             s.fling = v;
-            flingFrame(s, over);
+            flingFrame(s, over, lo, hi);
         }
     } else {   // (the fingers stopped, or the next move is late: where the last one took it)
         p.c = p.n;
@@ -157,10 +239,13 @@ function padFrame(s, dt) {
     s.v = dt > 0 ? (s.y - y0) / dt : 0;
 }
 
-function flingFrame(s, dt) {
+// (slowing at FLING_DECEL; more, when that would take it past an end: it stops at the end)
+function flingFrame(s, dt, lo, hi) {
     const v = s.fling;
-    const a = v > 0 ? FLING_DECEL : -FLING_DECEL;
-    const t = Math.min(dt, Math.abs(v) / FLING_DECEL);
+    const room = v > 0 ? hi - s.y : s.y - lo;
+    const decel = room > 0 && v * v / (2 * FLING_DECEL) > room ? v * v / (2 * room) : FLING_DECEL;
+    const a = v > 0 ? decel : -decel;
+    const t = Math.min(dt, Math.abs(v) / decel);
     s.y += v * t - a * t * t / 2;
     s.v = v - a * t;
     if (t < dt || Math.abs(s.v) < 1e-6) {
@@ -190,11 +275,11 @@ function curveFrame(s, dt) {
 // rounded). An end reached stops it there; a touch goes on from there, back the other way at once
 export function frame(s, dt, lo, hi) {
     if (s.pad !== null)
-        padFrame(s, dt);
+        padFrame(s, dt, lo, hi);
     else if (s.curve !== null)
         curveFrame(s, dt);
     else if (s.fling !== null)
-        flingFrame(s, dt);
+        flingFrame(s, dt, lo, hi);
     const y = Math.max(lo, Math.min(hi, s.y));
     if (y !== s.y) {
         if (s.pad !== null)
