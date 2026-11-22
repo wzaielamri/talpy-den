@@ -128,6 +128,59 @@ def unwrapped(command):
     return re.sub(rb"\\([0-7]{3})", lambda m: bytes([int(m.group(1), 8)]), escaped.group(1).encode()).decode()
 
 
+PLASMA = CODE.parent / "ui"
+
+
+def qml_function(text, name):
+    """A function of a QML file, as written there (it ends at its first line "    }")."""
+    start = text.index(f"function {name}(")
+    return text[start:text.index("\n    }\n", start) + 6]
+
+
+def plasma_watch_lines(windows, instances, host="lab", chats=None):
+    """The remote.py --watch lines Plasma runs for host: main.qml's hostWatchWanted and its command, Hub.qml's
+    watchLine and both shellQuotes, as written there, run in Node (one per instance name; chats: given to Hub
+    as they are, not main's)."""
+    import shutil
+    if not shutil.which("node"):
+        raise unittest.SkipTest("node isn't installed")
+    main, hub = (PLASMA / "main.qml").read_text(), (PLASMA / "hub/Hub.qml").read_text()
+    command = re.search(r"Hub\.wantWatch\(instanceId, host, (.+?),\s*want\[host\]\)", main, re.S).group(1)
+    js = """
+const crypto = require("crypto");
+const Qt = { md5: (s) => crypto.createHash("md5").update(s).digest("hex") };
+const main = { paneWindows: %s, notifier: false, shownHosts: [], remote: {}, codeDir: %s,
+               hookedAtWork: () => false, talpyChatHere: () => true };
+with (main) {
+%s
+%s
+    main.want = hostWatchWanted();
+    main.commandFor = (host) => %s;
+}
+const lines = [];
+for (const name of %s) {
+    const hub = { watchWanted: {}, instanceName: name };
+    with (hub) {
+%s
+%s
+%s
+        hub.lineFor = watchLine;
+    }
+    const chats = %s;
+    hub.watchWanted[%s] = { copy: { command: main.commandFor(%s), chats: chats === null ? main.want[%s] : chats } };
+    lines.push(hub.lineFor(%s));
+}
+console.log(JSON.stringify({ want: main.want, lines: lines }));
+""" % (json.dumps(windows), json.dumps(str(CODE) + "/"), qml_function(main, "shellQuote"), qml_function(main, "hostWatchWanted"),
+       command, json.dumps(instances), qml_function(hub, "shellQuote"), qml_function(hub, "watchChats"),
+       qml_function(hub, "watchLine"), json.dumps(chats),
+       json.dumps(host), json.dumps(host), json.dumps(host), json.dumps(host))
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=60)
+    if out.returncode:
+        raise AssertionError(out.stderr[-2000:])
+    return json.loads(out.stdout)
+
+
 class HostListTests(unittest.TestCase):
     def test_parses_hosts_includes_and_skips_patterns(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -971,6 +1024,32 @@ class XzProgramTests(FakeSSH):
         r = remote.run_script("lab", ["--remote"], failing)
         self.assertEqual((r.returncode, len(self.calls())), (1, 3), "a script's own words aren't python3's")
 
+    def test_a_host_whose_lzma_is_there_but_broken_says_so_too(self):
+        # (review: _lzma there whose liblzma.so is missing: found, then its import fails, before anything ran)
+        shim = Path(self.tmp.name) / "broken-lzma"
+        (shim / "mods").mkdir(parents=True)
+        (shim / "mods/_lzma.py").write_text("raise ImportError('liblzma.so.5: cannot open shared object file')\n")
+        (shim / "python3").write_text(NO_LZMA_PYTHON.format(python=sys.executable).replace(
+            'sys.modules["_lzma"] = None', "sys.path.insert(0, %r)" % str(shim / "mods")))
+        (shim / "python3").chmod(0o755)
+        os.environ["FAKE_PATH"] = f"{shim}:{os.environ['FAKE_PATH']}"
+        seen, recording = self.recorded()
+        with recording:
+            self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False], "xz, then zlib")
+
+    def test_a_copy_kept_here_is_never_unpacked_past_its_size(self):
+        # (review: one that unpacks to far more, a bomb, was unpacked whole to be checked)
+        body = remote.host_script()[len(remote.PYTHON_CHECK):]
+        key = __import__("hashlib").sha256(body.encode()).hexdigest()
+        folder = Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed"
+        folder.mkdir(parents=True)
+        (folder / (key + ".xz")).write_bytes(remote.lzma.compress(b"\0" * (64 << 20)))
+        with mock.patch.object(remote.lzma, "decompress", side_effect=AssertionError("unpacked without a bound")):
+            blob = remote.xz_program(body)
+        self.assertTrue(remote.lzma.LZMADecompressor().decompress(blob) == body.encode())
+        self.assertTrue((folder / (key + ".xz")).read_bytes() == blob, "packed again")
+
     def test_the_command_line_takes_zlib_and_xz(self):
         command = [sys.executable, *shlex.split(remote.python_there(["--remote", "it's"]))[1:]]
         script = "import sys\nprint(__name__, sys.argv[1:])\n"
@@ -1517,6 +1596,59 @@ class HostWatchTests(FakeSSH):
         os.utime(stale, (time.time() - 8 * 86400, time.time() - 8 * 86400))
         remote.watch("lab", "a1b2c3d4e5f6", 1, chats=[chat])
         self.assertEqual((stale.exists(), fresh.exists(), kept[0].exists()), (False, True, True))
+
+    CHAT = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+
+    def test_the_line_plasma_builds_runs(self):
+        # (review, 2026-11-22) Hub put --chats before --as, which remote.py refused (its usage): every run of a
+        # window's host's watcher failed. The line as Plasma's own code builds it, run as Plasma runs it (a shell)
+        marker = Path(self.tmp.name) / "PWNED"
+        hostile = "a;touch %s;b" % marker
+        windows = [{"host": "lab", "chat": {"chatId": self.CHAT}, "chatId": self.CHAT, "shown": True, "starting": False,
+                    "fresh": False},
+                   {"host": "lab", "chat": {"chatId": hostile}, "chatId": hostile, "shown": True, "starting": False,
+                    "fresh": False},   # (an id a host's answer gave: not a chat's)
+                   {"host": "lab", "chat": {"chatId": "new-1700000000000-1"}, "chatId": "new-1700000000000-1",
+                    "shown": True, "starting": False, "fresh": True},   # (a new chat not started yet: nothing there)
+                   {"host": "lab", "chat": {"chatId": "9a8b7c6d-0000-4000-8000-000000000002"},
+                    "chatId": "9a8b7c6d-0000-4000-8000-000000000002", "shown": False, "starting": False, "fresh": False}]
+        built = plasma_watch_lines(windows, ["plasma-one"])
+        self.assertEqual(built["want"], {"lab": [self.CHAT]})
+        (line,) = built["lines"]
+        r = subprocess.run(["bash", "-c", line], capture_output=True, text=True, timeout=60)
+        answer = json.loads(r.stdout)
+        self.assertEqual((answer["ok"], answer["wrote"], answer["host"]), (True, [], "lab"), r.stdout + r.stderr)
+        self.assertNotIn(self.CHAT, self.calls()[-1][1])   # (its chats on stdin there)
+        # Hub quotes what it's given: a hostile id reaches remote.py as a word, which drops it
+        (line,) = plasma_watch_lines(windows, ["plasma-two"], chats=[self.CHAT, hostile])["lines"]
+        r = subprocess.run(["bash", "-c", line], capture_output=True, text=True, timeout=60)
+        self.assertTrue(json.loads(r.stdout)["ok"], r.stdout + r.stderr)
+        self.assertFalse(marker.exists(), "nothing of an id runs here")
+
+    def test_its_options_in_any_order(self):
+        seen = []
+        with mock.patch.object(remote, "watch", side_effect=lambda *a: seen.append(a) or {"ok": True}):
+            for args in (["--as", "a1b2c3d4e5f6"], ["--chats", "c1,c2", "--as", "a1b2c3d4e5f6", "--timeout", "5"],
+                         ["--timeout", "soon", "--as", "a1b2c3d4e5f6"]):   # (not a number: its 50 s, as before)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    remote.main(["--watch", "lab", *args])
+        self.assertEqual(seen, [("lab", "a1b2c3d4e5f6", 50, []), ("lab", "a1b2c3d4e5f6", 5, ["c1", "c2"]),
+                                ("lab", "a1b2c3d4e5f6", 50, [])])
+        for args in ([], ["--chats", "c1"], ["--as"]):   # (who asks is needed)
+            with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
+                remote.main(["--watch", "lab", *args])
+
+    def test_what_a_run_told_of_other_chats_stays(self):
+        # (review: a run for the chats before answered after the run for the chats now, and its stamps replaced
+        # theirs: the next run took a window's chat as new)
+        kept = remote.watch_told("lab", "x")
+        kept.parent.mkdir(parents=True)
+        kept.write_text(json.dumps({"c1": "1:1/-", "c2": "2:2/-"}))
+        reply = "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true, "wrote": [], "stamps": {"c1": "3:3/-"}}\n'
+        with mock.patch.object(remote, "run_script", return_value=subprocess.CompletedProcess([], 0, reply, "")), \
+                mock.patch.object(remote, "watch_told", return_value=kept):
+            remote.watch("lab", "a1b2c3d4e5f6", 1, chats=["c1"])
+        self.assertEqual(json.loads(kept.read_text()), {"c1": "3:3/-", "c2": "2:2/-"})
 
     def test_a_host_it_cant_reach(self):
         self.mode("unreachable")

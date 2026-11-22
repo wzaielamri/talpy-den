@@ -72,12 +72,14 @@ export class HostWatch {
     }
   }
 
-  // The chats of the tabs that show there: the run on its way, for others, ends, and it runs again with these
+  // The chats of the tabs that show there. One the run on its way doesn't watch ends it, and it runs again
+  // with them at once; fewer (a tab hidden) keep it going, the next run has just these: each run ended
+  // early leaves an ssh channel and a python3 there for a while
   setChats(chats: Iterable<string>): void {
     const next = [...new Set(chats)].sort();
     if (next.join(",") === this.chats.join(",")) return;
     this.chats = next;
-    if (this.inFlight && this.inFlight.chats.join(",") !== next.join(",")) this.inFlight.end.abort();
+    if (this.inFlight && next.some((c) => !this.inFlight!.chats.includes(c))) this.inFlight.end.abort();
   }
 
   // Whether it says when chat is written there (one of the tabs' chats)

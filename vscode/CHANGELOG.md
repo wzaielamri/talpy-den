@@ -12,7 +12,8 @@
   5 s while Claude worked or waited (every second after you sent something),
   each read sending ~270 KB of code to the host: the host's watcher the tab
   already runs now also watches its chat's transcript (only its size and
-  time) and says when it's written, so the tab reads it then, and otherwise
+  time) and says when it's written, so the tab reads it then (at most every
+  5 s while Claude writes it), and otherwise
   once a minute. The code it sends goes with xz where the host's python3
   has lzma, a fifth smaller than with zlib (264 KB → 210 KB to read a
   chat). Nothing more is installed or kept on the host.

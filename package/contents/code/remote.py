@@ -280,12 +280,15 @@ PYTHON_CHECK = ("import sys\n"
 # it's a fifth smaller again (a chat's read: 264 KB -> 210 KB, the status
 # 183 KB -> 147 KB, 2026-11-22), and it goes so when python3 there has
 # lzma (xz_program). One without it (lzma is optional in a Python built
-# from source) says so first, NO_LZMA and the bytes it read, before it
-# runs anything: the call goes again with zlib (run_script).
+# from source, and its _lzma can be there but fail to load, its liblzma
+# gone) says so first, NO_LZMA and the bytes it read, before it runs
+# anything: the call goes again with zlib (run_script). One line (tcsh
+# takes no newline in a command): the import is tried in exec's own lines.
 NO_LZMA = "@@talpy-den-no-lzma@@"
-UNPACK = ('import sys,zlib,importlib.util as u;d=sys.stdin.buffer.read();x=d[:6]==b"\\xfd7zXZ\\0";'
-          'x and not u.find_spec("_lzma") and sys.exit("' + NO_LZMA + ' %d"%len(d));'
-          'exec(compile(__import__("lzma").decompress(d) if x else zlib.decompress(d),"<stdin>","exec"))')
+UNPACK = ('import sys,zlib;d=sys.stdin.buffer.read();x=d[:6]==b"\\xfd7zXZ\\0";L=None;'
+          'x and exec("try:\\n import lzma as L\\nexcept Exception:\\n pass");'
+          'x and not L and sys.exit("' + NO_LZMA + ' %d"%len(d));'
+          'exec(compile(L.decompress(d) if x else zlib.decompress(d),"<stdin>","exec"))')
 PYTHON = "python3 -I -c " + shlex.quote(UNPACK)
 XZ_MAGIC = b"\xfd7zXZ\x00"
 PACKED_DIR = "packed"   # (here: the code packed with xz, by its hash; the hosts whose python3 has no lzma)
@@ -307,7 +310,8 @@ def xz_program(script):
     path = folder / (key + ".xz")
     try:
         blob = path.read_bytes()
-        if hashlib.sha256(lzma.decompress(blob)).hexdigest() == key:
+        # (unpacked no further than the script's size: a copy that would unpack to more isn't it)
+        if hashlib.sha256(lzma.LZMADecompressor().decompress(blob, max_length=len(data) + 1)).hexdigest() == key:
             if time.time() - path.stat().st_mtime > 86400:
                 os.utime(str(path))   # (in use: kept)
             return blob
@@ -1311,6 +1315,7 @@ WATCH_S = 50
 WATCH_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 WATCH_CHAT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")   # (live.CHAT_ID)
 WATCH_TOLD_DIR = "watch"
+WATCH_TOLD_MAX = 200   # (other chats' stamps kept with a run's own)
 
 
 def watch_told(host, name):
@@ -1359,8 +1364,17 @@ def watch(host, name, timeout=WATCH_S, chats=()):
         stamps = answer.pop("stamps", None)
         if chats and isinstance(stamps, dict):
             try:
+                # (with what an earlier run told of other chats: a run for the chats before can answer after this
+                # one started; this run's own chats first, a few hundred at most)
+                now = {c: stamps[c] for c in chats if isinstance(stamps.get(c), str)}
+                try:
+                    before = td.read_json(kept)
+                except (OSError, ValueError):
+                    before = None
+                before = {c: v for c, v in before.items() if c not in now and isinstance(v, str)} \
+                    if isinstance(before, dict) else {}
                 td.private_dir(kept.parent)
-                td.write_json_atomic(kept, {c: stamps[c] for c in chats if isinstance(stamps.get(c), str)}, private=True)
+                td.write_json_atomic(kept, dict(now, **dict(list(before.items())[:WATCH_TOLD_MAX])), private=True)
                 for old in kept.parent.iterdir():   # (each VS Code window watches under a name of its own)
                     if old != kept and time.time() - old.stat().st_mtime > PACKED_DAYS * 86400:
                         old.unlink()
@@ -1371,6 +1385,22 @@ def watch(host, name, timeout=WATCH_S, chats=()):
         return {**answer, "ok": bool(answer.get("ok")), "host": host}
     unreached = r.returncode == 255 or (p.container and container_problem(p, r.returncode, r.stderr)[0])
     return {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), **({"reached": False} if unreached else {})}
+
+
+def watch_options(args):
+    """(name, timeout, chats) of --watch's options, in any order: --as NAME (needed), --timeout S (not a
+    number: WATCH_S), --chats ID,ID...; None when they aren't those."""
+    got = {}
+    if len(args) % 2:
+        return None
+    for flag, value in zip(args[::2], args[1::2]):
+        if flag not in ("--as", "--timeout", "--chats") or flag in got:
+            return None
+        got[flag] = value
+    if "--as" not in got:
+        return None
+    timeout = got.get("--timeout", "")
+    return got["--as"], int(timeout) if timeout.isdigit() else WATCH_S, [c for c in got.get("--chats", "").split(",") if c]
 
 
 def run_status_script(host, args):
@@ -1985,17 +2015,8 @@ def main(argv=None):
             out = task(host, profile, folder, **kw)
         elif action == "--put-image" and len(args) == 2:
             out = put_image(*args)
-        elif action == "--watch" and len(args) >= 3 and args[1] == "--as":
-            timeout, chats, rest = WATCH_S, [], args[3:]
-            while rest:   # [--timeout S] [--chats ID,ID...]
-                if rest[0] == "--timeout" and len(rest) > 1 and rest[1].isdigit():
-                    timeout = int(rest[1])
-                elif rest[0] == "--chats" and len(rest) > 1:
-                    chats = [c for c in rest[1].split(",") if c]
-                else:
-                    raise ValueError(f"not a --watch option: {rest[0]}")
-                rest = rest[2:]
-            out = watch(args[0], args[2], timeout, chats)
+        elif action == "--watch" and args and watch_options(args[1:]) is not None:
+            out = watch(args[0], *watch_options(args[1:]))
         elif action == "--login" and len(args) == 1:
             ok, message = login(args[0])
             out = {"ok": ok, "message": message}

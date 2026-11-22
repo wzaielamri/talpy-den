@@ -42,7 +42,6 @@ Window {
     readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
                                      || (!!chat.startedAt && !row)
     onStartingChanged: if (host) root.watchesChanged()
-    onChatIdChanged: if (host) root.watchesChanged()   // (its host's watcher watches this chat: Hub --chats)
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"
@@ -951,7 +950,12 @@ Window {
             Qt.callLater(loadReview)
     }
     property bool ready: false   // (nothing runs while the window is being made)
-    onChatIdChanged: if (ready) (chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset())
+    onChatIdChanged: {
+        if (host)
+            root.watchesChanged()   // (its host's watcher watches this chat: Hub --chats)
+        if (ready)
+            chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset()
+    }
     Component.onCompleted: {
         ready = true
         newDay()   // (when midnight is: two Dates)
@@ -1025,6 +1029,7 @@ Window {
     readonly property int staleMs: 120000
     property bool loading: false
     property real loadingSince: 0
+    property real lastReadMs: 0   // (how long the last read took: what was written there is read at most every twice that)
     property bool loadAgain: false   // (something changed while it was read: read it again then)
 
     function load() {
@@ -1140,6 +1145,29 @@ Window {
         id: watchRetry
         interval: 5000
         onTriggered: pane.watchNow()
+    }
+
+    // An SSH host's or a container's chat that its host's watcher says was
+    // written there (root.onHostChanged): read at most once every 5 s, or
+    // twice as long as the last read took, and the last change of a burst
+    // too. While Claude works it's written up to every 0.4 s, and each read
+    // sends the script there (~216 KB) and brings the chat back (~266 KB)
+    property real writtenReadAt: 0
+    function loadWritten() {
+        const wait = writtenReadAt + Math.max(5000, 2 * lastReadMs) - Date.now()
+        if (wait > 0) {
+            if (!writtenTimer.running) {
+                writtenTimer.interval = wait
+                writtenTimer.restart()
+            }
+            return
+        }
+        writtenReadAt = Date.now()
+        load()
+    }
+    Timer {
+        id: writtenTimer
+        onTriggered: pane.loadWritten()
     }
 
     // Just after your message went: read often till the conversation has it
@@ -2220,6 +2248,8 @@ Window {
             return
         }
         if (kind === "conversation") {
+            if (loading)
+                lastReadMs = Date.now() - loadingSince
             loading = false
             if (awayAsking && asked.chat === chatId) {   // (asked once: what it did since, or nothing new)
                 awayAsking = false

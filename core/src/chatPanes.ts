@@ -482,6 +482,12 @@ class Pane implements Disposable {
   private limit = LIMIT;
   private loading = false;
   private loadAgain = false;
+  // (an SSH host's chat its host's watcher says was written there: read at most once per gap, 5 s or twice
+  // the last read, and the last change of a burst too; loadWritten)
+  writtenGap = 5000;
+  private lastReadMs = 0;
+  private writtenReadAt = 0;
+  private writtenTimer: NodeJS.Timeout | undefined;
   private lastState: string | undefined; // (its state when the tab last heard)
   private timer: NodeJS.Timeout | undefined;
   private disposables: Disposable[] = [];
@@ -545,7 +551,8 @@ class Pane implements Disposable {
         if (this.disposed || !this.host || e.host !== this.host) return;
         const mine = e.changed.includes(this.chatId) || (!!this.chat.sessionId && e.changed.includes(this.chat.sessionId));
         if ((mine || this.starting) && !e.requests) this.owner.ext.dash.pollHostSoon(this.host);
-        if ((mine || (e.wrote ?? []).includes(this.chatId)) && this.surface.visible) void this.load();
+        if (mine && this.surface.visible) void this.load();
+        else if ((e.wrote ?? []).includes(this.chatId) && this.surface.visible) this.loadWritten();
       })] : []),
       // live mode: the chat did a step: what it does now, and the conversation at once
       owner.ext.dash.onLive((e) => {
@@ -729,6 +736,7 @@ class Pane implements Disposable {
     this.loading = true;
     const chatId = this.chatId;
     const away = this.awayNext;
+    const asked = Date.now();
     try {
       const r = await this.owner.ext.backend.pane([
         "--conversation", chatId, "--limit", String(this.limit),
@@ -751,12 +759,27 @@ class Pane implements Disposable {
       if (this.take(r) && r.ok) this.chaseUntil = 0; // (something new: your message, or what Claude writes)
     } finally {
       this.loading = false;
+      this.lastReadMs = Date.now() - asked;
       if (this.loadAgain) {
         this.loadAgain = false;
         if (!this.disposed) void this.load();
       }
     }
     void this.watch();
+  }
+
+  // An SSH host's chat its host's watcher says was written there: read at most once every writtenGap, or
+  // twice as long as the last read took, and the last change of a burst too. While Claude works it's
+  // written up to every 0.4 s, and each read sends the script there (~216 KB) and brings the chat back
+  private loadWritten(): void {
+    if (this.disposed || this.writtenTimer) return;
+    const wait = this.writtenReadAt + Math.max(this.writtenGap, 2 * this.lastReadMs) - Date.now();
+    if (wait > 0) {
+      this.writtenTimer = setTimeout(() => ((this.writtenTimer = undefined), this.loadWritten()), wait);
+      return;
+    }
+    this.writtenReadAt = Date.now();
+    void this.load();
   }
 
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
@@ -1423,6 +1446,8 @@ class Pane implements Disposable {
     this.held.clear();
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.writtenTimer) clearTimeout(this.writtenTimer);
+    this.writtenTimer = undefined;
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
     this.closed.fire(undefined);

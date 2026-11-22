@@ -237,3 +237,47 @@ test("a host's tab: its watcher is told its chat, and it reads it when that was 
     panes.dispose();
   }
 });
+
+// (review, 2026-11-22) live.py says a chat was written up to every 0.4 s while Claude works, and each read of a
+// host's chat sends ~216 KB there: a tab reads for "wrote" at most once per gap (5 s, or twice its last read),
+// the last change of a burst too; its state changing there still reads at once
+test("a host's tab reads for what was written at most once per gap, and the last change too", async () => {
+  const fake = new FakeHost();
+  useSettingsHost(fake);
+  const surfaces = new FakeSurfaces();
+  const reads: number[] = [];
+  const backend = {
+    pane: async () => (reads.push(Date.now()), { ok: true, items: [], more: false, stamp: `s${reads.length}` }),
+  } as unknown as Backend;
+  const changed = new Emitter<{ host: string; changed: string[]; requests: boolean; wrote: string[] }>();
+  const state = demoState(NOW);
+  const dash = {
+    opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, pollHostSoon() {},
+    setActionError() {}, setActionInfo() {}, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false,
+    onHostChanged: changed.event, hostWatched: () => true, setPaneHosts() {},
+  } as unknown as Dashboard;
+  const panes = new ChatPanes(fake, backend, dash, surfaces, { canMoveToClaudeCode: () => false } as unknown as Actions,
+                              { find: async () => undefined } as unknown as TerminalPort, {} as EditorPort);
+  try {
+    panes.open({ key: "h-1", chatId: "h-1", sessionId: "h-1", profileDir: ".claude", name: "on lab", host: "lab" } as ChatRef);
+    const pane = [...(panes as unknown as { panes: Map<string, { writtenGap: number }> }).panes.values()][0];
+    pane.writtenGap = 80;
+    surfaces.opened[0].say({ type: "ready" });
+    await tick();
+    const first = reads.length;
+    for (let i = 0; i < 3; i++) changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "the first at once");
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "within the gap: held");
+    await new Promise((r) => setTimeout(r, 120));
+    assert.equal(reads.length, first + 2, "then the last change of the burst");
+    assert.ok(reads[first + 1] - reads[first] >= 75, "a gap apart");
+    changed.fire({ host: "lab", changed: ["h-1"], requests: false, wrote: [] });
+    await tick();
+    assert.equal(reads.length, first + 3, "its state changed there: at once");
+  } finally {
+    panes.dispose();
+  }
+});

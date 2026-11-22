@@ -2055,6 +2055,42 @@ class UnderWindowsTests(unittest.TestCase):
         self.assertIn("onDataChanged: if (!check.running) check.start()", watch)
         self.assertNotIn("onDataChanged: check.restart()", watch)
 
+QML_COMPILE = """import sys
+from pathlib import Path
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlComponent, QQmlEngine
+app = QGuiApplication(sys.argv)
+bad = {}
+for f in sorted(Path(sys.argv[1]).rglob("*.qml")):
+    engine = QQmlEngine()   # (kept: a component without its engine is never ready)
+    c = QQmlComponent(engine, QUrl.fromLocalFile(str(f)), QQmlComponent.PreferSynchronous)
+    if c.status() != QQmlComponent.Ready:
+        bad[f.name] = [e.toString().rsplit("/", 1)[-1] for e in c.errors()][:2]
+print(repr(bad))
+"""
+
+
+class QmlLoadsTests(unittest.TestCase):
+    """(2026-11-22) A second onChatIdChanged on ChatPane's window made QML
+    refuse the whole file ("Property value set multiple times"): no Talpy
+    Chat window opened at all, and its tests, which read the text, passed."""
+
+    @NEEDS_PLASMA_QML
+    def test_every_qml_file_of_the_widget_compiles(self):
+        out = subprocess.run(["python3", "-c", QML_COMPILE, str(ROOT / "ui")], capture_output=True, text=True, timeout=300,
+                             env={**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"})
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        self.assertEqual(out.stdout.strip(), "{}")
+
+    def test_no_handler_twice_on_a_files_top_object(self):
+        # (the same check without Qt: QML takes one handler of a signal per object)
+        for path in sorted((ROOT / "ui").rglob("*.qml")):
+            handlers = re.findall(r"^    (on[A-Z]\w*)\s*:", path.read_text(), re.M)
+            twice = sorted({h for h in handlers if handlers.count(h) > 1})
+            self.assertEqual(twice, [], path.name)
+
+
 class NewChatTests(unittest.TestCase):
     def test_only_a_new_chat_switches_vscode_on_a_host(self):
         # A new chat on an SSH host's other account opens in VS Code, which
@@ -2152,27 +2188,48 @@ class NewChatTests(unittest.TestCase):
         # after a send), each read sending ~270 KB of code there over a slow link: the host's watcher watches the
         # chats of the windows that show (--chats, the union of every copy's) and says which were written
         # ("wrote"), and the window reads then; a look every minute only, no chase while it's watched
+        # (the line it builds, run: test_remote's HostWatchTests.test_the_line_plasma_builds_runs)
         hub = (ROOT / "ui/hub/Hub.qml").read_text()
         line = hub[hub.index("function watchLine(host) {"):]
         line = line[:line.index("\n    }\n")]
-        self.assertTrue('" --chats " + chats.join(",")' in line)
-        self.assertTrue("for (const c of w[id].chats || [])" in line)
-        run = hub[hub.index("function runWatch(host) {"):]
-        run = run[:run.index("\n    }\n")]
-        self.assertIn("if (watchRuns[host] && watchRuns[host].line === line)", run)   # (other chats: run anew)
+        self.assertTrue('" --chats " + shellQuote(chats.join(","))' in line)
         self.assertTrue("answer.sessions || answer.requests || (answer.wrote || []).length" in hub)
         # (an earlier run's answer, for the chats before, is still handed on: nothing it says is lost)
         self.assertTrue("watchLines[source]" in hub)
         main = (ROOT / "ui/main.qml").read_text()
         wanted = main[main.index("function hostWatchWanted() {"):]
         wanted = wanted[:wanted.index("\n    }\n")]
-        self.assertTrue("if (w.shown && w.chatId)" in wanted)
+        self.assertTrue("if (w.shown && w.chatId && !w.fresh && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(w.chatId))" in wanted)
         self.assertTrue("Hub.wantWatch(instanceId, host, " in main)
         changed = main[main.index("function onHostChanged(host, answer) {"):][:2500]
         self.assertTrue("const wrote = answer.wrote || []" in changed)
-        self.assertTrue("if (w.shown && (ofWindow(w) || wrote.indexOf(w.chatId) >= 0))" in changed)
         pane = (ROOT / "ui/ChatPane.qml").read_text()
         self.assertTrue("running: pane.shown && pane.chaseUntil > 0 && !(pane.host && pane.hostWatched)" in pane)
+
+    def test_a_host_windows_reads_for_what_was_written_are_paced(self):
+        # (review, 2026-11-22) live.py says a chat was written up to every 0.4 s while Claude works, and each
+        # read sends ~216 KB there and brings ~266 KB back: a window reads for "wrote" at most once per gap
+        # (5 s, or twice its last read), the last change of a burst too; its state changing or a request
+        # still reads at once
+        main = (ROOT / "ui/main.qml").read_text()
+        changed = main[main.index("function onHostChanged(host, answer) {"):][:2500]
+        self.assertTrue("if (w.shown && ofWindow(w))\n                    w.load()" in changed)
+        self.assertTrue("else if (w.shown && wrote.indexOf(w.chatId) >= 0)\n                    w.loadWritten()" in changed)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        written = pane[pane.index("function loadWritten() {"):]
+        written = written[:written.index("\n    }\n")]
+        self.assertTrue("Math.max(5000, 2 * lastReadMs)" in written)
+        self.assertTrue("writtenTimer.restart()" in written)
+        self.assertTrue("lastReadMs = Date.now() - loadingSince" in pane)
+
+    def test_the_watcher_runs_anew_only_for_a_chat_it_doesnt_watch(self):
+        # (review: shown flips at each minimize; each new run kept an ssh channel and a python3 there for up to
+        # 50 s, toward sshd's MaxSessions) the run on its way goes on while its chats include every one wanted
+        hub = (ROOT / "ui/hub/Hub.qml").read_text()
+        run = hub[hub.index("function runWatch(host) {"):]
+        run = run[:run.index("\n    }\n")]
+        self.assertTrue("watchRuns[host].chats.indexOf(c) >= 0" in run)
+        self.assertTrue("watchRuns[host] = { line: line, at: Date.now(), chats: chats }" in run)
 
     def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
         # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop

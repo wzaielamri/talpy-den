@@ -238,10 +238,11 @@ QtObject {
     // the same from run to run (--as: a name of this plasmashell's, hashed).
     // It also watches the chats of the windows that show there (--chats, every
     // copy's), and says which were written ("wrote"): the window reads its
-    // conversation then. Other chats: it runs anew; the run before ends within
-    // 50 s, and what it says is still handed on.
+    // conversation then. A chat it doesn't watch yet: it runs anew; the run
+    // before ends within 50 s, and what it says is still handed on. Fewer
+    // chats (a window hidden, minimized): the run on its way goes on.
     property var watchWanted: ({})    // host -> {copy id: {command: its remote.py --watch command, without --as, chats}}
-    property var watchRuns: ({})      // host -> {line, at}: the one running
+    property var watchRuns: ({})      // host -> {line, at, chats}: the one running
     property var watchLines: ({})     // line -> host: every run not answered yet (one for chats before too)
     property var watchFailures: ({})  // host -> failures in a row
     property var watchNext: ({})      // host -> when it may run again (after a failure)
@@ -298,26 +299,35 @@ QtObject {
         return !!watchWanted[host] && !watchTrouble[host]
     }
 
-    // (the first copy's command, with every copy's chats there)
-    function watchLine(host) {
+    // (every copy's chats there)
+    function watchChats(host) {
         const w = watchWanted[host]
         const ids = {}
         for (const id in w)
             for (const c of w[id].chats || [])
                 ids[c] = true
-        const chats = Object.keys(ids).sort()
-        return w[Object.keys(w).sort()[0]].command + (chats.length ? " --chats " + chats.join(",") : "")
-               + " --as " + Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)
+        return Object.keys(ids).sort()
+    }
+
+    // (the first copy's command, --as, then every copy's chats there, quoted: their ids come from the hosts)
+    function watchLine(host) {
+        const w = watchWanted[host]
+        const chats = watchChats(host)
+        return w[Object.keys(w).sort()[0]].command + " --as " + Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)
+               + (chats.length ? " --chats " + shellQuote(chats.join(",")) : "")
     }
 
     function runWatch(host) {
         const w = watchWanted[host]
         if (!w || watchTrouble[host] === "check" || Date.now() < (watchNext[host] || 0) || !instanceName)
             return
-        const line = watchLine(host)
-        if (watchRuns[host] && watchRuns[host].line === line)
+        const chats = watchChats(host)
+        // (the one on its way goes on while it watches every chat wanted: fewer is no reason for another
+        // ssh channel and python3 there; the next run has just these)
+        if (watchRuns[host] && chats.every(c => watchRuns[host].chats.indexOf(c) >= 0))
             return
-        watchRuns[host] = { line: line, at: Date.now() }
+        const line = watchLine(host)
+        watchRuns[host] = { line: line, at: Date.now(), chats: chats }
         watchLines[line] = host
         watchRunner.connectSource(line)
     }

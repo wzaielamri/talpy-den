@@ -2882,13 +2882,14 @@ PlasmoidItem {
         interval: 100
         onTriggered: root.updateWatches()
     }
-    // (host -> the chats of its windows that show)
+    // (host -> the chats of its windows that show: a chat's id only, as a host's answer gave it, so nothing
+    // else reaches a command line; not a new chat's that hasn't started, which stands in for its id)
     function hostWatchWanted() {
         const out = {}
         for (const w of paneWindows)
             if (w.host && w.chat && w.chat.chatId && (w.shown || w.starting)) {
                 const chats = out[w.host] || (out[w.host] = [])
-                if (w.shown && w.chatId)
+                if (w.shown && w.chatId && !w.fresh && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(w.chatId))
                     chats.push(w.chatId)
             }
         if (notifier)
@@ -2965,8 +2966,10 @@ PlasmoidItem {
             else if (!answer.changed || hooked || wins.some(w => w.starting || ofWindow(w)))
                 root.pollHostSoon(host)
             for (const w of wins)
-                if (w.shown && (ofWindow(w) || wrote.indexOf(w.chatId) >= 0))
+                if (w.shown && ofWindow(w))
                     w.load()   // (its conversation now, not at its next look)
+                else if (w.shown && wrote.indexOf(w.chatId) >= 0)
+                    w.loadWritten()   // (written there: soon, at most every 5 s or so)
         }
     }
 
