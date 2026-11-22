@@ -4,6 +4,11 @@
 
 ### Better
 
+- **The Reply to this / Explain this bar in Talpy Chat goes with the
+  selection.** Scrolling with text selected closed the bar. Now it stays under
+  the selection's last line, hides while that line is out of view and comes
+  back with it, and stays inside the list (not over the reply box).
+
 - **↓ Latest in Talpy Chat, and a chat read far back stays quick.** Whenever
   the conversation isn't at its newest part (after going to a bookmark, a
   search's match, or scrolling up), a floating ↓ Latest over its bottom takes
