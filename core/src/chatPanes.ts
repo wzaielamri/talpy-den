@@ -139,11 +139,18 @@ export class ChatPanes implements Disposable, ChatPanesPort {
     this.watchesChanged();
   }
 
-  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts
+  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts;
+  // and the chats they watch there, of the tabs that show (it says when one is written: the tab reads it then)
   watchesChanged(): void {
     const hosts = new Set<string>();
-    for (const p of this.panes.values()) if (p.wantsWatch()) hosts.add(p.host);
-    this.dash.setPaneHosts?.(hosts);
+    const chats = new Map<string, string[]>();
+    for (const p of this.panes.values())
+      if (p.wantsWatch()) {
+        hosts.add(p.host);
+        const chat = p.watchedChat();
+        if (chat) chats.set(p.host, [...(chats.get(p.host) ?? []), chat]);
+      }
+    this.dash.setPaneHosts?.(hosts, chats);
   }
 
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
@@ -532,12 +539,13 @@ class Pane implements Disposable {
       this.surface.onDidDispose(() => this.dispose()),
       owner.ext.dash.onState(() => void this.pushChat()),
       // an SSH host's or a container's watcher: its chat changed there (a request, its state): a check of the
-      // host (at most every 2 s) and the conversation now; a new chat starting there: the check
+      // host (at most every 2 s) and the conversation now; its transcript written (wrote): the conversation
+      // now, no check; a new chat starting there: the check
       ...(owner.ext.dash.onHostChanged ? [owner.ext.dash.onHostChanged((e) => {
         if (this.disposed || !this.host || e.host !== this.host) return;
         const mine = e.changed.includes(this.chatId) || (!!this.chat.sessionId && e.changed.includes(this.chat.sessionId));
         if ((mine || this.starting) && !e.requests) this.owner.ext.dash.pollHostSoon(this.host);
-        if (mine && this.surface.visible) void this.load();
+        if ((mine || (e.wrote ?? []).includes(this.chatId)) && this.surface.visible) void this.load();
       })] : []),
       // live mode: the chat did a step: what it does now, and the conversation at once
       owner.ext.dash.onLive((e) => {
@@ -682,6 +690,7 @@ class Pane implements Disposable {
     this.owner.moved(this, `${this.host}|${this.chatId}`, `${this.host}|${to}`);
     this.chatId = to;
     if ((this.chat.chatId || this.chat.sessionId) !== to) this.chat = { ...this.chat, chatId: to, sessionId: to }; // (its row may come a check later)
+    if (this.host) this.owner.watchesChanged();   // (its host's watcher watches the new id)
     this.stamp = "";
     void this.load();
   }
@@ -692,14 +701,17 @@ class Pane implements Disposable {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (this.disposed || !this.surface.visible) return; // (closed: the reading stops)
-    // (with the watcher, only for what it can't see: a moment it wasn't running; an SSH host's chat
-    // every second just after you sent it something, till that shows: chaseUntil)
-    // (an SSH host's: every minute while its watcher answers and Claude neither works nor waits there,
-    // what changes coming with the watcher's answer: dash.onHostChanged)
-    const hostBusy = () => ["working", "waiting"].includes(findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId).session?.state ?? "");
-    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : this.owner.ext.dash.hostWatched?.(this.host) && !hostBusy() ? 60000 : 5000)
-      : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
-    this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
+    this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), this.lookEvery());
+  }
+
+  // How often it looks: with the watcher, only for what it can't see, a moment it wasn't running. An SSH
+  // host's chat: every minute while its host's watcher says when it's written there (dash.onHostChanged; each
+  // read sends the script there, 2026-11-22), else every 5 s, and every second just after you sent it
+  // something, till that shows (chaseUntil)
+  private lookEvery(): number {
+    if (this.host)
+      return this.owner.ext.dash.hostWatched?.(this.host, this.chatId) ? 60000 : Date.now() < this.chaseUntil ? 1000 : 5000;
+    return this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
   }
 
   private chaseUntil = 0;
@@ -785,8 +797,9 @@ class Pane implements Disposable {
   // The watcher: a chat of this computer is read the moment its transcript
   // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
   // then again), so your message and what Claude writes show at once, not at
-  // the next look. Not for an SSH host's (a look every 5 s); three failures
-  // in a row: looks only.
+  // the next look. Not for an SSH host's: its host's watcher says when it's
+  // written there (dash.onHostChanged), so the script goes there once per
+  // change, not with every look. Three failures in a row: looks only.
   private watching = false;
   private watchFailures = 0;
   private async watch(): Promise<void> {
@@ -1392,6 +1405,11 @@ class Pane implements Disposable {
   // Its host's watcher is wanted: a chat there that shows, or one starting there
   wantsWatch(): boolean {
     return !this.disposed && !!this.host && (this.surface.visible || !!this.starting);
+  }
+
+  // The chat its host's watcher watches for it (said when it's written there): one there that shows
+  watchedChat(): string {
+    return this.wantsWatch() && this.surface.visible && !this.fresh ? this.chatId : "";
   }
 
   dispose(): void {

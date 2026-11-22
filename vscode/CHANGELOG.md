@@ -4,6 +4,17 @@
 
 ### Better
 
+- **A chat on an SSH host opens faster, and its tab no longer keeps a slow
+  link busy.** A host's answers come back compressed (zlib on the host, put
+  back as it was here): on a made-up chat, a read of 960 items came back as
+  124 KB instead of 723 KB, which over a 150–300 KB/s link was most of the
+  9.6 s a large chat took to open. And a tab of a chat there read it every
+  5 s while Claude worked or waited (every second after you sent something),
+  each read sending ~270 KB of code to the host: the host's watcher the tab
+  already runs now also watches its chat's transcript (only its size and
+  time) and says when it's written, so the tab reads it then, and otherwise
+  once a minute. Nothing more is installed or kept on the host.
+
 - **A line where new begins in Talpy Chat.** Coming back to a chat that went
   on without you, "Since you last looked" says what it did and its click goes
   to where you left; now a thin line in the accent colour, "New since 14:32"

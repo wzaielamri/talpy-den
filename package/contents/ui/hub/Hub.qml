@@ -236,21 +236,27 @@ QtObject {
     // file or a permission request there changes (hostChanged), then runs
     // again; within 50 s anyway. One per host for all copies, its command line
     // the same from run to run (--as: a name of this plasmashell's, hashed).
-    property var watchWanted: ({})    // host -> {copy id: its remote.py --watch command, without --as}
+    // It also watches the chats of the windows that show there (--chats, every
+    // copy's), and says which were written ("wrote"): the window reads its
+    // conversation then. Other chats: it runs anew; the run before ends within
+    // 50 s, and what it says is still handed on.
+    property var watchWanted: ({})    // host -> {copy id: {command: its remote.py --watch command, without --as, chats}}
     property var watchRuns: ({})      // host -> {line, at}: the one running
+    property var watchLines: ({})     // line -> host: every run not answered yet (one for chats before too)
     property var watchFailures: ({})  // host -> failures in a row
     property var watchNext: ({})      // host -> when it may run again (after a failure)
     // host -> why Talpy Den can't watch it now ("" or missing: it can); "check": it couldn't be
     // reached, so not until its next check answers (watchChecked)
     property var watchTrouble: ({})
-    signal hostChanged(string host, var answer)   // answer: {sessions, requests, changed: [chat ids]}
+    signal hostChanged(string host, var answer)   // answer: {sessions, requests, changed: [chat ids], wrote: [chat ids]}
     readonly property int watchStaleMs: 80000
 
-    function wantWatch(id, host, command) {
+    function wantWatch(id, host, command, chats) {
         const w = watchWanted[host] || {}
-        if (w[id] === command)
+        const ids = (chats || []).slice().sort()
+        if (w[id] && w[id].command === command && w[id].chats.join(",") === ids.join(","))
             return
-        watchWanted = Object.assign({}, watchWanted, { [host]: Object.assign({}, w, { [id]: command }) })
+        watchWanted = Object.assign({}, watchWanted, { [host]: Object.assign({}, w, { [id]: { command: command, chats: ids } }) })
         runWatch(host)
     }
 
@@ -292,13 +298,27 @@ QtObject {
         return !!watchWanted[host] && !watchTrouble[host]
     }
 
+    // (the first copy's command, with every copy's chats there)
+    function watchLine(host) {
+        const w = watchWanted[host]
+        const ids = {}
+        for (const id in w)
+            for (const c of w[id].chats || [])
+                ids[c] = true
+        const chats = Object.keys(ids).sort()
+        return w[Object.keys(w).sort()[0]].command + (chats.length ? " --chats " + chats.join(",") : "")
+               + " --as " + Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)
+    }
+
     function runWatch(host) {
         const w = watchWanted[host]
-        if (!w || watchRuns[host] || watchTrouble[host] === "check" || Date.now() < (watchNext[host] || 0) || !instanceName)
+        if (!w || watchTrouble[host] === "check" || Date.now() < (watchNext[host] || 0) || !instanceName)
             return
-        const command = w[Object.keys(w).sort()[0]]
-        const line = command + " --as " + Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)
+        const line = watchLine(host)
+        if (watchRuns[host] && watchRuns[host].line === line)
+            return
         watchRuns[host] = { line: line, at: Date.now() }
+        watchLines[line] = host
         watchRunner.connectSource(line)
     }
 
@@ -323,14 +343,14 @@ QtObject {
         staleMs: hub.watchStaleMs
         onNewData: (source, data) => {
             disconnectSource(source)
-            let host = ""
-            for (const h in hub.watchRuns)
-                if (hub.watchRuns[h].line === source)
-                    host = h
+            const host = hub.watchLines[source] || ""
+            delete hub.watchLines[source]
             if (!host)
                 return
-            const startedAt = hub.watchRuns[host].at
-            delete hub.watchRuns[host]
+            const current = !!hub.watchRuns[host] && hub.watchRuns[host].line === source
+            const startedAt = current ? hub.watchRuns[host].at : 0
+            if (current)
+                delete hub.watchRuns[host]
             let answer = null
             try {
                 answer = JSON.parse(data["stdout"])
@@ -338,6 +358,12 @@ QtObject {
             }
             if (!hub.watchWanted[host])
                 return   // (not wanted any more: let go)
+            if (!current) {
+                // (a run for the chats before: what it says is handed on, the one running now goes on)
+                if (answer && answer.ok && (answer.sessions || answer.requests || (answer.wrote || []).length))
+                    hub.hostChanged(host, answer)
+                return
+            }
             if (!answer || !answer.ok) {
                 hub.watchFailed(host, answer ? answer.error || answer.message || "" : (data["stderr"] || "").trim().split("\n").pop(),
                                 !!answer && answer.reached === false)
@@ -358,7 +384,7 @@ QtObject {
             } else {
                 Qt.callLater(() => hub.runWatch(host))
             }
-            if (answer.sessions || answer.requests)
+            if (answer.sessions || answer.requests || (answer.wrote || []).length)
                 hub.hostChanged(host, answer)
         }
     }

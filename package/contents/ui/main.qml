@@ -2867,7 +2867,10 @@ PlasmoidItem {
     // none of that, nothing runs there. What it answers: a permission
     // request there checks the host at once, a chat of a window or a hooked
     // one that changed at most every 2 s (the last change of a burst too),
-    // and that window reads its conversation at once.
+    // and that window reads its conversation at once. It also watches the
+    // chats of the windows that show there (their transcripts: "wrote"), so
+    // such a window reads its conversation when it was written, not every
+    // few seconds in case: each read sends the script there (2026-11-22).
     property var watchedHosts: ({})
     property var hostPolledAt: ({})   // host -> when its check was last asked for
     property var hostPollDue: ({})    // host -> when a check held back by the 2 s is due
@@ -2879,16 +2882,20 @@ PlasmoidItem {
         interval: 100
         onTriggered: root.updateWatches()
     }
+    // (host -> the chats of its windows that show)
     function hostWatchWanted() {
         const out = {}
         for (const w of paneWindows)
-            if (w.host && w.chat && w.chat.chatId && (w.shown || w.starting))
-                out[w.host] = true
+            if (w.host && w.chat && w.chat.chatId && (w.shown || w.starting)) {
+                const chats = out[w.host] || (out[w.host] = [])
+                if (w.shown && w.chatId)
+                    chats.push(w.chatId)
+            }
         if (notifier)
             for (const host of shownHosts) {
                 const r = remote[host]
                 if (r && r.ok && r.result && !r.cached && r.result.groups.some(g => g.sessions.some(s => hookedAtWork(s))))
-                    out[host] = true
+                    out[host] = out[host] || []
             }
         for (const host in out)
             if (!talpyChatHere(host, true))
@@ -2902,9 +2909,9 @@ PlasmoidItem {
     }
     function updateWatches() {
         const want = hostWatchWanted()
-        for (const host in want)
-            if (!watchedHosts[host])
-                Hub.wantWatch(instanceId, host, "python3 -I " + shellQuote(codeDir + "remote.py") + " --watch " + shellQuote(host))
+        for (const host in want)   // (the same command and chats: nothing happens)
+            Hub.wantWatch(instanceId, host, "python3 -I " + shellQuote(codeDir + "remote.py") + " --watch " + shellQuote(host),
+                          want[host])
         for (const host in watchedHosts)
             if (!want[host])
                 Hub.dropWatch(instanceId, host)
@@ -2944,6 +2951,7 @@ PlasmoidItem {
             if (!root.watchedHosts[host])
                 return
             const changed = answer.changed || []
+            const wrote = answer.wrote || []   // (a window's chat written: its conversation now, not the host's check)
             const wins = root.paneWindows.filter(w => w.host === host && w.chat && !!w.chat.chatId)
             const ofWindow = w => changed.indexOf(w.chatId) >= 0 || (!!w.sessionId && changed.indexOf(w.sessionId) >= 0)
             const r = root.remote[host]
@@ -2957,7 +2965,7 @@ PlasmoidItem {
             else if (!answer.changed || hooked || wins.some(w => w.starting || ofWindow(w)))
                 root.pollHostSoon(host)
             for (const w of wins)
-                if (w.shown && ofWindow(w))
+                if (w.shown && (ofWindow(w) || wrote.indexOf(w.chatId) >= 0))
                     w.load()   // (its conversation now, not at its next look)
         }
     }

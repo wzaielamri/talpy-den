@@ -2121,13 +2121,13 @@ class NewChatTests(unittest.TestCase):
         # of a chat of interest at most every 2 s (trailing), and that window reads its conversation; a shown
         # host window reads every minute while its watcher answers and Claude neither works nor waits there
         hub = (ROOT / "ui/hub/Hub.qml").read_text()
-        for name in ("function wantWatch(id, host, command)", "function dropWatch(id, host)", "function watchChecked(host)",
+        for name in ("function wantWatch(id, host, command, chats)", "function dropWatch(id, host)", "function watchChecked(host)",
                      "signal hostChanged(string host, var answer)", 'Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)'):
             self.assertIn(name, hub)
         self.assertIn("watchNext[host] = Date.now() + (n >= 3 ? 60000 : 5000)", hub)
         # (again first, a function of its own per host: Qt.callLater runs one function once a pass; one that
         # answered at once a moment later; dropped, it starts afresh)
-        self.assertLess(hub.index("Qt.callLater(() => hub.runWatch(host))"), hub.index("hub.hostChanged(host, answer)"))
+        self.assertLess(hub.index("Qt.callLater(() => hub.runWatch(host))"), hub.rindex("hub.hostChanged(host, answer)"))
         self.assertIn("if (Date.now() - startedAt < 250) {", hub)
         drop = hub[hub.index("function dropWatch(id, host) {"):]
         self.assertIn("delete watchFailures[host]", drop[:drop.index("\n    }\n")])
@@ -2144,8 +2144,35 @@ class NewChatTests(unittest.TestCase):
         # (a binding's second line stays its own: a handler put between them took it)
         self.assertIn('readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))\n'
                       '                                     || (!!chat.startedAt && !row)\n', pane)
-        self.assertIn('interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)', pane)
+        self.assertTrue("interval: pane.host ? (pane.hostWatched ? 60000 : 5000)" in pane)
         self.assertIn("caution: pane.hostTrouble !== \"\"", pane)
+
+    def test_a_host_window_reads_its_chat_when_the_watcher_says_it_changed(self):
+        # (2026-11-22) a window of a chat on a host read it every 5 s while Claude worked or waited (every second
+        # after a send), each read sending ~270 KB of code there over a slow link: the host's watcher watches the
+        # chats of the windows that show (--chats, the union of every copy's) and says which were written
+        # ("wrote"), and the window reads then; a look every minute only, no chase while it's watched
+        hub = (ROOT / "ui/hub/Hub.qml").read_text()
+        line = hub[hub.index("function watchLine(host) {"):]
+        line = line[:line.index("\n    }\n")]
+        self.assertTrue('" --chats " + chats.join(",")' in line)
+        self.assertTrue("for (const c of w[id].chats || [])" in line)
+        run = hub[hub.index("function runWatch(host) {"):]
+        run = run[:run.index("\n    }\n")]
+        self.assertIn("if (watchRuns[host] && watchRuns[host].line === line)", run)   # (other chats: run anew)
+        self.assertTrue("answer.sessions || answer.requests || (answer.wrote || []).length" in hub)
+        # (an earlier run's answer, for the chats before, is still handed on: nothing it says is lost)
+        self.assertTrue("watchLines[source]" in hub)
+        main = (ROOT / "ui/main.qml").read_text()
+        wanted = main[main.index("function hostWatchWanted() {"):]
+        wanted = wanted[:wanted.index("\n    }\n")]
+        self.assertTrue("if (w.shown && w.chatId)" in wanted)
+        self.assertTrue("Hub.wantWatch(instanceId, host, " in main)
+        changed = main[main.index("function onHostChanged(host, answer) {"):][:2500]
+        self.assertTrue("const wrote = answer.wrote || []" in changed)
+        self.assertTrue("if (w.shown && (ofWindow(w) || wrote.indexOf(w.chatId) >= 0))" in changed)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertTrue("running: pane.shown && pane.chaseUntil > 0 && !(pane.host && pane.hostWatched)" in pane)
 
     def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
         # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop

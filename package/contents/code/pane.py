@@ -12,7 +12,9 @@ its permission prompt and its review.
         the answer is only {"ok", "unchanged"}. --wait: while it's as it was,
         wait up to S seconds (at most WAIT_MAX_S) for it to change, and answer
         the moment it does (the pane's watcher: what Claude writes shows at
-        once, not at the next look). Not on an SSH host (it's left out there).
+        once, not at the next look). Not on an SSH host (it's left out there:
+        its host's watcher says when it was written, remote.py --watch --chats,
+        and the front end reads it then; nothing waits there per window).
         Also how full its context is, "context" (turns.context_left), and
         Claude's turn so far while it's going on, "turn": {"startedAt",
         "steps"} (turns.TurnSoFar); its bookmarks, "bookmarks" and
@@ -2842,7 +2844,7 @@ def main(argv=None):
         if args[i] == "--host" and i + 1 < len(args):
             host, i = args[i + 1], i + 2
             continue
-        # (--wait: not over ssh, a host's chat is looked at again instead; --seen: kept here)
+        # (--wait: not over ssh, its host's watcher says when a host's chat was written; --seen: kept here)
         if args[i] in ("--wait", "--seen") and i + 1 < len(args):
             i += 2
             continue

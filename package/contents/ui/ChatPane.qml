@@ -42,6 +42,7 @@ Window {
     readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))
                                      || (!!chat.startedAt && !row)
     onStartingChanged: if (host) root.watchesChanged()
+    onChatIdChanged: if (host) root.watchesChanged()   // (its host's watcher watches this chat: Hub --chats)
     readonly property string chatState: row ? row.state : "done"
     readonly property bool busy: chatState === "working" || chatState === "waiting"
     readonly property string route: row && row.reply ? row.reply : "background"
@@ -1072,9 +1073,9 @@ Window {
     }
     Timer {
         // (with the watcher, only for what it can't see: a moment it wasn't running. An SSH host's or a
-        // container's: every 5 s, but every minute while its host's watcher answers and Claude doesn't work
-        // or wait there: what changes comes with the watcher's answer, root.onHostChanged)
-        interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)
+        // container's: every 5 s, but every minute while its host's watcher answers: it says when this chat
+        // was written or changed state there, root.onHostChanged; each read sends the script there)
+        interval: pane.host ? (pane.hostWatched ? 60000 : 5000)
                   : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
         running: pane.shown && pane.chatId !== "" && !pane.fresh
         repeat: true
@@ -1084,8 +1085,10 @@ Window {
     // The watcher: a chat of this computer is read the moment its transcript
     // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
     // and runs again), so your message and what Claude writes show at once,
-    // not at the next look. Not for an SSH host's (a look every 5 s, and
-    // often just after you sent something, chase)
+    // not at the next look. Not for an SSH host's: its host's watcher says
+    // when it was written (root.onHostChanged), so the script goes there once
+    // per change, not with every look; without it, a look every 5 s, and
+    // often just after you sent something (chase)
     readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3 && !awayNext
     // (an SSH host's or a container's chat: its host's watcher answers, root.watchedHosts)
     readonly property bool hostWatched: !!host && !!root.watchedHosts[host] && Hub.watching(host)
@@ -1140,11 +1143,12 @@ Window {
     }
 
     // Just after your message went: read often till the conversation has it
-    // (the watcher has it at once; this is for an SSH host's chat, and in case)
+    // (the watcher has it at once; this is for an SSH host's chat whose host's
+    // watcher doesn't answer, and in case)
     property real chaseUntil: 0
     Timer {
         interval: pane.host ? 1000 : 400
-        running: pane.shown && pane.chaseUntil > 0
+        running: pane.shown && pane.chaseUntil > 0 && !(pane.host && pane.hostWatched)
         repeat: true
         onTriggered: {
             if (Date.now() > pane.chaseUntil || !pane.pendingSent.some(p => p.state === "sent" && p.chat === pane.chatId))

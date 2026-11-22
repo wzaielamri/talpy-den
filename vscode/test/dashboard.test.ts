@@ -570,6 +570,42 @@ test("a host is watched only while Talpy Chat wants it; what changes there check
   }
 });
 
+// (2026-11-22) The chats of the tabs that show on a host go to its watcher (--chats): what it says was written there
+// goes to their tabs (onHostChanged's wrote), which read them then, and isn't a reason to check the host
+test("a host's watcher is told the chats of its tabs; a chat written there goes to its tab, not to a check", async () => {
+  const watched: string[][] = [];
+  const polls: string[] = [];
+  const backend = {
+    watchHost: (args: string[], _ms: number, signal?: AbortSignal) =>
+      (watched.push(args), new Promise((r) => signal?.addEventListener("abort", () => r({ ok: false, message: "ended" })))),
+  } as unknown as Backend;
+  const dash = new Dashboard(host, editor, backend, { handle() {}, isLeader: () => false } as unknown as Notifier);
+  const d = dash as unknown as { hosts: Map<string, unknown>; status: Status | null; pollHost(h: string): Promise<void>;
+                                 hostChanged(h: string, a: object): void };
+  d.pollHost = async (h: string) => void polls.push(h);
+  d.status = { ...structuredClone(demoState(NOW).status!), homeId: "here00000000" };
+  const result = structuredClone(demoState(NOW).hosts[0].result!);
+  d.hosts.set("lab", { name: "lab", loading: false, ok: true, error: "", result: { ...result, homeId: "lab000000000" }, updatedAt: NOW });
+  const fired: unknown[] = [];
+  const listening = dash.onHostChanged((e) => fired.push(e));
+  try {
+    dash.setPaneHosts(["lab"], new Map([["lab", ["c1"]]]));
+    assert.deepEqual(watched.map((a) => a.slice(-2)), [["--chats", "c1"]]);
+    dash.setPaneHosts(["lab"], new Map([["lab", ["c2", "c1"]]]));
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(watched.map((a) => a.slice(-2)), [["--chats", "c1"], ["--chats", "c1,c2"]], "another tab: it runs again with it");
+    assert.equal(dash.hostWatched("lab", "c2"), true);
+    assert.equal(dash.hostWatched("lab", "c3"), false, "a chat it doesn't watch");
+    d.hostChanged("lab", { ok: true, sessions: false, requests: false, changed: [], wrote: ["c1"] });
+    assert.deepEqual(fired, [{ host: "lab", changed: [], requests: false, wrote: ["c1"] }]);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(polls, [], "written: no check of the host");
+  } finally {
+    listening.dispose();
+    dash.dispose();
+  }
+});
+
 // (2026-11-06) A host taken off the list: the permission hook Talpy Chat put there goes (pane.py --relay forget
 // there), from the window that notifies, for a host that answered; said only when it stays
 test("a host taken off the list forgets Talpy Chat's hook there, and says when it stays", async () => {

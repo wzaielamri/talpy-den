@@ -96,7 +96,7 @@ export function helperEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Process
 export function runProcess(
   command: string,
   args: string[],
-  opts: { input?: string; timeoutMs?: number; cwd?: string } = {},
+  opts: { input?: string; timeoutMs?: number; cwd?: string; signal?: AbortSignal } = {},
 ): Promise<RunResult> {
   return new Promise((resolve) => {
     let stdout = "";
@@ -116,9 +116,18 @@ export function runProcess(
           killer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
         }, opts.timeoutMs)
       : undefined;
+    // Ended by whoever asked (signal): as when it takes too long, SIGTERM first, then SIGKILL
+    const end = () => {
+      if (child.exitCode !== null || child.signalCode !== null || killer) return;
+      child.kill("SIGTERM");
+      killer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+    };
+    if (opts.signal?.aborted) end();
+    else opts.signal?.addEventListener("abort", end, { once: true });
     const done = (result: RunResult) => {
       if (settled) return;
       settled = true;
+      opts.signal?.removeEventListener("abort", end);
       if (timer) clearTimeout(timer);
       if (killer) clearTimeout(killer);
       if (drained) clearTimeout(drained);
@@ -428,8 +437,8 @@ export class Backend {
 
   // Talpy Chat's watcher of an SSH host or a container (remote.py --watch HOST --as NAME): what changed
   // there, the moment it does (hostWatch.ts)
-  async watchHost(args: string[], timeoutMs: number): Promise<Record<string, any>> {
-    return (await this.json(args, timeoutMs)) ?? { ok: false, message: "the helper gave no answer" };
+  async watchHost(args: string[], timeoutMs: number, signal?: AbortSignal): Promise<Record<string, any>> {
+    return (await this.json(args, timeoutMs, undefined, signal)) ?? { ok: false, message: "the helper gave no answer" };
   }
 
   // That picture copied to an SSH host (remote.py --put-image): the copy's path there
@@ -455,9 +464,9 @@ export class Backend {
     void runProcess(this.python(), args, { timeoutMs: 30000 });
   }
 
-  private async json(argv: string[], timeoutMs: number, input?: string): Promise<Record<string, any> | null> {
+  private async json(argv: string[], timeoutMs: number, input?: string, signal?: AbortSignal): Promise<Record<string, any> | null> {
     const [name, ...args] = argv;
-    const r = await runProcess(this.python(), ["-I", this.script(name), ...args], { timeoutMs, input });
+    const r = await runProcess(this.python(), ["-I", this.script(name), ...args], { timeoutMs, input, signal });
     if (r.spawnError || r.timedOut) return { ok: false, message: r.timedOut ? "timed out" : r.spawnError!.message };
     try {
       return JSON.parse(r.stdout.trim().split("\n").pop() || "");

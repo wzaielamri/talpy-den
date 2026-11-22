@@ -15,6 +15,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -761,6 +762,126 @@ class HostNoiseTests(FakeSSH):
         with self.assertRaises(ProcessLookupError):
             os.kill(ssh_pid, 0)
 
+class PackedAnswerTests(FakeSSH):
+    """(2026-11-22) A chat on an SSH host took 9.6 s to open: its answer,
+    1.12 MB of JSON, came back as it was, at 150-300 KB/s. A host's answer
+    (from the marker on) comes back compressed, and is put back in place
+    here; what it prints before it stays as it was, and a plain answer (an
+    older copy's, python3 3.6's message) reads as it did."""
+
+    # (a big answer, made there: a chat's items)
+    BIG = ("import json, sys\n"
+           "answer = {'ok': True, 'message': '', 'items': [{'kind': 'claude', 'key': 'k%d' % i,\n"
+           "          'text': 'The parser reads line %d of the config and checks its schema. ' % i * 3} for i in range(4000)]}\n")
+
+    def script(self, answer_code, before="", after=""):
+        return (remote.PYTHON_CHECK + answer_code + "sys.stdout.write(%r)\n" % before
+                + "sys.stdout.write('\\n%s ' + json.dumps(answer) + '\\n')\n" % td.REMOTE_MARK
+                + "sys.stdout.write(%r)\n" % after)
+
+    def recorded(self):
+        """run_capped, with what went each way: [{"up", "down", "stdin", "stdout"}]."""
+        seen, real = [], remote.run_capped
+
+        def capped(line, stdin=None, timeout=remote.RUN_TIMEOUT, binary=False):
+            r = real(line, stdin, timeout, binary)
+            out = r.stdout if isinstance(r.stdout, bytes) else r.stdout.encode()
+            seen.append({"up": len(stdin or b""), "down": len(out), "stdin": stdin, "stdout": out})
+            return r
+        return seen, mock.patch.object(remote, "run_capped", side_effect=capped)
+
+    def plain(self, script):
+        """What the script prints run as it is (python3 here, no packing)."""
+        return subprocess.run([sys.executable, "-I", "-c", script], capture_output=True, text=True).stdout
+
+    def test_a_big_answer_comes_back_compressed(self):
+        script = self.script(self.BIG)
+        plain = self.plain(script)
+        seen, recording = self.recorded()
+        with recording:
+            r = remote.run_script("lab", ["--remote"], script)
+        self.assertTrue(r.stdout == plain, "put back as it was")   # (booleans: ~700 KB each)
+        answer = remote.answer_after_mark(r.stdout)
+        self.assertEqual((answer["ok"], len(answer["items"]), answer["items"][7]["key"]), (True, 4000, "k7"))
+        (call,) = seen
+        self.assertTrue(("\n" + remote.PACKED_MARK + " ").encode() in call["stdout"])
+        self.assertLess(call["down"], len(plain.encode()) // 4, "compressed")
+
+    def test_what_it_prints_besides_stays_as_it_was(self):
+        # (a login's greeting before, the script's own lines before and after the answer)
+        self.mode("noisy")
+        script = self.script(self.BIG, before="Started.\n\n@@talpy-den")
+        r = remote.run_script("lab", ["--remote"], script)
+        self.assertTrue(r.stdout == "Welcome to the cluster! Quota: 80%\n" + self.plain(script))
+        self.assertEqual(remote.answer_after_mark(r.stdout)["items"][0]["key"], "k0")
+        script = self.script(self.BIG, after="and a line after it\n")
+        self.assertTrue(remote.run_script("lab", ["--remote"], script).stdout
+                        == "Welcome to the cluster! Quota: 80%\n" + self.plain(script))
+
+    def test_a_small_answer_goes_as_it_is(self):
+        # (an "unchanged?" check's answer, 47 bytes: compressed it would grow)
+        script = self.script("import json, sys\nanswer = {'ok': True, 'unchanged': True}\n")
+        seen, recording = self.recorded()
+        with recording:
+            r = remote.run_script("lab", ["--remote"], script)
+        self.assertEqual(r.stdout, self.plain(script))   # (47 bytes)
+        self.assertNotIn(remote.PACKED_MARK.encode(), seen[0]["stdout"])
+
+    def test_a_plain_answer_still_reads(self):
+        # (an older copy's on its way, a stand-in's: as it was)
+        plain = b"Welcome\n\n" + td.REMOTE_MARK.encode() + b' {"ok": true, "message": "Hid it"}\n'
+        with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, plain, b"")):
+            self.assertEqual(remote.host_answer("lab", ["--dismiss", "abc12345"]), {"ok": True, "message": "Hid it"})
+        self.assertEqual(remote.inflated(plain), plain)
+        # python3 3.6 there: its message, before anything is packed, reads as before
+        sent = zlib.decompress(remote.sent_script(remote.host_script(), ["--remote"])[0]).decode()
+        out = subprocess.run([sys.executable, *shlex.split(remote.python_there(["--remote"]))[1:]], capture_output=True,
+                             input=remote.packed("import sys; sys.version_info = (3, 6, 8, 'final', 0)\n" + sent))
+        self.assertEqual(remote.answer_after_mark(remote.text_of(subprocess.CompletedProcess([], 0, out.stdout, out.stderr)).stdout)
+                         ["error"], "python3 there is 3.6; Talpy Den needs 3.7 or newer")
+        self.assertNotIn(remote.PACKED_MARK.encode(), out.stdout)
+
+    def test_a_packed_answer_that_isnt_whole_isnt_read(self):
+        blob = zlib.compress(td.REMOTE_MARK.encode() + b' {"ok": true}\n')
+        for cut in (blob[:-3], blob[:5]):
+            out = b"\n" + remote.PACKED_MARK.encode() + b" %d\n" % len(blob) + cut
+            with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, out, b"")):
+                self.assertEqual(remote.host_answer("lab", ["--dismiss", "abc12345"]),
+                                 {"ok": False, "message": "lab sent an answer Talpy Den can't read."})
+
+    def test_one_too_big_once_unpacked_is_too_much(self):
+        # (a few KB that unpack to more than ANSWER_MAX: read only that far)
+        blob = zlib.compress(td.REMOTE_MARK.encode() + b" " + b"x" * (3 << 20))
+        out = b"\n" + remote.PACKED_MARK.encode() + b" %d\n" % len(blob) + blob
+        with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, out, b"")), \
+                mock.patch.object(remote, "ANSWER_MAX", 1 << 20):
+            answer = remote.host_answer("lab", ["--dismiss", "abc12345"])
+        self.assertEqual(answer["message"], "lab sent too much (over 1 MB): Talpy Den stopped reading it.")
+
+    def test_every_script_a_host_runs_answers_packed(self):
+        # (the shared path: the status, Talpy Chat's reads and sends, sharing, accounts, a subagent's run, the watcher)
+        seen, recording = self.recorded()
+        with recording:
+            remote.status("lab", tokens=False)
+            remote.host_answer("lab", ["--conversation", "abc12345"], name="pane.py", also=("made.py",))
+            remote.host_answer("lab", ["--list"], name="accounts.py")
+            remote.agent_run("lab", "abc12345", "nope", open_it=False)
+            remote.watch("lab", "a1b2c3d4e5f6", 1)
+        self.assertEqual(len(seen), 5)
+        for call in seen:
+            sent = zlib.decompress(call["stdin"]).decode()
+            self.assertTrue(sent.startswith(remote.PYTHON_CHECK), sent[:80])   # (still first)
+            self.assertTrue(remote.ANSWER_PACKER in sent)
+
+    def test_a_forked_helper_doesnt_answer_twice(self):
+        # (talpy_den.in_background: a process of its own once the answer is out, gone with os._exit)
+        code = (self.BIG + "import os\nsys.stdout.write('\\n%s ' + json.dumps(answer) + '\\n')\n" % td.REMOTE_MARK
+                + "if os.fork() == 0:\n    os._exit(0)\nos.wait()\n")
+        r = remote.run_script("lab", ["--remote"], remote.PYTHON_CHECK + code)
+        self.assertEqual(r.stdout.count(td.REMOTE_MARK), 1)
+        self.assertEqual(len(remote.answer_after_mark(r.stdout)["items"]), 4000)
+
+
 class AccountTests(FakeSSH):
     """The host's Claude accounts: accounts.py runs there, sent with
     talpy_den.py like sharing.py; a login opens a terminal here (ssh -t)."""
@@ -1256,6 +1377,42 @@ class HostWatchTests(FakeSSH):
             remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1"])
         self.assertTrue(json.loads(out.getvalue())["timeout"])
 
+    def test_the_transcripts_of_talpy_chat_windows_there(self):
+        # (2026-11-22) a window of a chat there read it every 5 s while Claude worked, ~270 KB of code sent each
+        # time: the watcher says when that chat's transcript changes; what it last said of each is kept here
+        chat = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+        path = self.fake_home / ".claude/projects/-srv-x" / f"{chat}.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text('{"type": "user"}\n')
+        remote.watch("lab", "a1b2c3d4e5f6", 5)   # (everything is new to it the first time)
+        first = remote.watch("lab", "a1b2c3d4e5f6", 1, chats=[chat])
+        self.assertEqual((first["timeout"], first["wrote"]), (True, []), first)
+        self.assertNotIn("stamps", first)
+        self.assertNotIn(chat, self.calls()[-1][1])   # (on stdin: not in the process list there)
+        def append():
+            with open(path, "a") as f:
+                f.write('{"type": "assistant"}\n')
+        append()   # (between two runs: told the next time)
+        started = time.time()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5, chats=[chat])
+        self.assertEqual((answer["wrote"], answer["sessions"], answer["requests"]), ([chat], False, False), answer)
+        self.assertLess(time.time() - started, 3)
+        import threading
+        threading.Timer(0.6, append).start()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5, chats=[chat])
+        self.assertEqual(answer["wrote"], [chat])
+        # (what it was told is kept here, nothing of it there)
+        kept = list((Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/watch").iterdir())
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(oct(kept[0].stat().st_mode & 0o777), "0o600")
+        self.assertEqual(sorted(p.name for p in (self.fake_home / ".cache/talpy-den").iterdir()), ["live"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1", "--chats", chat])
+        self.assertEqual(json.loads(out.getvalue())["wrote"], [])
+        # (only chat ids: anything else can't be one there)
+        self.assertNotIn("wrote", remote.watch("lab", "a1b2c3d4e5f6", 1, chats=["../../x", "-o", "a b"]))
+
     def test_a_host_it_cant_reach(self):
         self.mode("unreachable")
         answer = remote.watch("lab", "a1b2c3d4e5f6")
@@ -1272,7 +1429,8 @@ class HostWatchTests(FakeSSH):
         lines = []
         def capped(line, stdin=None, timeout=None, binary=False):
             lines.append(line)
-            return subprocess.CompletedProcess(line, 0, "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
+            out = "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true}\n'
+            return subprocess.CompletedProcess(line, 0, out.encode() if binary else out, b"" if binary else "")
         with mock.patch.object(remote, "run_capped", side_effect=capped), \
                 mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
             self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])
