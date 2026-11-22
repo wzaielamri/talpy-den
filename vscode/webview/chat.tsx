@@ -24,6 +24,7 @@ import { beatShown, cancelBeat, withNextBeat } from "./pets/beat";
 import { I, Icon, T } from "./util/icons";
 import { Markdown } from "./util/markdown";
 import { ribbonCss } from "./util/ribbons";
+import { NEW_SINCE_READ_MS, NEW_SINCE_TIP, newSinceAfterSend, newSinceKey, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import { DARK, LIGHT, runs as ansiRuns } from "../vendor/ansi.mjs";
 import { escTarget, KEY_GROUPS, KEYS, keyText, withKey } from "../vendor/keys.mjs";
 
@@ -695,6 +696,11 @@ function ChatApp() {
   // it, one line over the list's bottom when the tab shows it again; a click goes to where you left,
   // scrolling, sending or × closes it
   const [away, setAway] = useState<Away | null>(null);
+  // New since … (shared/pane.ts newSinceOf; Plasma's NewSinceLine.qml the same): a thin line in the
+  // conversation above the first item since you last looked, where the line's click goes. It comes with
+  // Since you last looked, stays after its click and moves when you come back to more; it goes once you've
+  // been at the newest part a while with the tab in front (one timeout, only then) and when you send a message
+  const [newSince, setNewSince] = useState<NewSince | null>(null);
   // (its Recap: the /recap items there when you clicked, so the one it ran is told apart; Claude's own recap)
   const [recapBefore, setRecapBefore] = useState<ReadonlySet<string> | null>(null);
   const [claudeRecap, setClaudeRecap] = useState<{ text: string; at: number } | null>(null);
@@ -1123,7 +1129,10 @@ function ChatApp() {
         beatShown(m.visible);   // (nothing moves while another tab is in front)
         if (!m.visible) setAway(null);   // (shown again: what it did meanwhile, asked again)
       }
-      else if (m.type === "away") setAway(m.away);
+      else if (m.type === "away") {
+        setAway(m.away);
+        setNewSince((was) => newSinceOf(m.away, was));
+      }
       else if (m.type === "prefill") {   // (a new chat's box: Continue in a new chat's note, to read and send)
         setText(m.text);
         window.setTimeout(() => reply.current?.focus(), 0);
@@ -1447,6 +1456,7 @@ function ChatApp() {
       if (next.restUntil) setRestUntil(next.restUntil);
     }
     sentAt.current = Date.now();
+    setNewSince((was) => newSinceAfterSend(was, said));   // (you've read on: the line goes; not for its Recap)
     askUsual();
     // (a background chat that asks you something: your words answer it, as in its own prompt; never stopped for it)
     const asks = replyAnswers(chat);
@@ -1658,7 +1668,10 @@ function ChatApp() {
   const focusColor = useRef("");
   const goToRow = (el: HTMLElement, row: HTMLElement, key: string) => {
     follow.current = false;
-    el.scrollTop = Math.max(0, row.offsetTop - 8);
+    // (New since …'s line just above it: in view too, Since you last looked's click)
+    const above = row.previousElementSibling;
+    const top = above instanceof HTMLElement && above.classList.contains("pane-new-since") ? above : row;
+    el.scrollTop = Math.max(0, top.offsetTop - 8);
     setCurrent(key);
     if (typeof row.animate !== "function") return;
     if (!focusColor.current)
@@ -1878,11 +1891,20 @@ function ChatApp() {
   }, [away]);
   const goAway = () => {
     const key = away ? awayTarget(away, tab === "steps") : "";
+    setNewSince((was) => newSinceOf(away, was));   // (where it takes you: the line's there, read or not)
     setAway(null);
     if (!key) return;
     if (shownItems.some((it) => String(it.key) === key)) goToMark(key);
     else if (more) reachMark(key);
   };
+  // (New since …'s one timeout: only while there's a line and the tab in front is at the chat's newest
+  // part; scrolling up or another tab in front stops it, a new line starts it again)
+  const newSinceRuns = newSinceReading(newSince, shown && conversation, !seen);
+  useEffect(() => {
+    if (!newSinceRuns) return;
+    const t = window.setTimeout(() => setNewSince(null), NEW_SINCE_READ_MS);
+    return () => window.clearTimeout(t);
+  }, [newSinceRuns, newSince]);
   // Show more / Show less (now: whether it shows all of it now). Show less keeps its button where it
   // was, under the pointer: the text above it folds away, not what's below
   const keepFold = useRef<{ key: string; top: number } | null>(null);
@@ -2003,6 +2025,9 @@ function ChatApp() {
   // (Ask from here: a line above the message side questions see the chat from, whenever a part is picked,
   // the panel open or not: over a narrow view's chat, the open panel hid it)
   const fromLine = sidePart ? sidePart.key : "";
+  // (New since …: above the first item since you last looked, on this tab; "New since 14:32")
+  const newSinceAt = newSinceKey(newSince, tab === "steps");
+  const newSinceLine = newSince ? newSinceText(timeText(newSince.since, today)) : "";
   const steps = useMemo(() => {
     const out: ComponentChildren[] = [];
     shownItems.forEach((it, i) => {
@@ -2011,22 +2036,27 @@ function ChatApp() {
       const line = it.key === fromLine ? (
         <div key="side-from" class="pane-day pane-from-line" role="separator" title={SIDE_FROM_TIP}><span>{SIDE_FROM_LINE}</span></div>
       ) : null;
+      const fresh = it.key === newSinceAt ? (
+        <div key="new-since" class="pane-new-since" role="separator" title={NEW_SINCE_TIP}><span>{newSinceLine}</span></div>
+      ) : null;
       // (the first item of a new day the tab shows: its line before it)
       if (breaks.has(it.key) && it.at) {
         out.push(
           <Fragment key={it.key}>
             <div class="pane-day" role="separator"><span>{dayLabel(it.at, today)}</span></div>
             {line}
+            {fresh}
             {item}
           </Fragment>,
         );
         return;
       }
       if (line) out.push(line);
+      if (fresh) out.push(fresh);   // (right above it: a jump there shows it, goToRow)
       out.push(item);
     });
     return out;
-  }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine]);
+  }, [shownItems, open, allOpen, asking, going, split, tab, held ? now : 0, answeringFor, breaks, today, fromLine, newSinceAt, newSinceLine]);
   // (the matches marked in the rows near the view, again as they're drawn again or you scroll)
   useEffect(() => {
     const el = list.current;

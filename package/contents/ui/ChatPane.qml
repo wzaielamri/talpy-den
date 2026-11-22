@@ -10,6 +10,7 @@ import "codehtml.mjs" as Code
 import "icons.mjs" as Icons
 import "quote.mjs" as Quote
 import "fill.mjs" as Fill
+import "newsince.mjs" as NewSince
 
 // A chat beside the popup (main.qml: openPane): its conversation, updating
 // while it works, drawn the way Claude's terminal draws it (a dot before each
@@ -837,6 +838,7 @@ Window {
         seenKeys = null
         unseen = 0
         away = null
+        newSince = null
         awayNext = true
         awayAsking = false
         shownUpTo = 0
@@ -1411,6 +1413,25 @@ Window {
         sendAsTyped("/recap")
     }
     onAwayChanged: if (!away) recapBefore = null
+    // New since … (NewSinceLine.qml: made only while there's one): a thin line in the conversation above
+    // the first item since you last looked, where the line's click goes ({key, stepKey, since}: newsince.mjs).
+    // It comes with Since you last looked, stays after its click and moves when you come back to more; it
+    // goes once you've been at the newest part a while with the window shown (newSinceRead, the only timer,
+    // running only then), when you send a message, and with the window (reset). VS Code chat.tsx the same
+    property var newSince: null
+    readonly property string newSinceAt: NewSince.newSinceKey(newSince, listTab === "steps")   // (the item it's above here)
+    function tookAway(a) {   // (the --away read's answer: Since you last looked, and where new begins)
+        away = a
+        newSince = NewSince.newSinceOf(a, newSince)
+    }
+    Timer {
+        id: newSinceRead
+        interval: NewSince.NEW_SINCE_READ_MS
+        running: NewSince.newSinceReading(pane.newSince, pane.shown && pane.conversationTab, pane.atEnd)
+        onTriggered: pane.newSince = null
+    }
+    onNewSinceChanged: if (newSinceRead.running)
+        newSinceRead.restart()   // (a new line: read from now)
     property bool awayNext: true     // (the next read asks: the window's first, or its first once shown again)
     property bool awayAsking: false  // (the read on its way asks)
     property real shownUpTo: 0
@@ -1419,6 +1440,7 @@ Window {
     }
     function goAway() {   // (to where you left: on Steps, the first step since; read further back first, as a bookmark)
         const key = away ? (listTab === "steps" ? away.stepKey || away.key : away.key) : ""
+        newSince = NewSince.newSinceOf(away, newSince)   // (where it takes you: the line's there, read or not)
         away = null
         if (!key)
             return
@@ -2181,7 +2203,7 @@ Window {
                 awayAsking = false
                 awayNext = false
                 if (result.ok && !result.unchanged)
-                    away = result.away || null
+                    tookAway(result.away || null)
             }
             if (loadAgain) {
                 loadAgain = false
@@ -2728,6 +2750,7 @@ Window {
             return
         }
         away = null   // (you're answering: Since you last looked goes)
+        newSince = NewSince.newSinceAfterSend(newSince, text)   // (and its line: you've read on; not for its Recap)
         // (backing off, as Claude Code does with its own suggestions: chips showed this turn, and
         // you sent none of them, typed or clicked; 5 in a row, and none for half an hour)
         if (chipsSeen.length) {
@@ -5124,6 +5147,13 @@ Window {
         Loader {
             active: pane.sidePart !== null
             source: active ? "SideFromLine.qml" : ""
+        }
+
+        // New since …: the line in the chat above the first item since you last looked (NewSinceLine.qml),
+        // made only while there's one
+        Loader {
+            active: pane.newSince !== null && pane.conversationTab
+            source: active ? "NewSinceLine.qml" : ""
         }
 
         // Talpy Chat's keys (? in an empty box): KeysHelp.qml, read and made only while it shows

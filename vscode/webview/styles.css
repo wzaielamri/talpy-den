@@ -4470,6 +4470,31 @@ body.vscode-high-contrast-light .pane-side {
   user-select: none;
 }
 
+/* New since 14:32: where what came in since you last looked starts, above that item (Since you last
+   looked's point): a thin line in the accent colour, as your band and a bookmark's ribbon, its words near
+   its right end; not part of what you copy, nothing in it moves (Plasma's NewSinceLine.qml the same) */
+.pane-new-since {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 1em;
+  color: var(--pane-you);
+  font-size: 0.8em;
+  cursor: default;
+  user-select: none;
+}
+
+.pane-new-since::before,
+.pane-new-since::after {
+  content: "";
+  flex: 1 1 0;
+  border-top: 1px solid var(--pane-you);
+}
+
+.pane-new-since::after {
+  flex: 0 0 8px;
+}
+
 /* The hovered message's time and Copy, over its top right corner (one for the list) */
 .pane-hoverbar {
   position: absolute;

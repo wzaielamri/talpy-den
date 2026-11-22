@@ -222,6 +222,10 @@ export function awayRecap(a: Away, recap: { text: string; at: number } | null | 
 export function awayTarget(a: Away, steps: boolean): string {
   return steps ? a.stepKey || a.key : a.key;
 }
+// New since …: the thin line in the conversation above where that click goes, from when the line above
+// shows till you've been at the newest part a while, or send a message (the widget's newsince.mjs, as
+// Plasma's NewSinceLine.qml: see there)
+export { NEW_SINCE_READ_MS, NEW_SINCE_TIP, newSinceAfterSend, newSinceKey, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../../vscode/vendor/newsince.mjs";
 // The newest item time a window shows of a chat (pane.py --seen: how far a window showed it)
 export function shownUpTo(items: readonly { at?: number }[] | undefined, was: number): number {
   let up = was;

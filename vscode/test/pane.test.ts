@@ -21,6 +21,7 @@ import { demoState } from "../../core/src/shared/demo";
 import { chatRefOf, clockText } from "../../core/src/shared/model";
 import { awayRecap, RECAP_BUTTON, QUOTE_BUTTON, QUOTE_MENU, quoteOf, withQuote, compactCommand, compactLabel, contextNumbers, HANDOFF_PROMPT, handoffDraft, handoffNote, contextLevel, contextUsed, type Away, awayHead, awayParts, awayTarget, awayTip, shownUpTo, type ChatOptions, pickLabel, withPick, answerFor, answerKind, answersOf, answersTaken,answerText, askedShows, chatWhere, chipsAfterSend, chipsOf, chipsWanted, CHIPS_IGNORED, CHIPS_REST_MS, commandHint, commandRun, completionOf, suggestFor, type Offers, joinAnswer, clipboardCode, HOLD_MS, numberedPictures, oneChoice, pendingTaken, picturesIn, promptHistory, queuedReply, replyAnswers, replyKey, reviewPending, reviewSeen, routeHint, shownAsk, stampFresher, stopOf, testsText, contextText, contextHint, turnText, turnHint, turnTickIn, copyText, copyCut, lastReply, findCount, findIn, findParts, findStep, FOLD_LINES, FOLD_SHOWN, foldOf, lowOf, nthIn, allIn, plainOf, adoptable, BOOKMARKS_MAX, bookmarkStep, canBookmark, entryOf, keysOf, snippetOf, stateOf, staysOpen, withBookmark, withoutBookmark, type Bookmark, type PaneItem, dayBreaks, dayLabel, newBelow, newHint, newText, timeText, textScale, TEXT_SCALES, whereTag, withoutPicture, type Asks, type UsualReplies } from "../../core/src/shared/pane";
 import { type BackgroundShell, SHELL_FOLD, shellFold, shellLine, shellsMore, shellsWaiting, costNote, explainQuestion, newerSides, SIDE_ACTIONS, sideAnswerOf, sideModelLabel, sideOf, sidePickLabel, sidePickOf, SIDE_PICKS, sidesOf, sidesShown, sideState, sideWarm, WARM_MS, type AskedSide, type Side, fromKeyOk, fromNote, SIDE_COST_TIP, SIDE_FROM_TIP, sideKeyOk, sideLine, sidePartAnswerOf, sidePartOf, sideSaw } from "../../core/src/shared/pane";
+import { NEW_SINCE_READ_MS, newSinceAfterSend, newSinceKey, newSinceOf, newSinceReading, newSinceText, type NewSince } from "../../core/src/shared/pane";
 import type { ViewState } from "../../core/src/shared/types";
 import { ViewHost } from "../src/view";
 import { clipboardWrites, overrides, recorded } from "./vscode-stub";
@@ -1566,6 +1567,43 @@ test("since you last looked: its steps, files, tests and what it waits for, in a
   assert.equal(shownUpTo([{ at: 5 }, { at: 9 }, {}, { at: 7 }], 0), 9);
   assert.equal(shownUpTo([{ at: 5 }], 8), 8);
   assert.equal(shownUpTo(undefined, 3), 3);
+});
+
+// New since … (newsince.mjs, Plasma's NewSinceLine.qml too): a thin line in the conversation above the first
+// item since you last looked, where Since you last looked's click goes; it goes once read, or with a message
+test("new since: the line is where Since you last looked's click goes, stays for it, moves with the next one", () => {
+  const a: Away = { from: "seen", since: 1000, key: "m5", stepKey: "t1", steps: 12, replies: 2, files: [], fileCount: 0,
+                    test: null, asks: "", partial: false };
+  const at = newSinceOf(a, null)!;
+  assert.deepEqual(at, { key: "m5", stepKey: "t1", since: 1000 });
+  assert.equal(newSinceKey(at, false), awayTarget(a, false));
+  assert.equal(newSinceKey(at, true), awayTarget(a, true));
+  assert.equal(newSinceKey({ ...at, stepKey: "" }, true), "m5");
+  assert.equal(newSinceKey(null, false), "");
+  assert.equal(newSinceText("14:32"), "New since 14:32");
+  assert.equal(newSinceText("Yesterday 9:15"), "New since Yesterday 9:15");
+  // back with nothing new (no answer, or one with nothing to point at): where it was
+  assert.equal(newSinceOf(null, at), at);
+  assert.equal(newSinceOf({ ...a, key: "", stepKey: "" }, at), at);
+  assert.equal(newSinceOf(null, null), null);
+  // back again with more: the new point
+  assert.deepEqual(newSinceOf({ ...a, since: 9000, key: "m9", stepKey: "t7" }, at), { key: "m9", stepKey: "t7", since: 9000 });
+  // only steps since (no reply yet): on Steps only
+  const steps = newSinceOf({ ...a, key: "" }, null)!;
+  assert.equal(newSinceKey(steps, false), "");
+  assert.equal(newSinceKey(steps, true), "t1");
+});
+
+test("new since: one timer, only while there's a line and the window shows the chat's newest part; a message takes it", () => {
+  const at: NewSince = { key: "m5", stepKey: "t1", since: 1000 };
+  assert.equal(NEW_SINCE_READ_MS, 10000);
+  assert.equal(newSinceReading(at, true, true), true);
+  assert.equal(newSinceReading(at, false, true), false);   // (the window hidden)
+  assert.equal(newSinceReading(at, true, false), false);   // (scrolled up)
+  assert.equal(newSinceReading(null, true, true), false);   // (no line: nothing runs)
+  assert.equal(newSinceAfterSend(at, "fix the lexer"), null);
+  assert.equal(newSinceAfterSend(at, " /recap "), at);   // (Since you last looked's Recap: still catching up)
+  assert.equal(newSinceAfterSend(null, "go on"), null);
 });
 
 // A chat's tab tells pane.py how far it showed the chat (--seen), and asks what it did since a
