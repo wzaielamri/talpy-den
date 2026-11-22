@@ -2399,6 +2399,58 @@ class KeepGoingTests(TaskFixture):
         self.assertEqual(td.kept_step(k, sonnet, row, False, limits, self.now_ms), ("go on", reset + 60_000, "", ""))
         self.assertEqual(k["tries"], 0)
 
+    def capped_look(self, now_ms, keeper, cap, pct, read=None, resets=None, rows=(), stopped=None):
+        limits = {"windows": [{"key": "five_hour", "label": "5h", "pct": pct, "resetsAt": resets or self.reset,
+                               "reset": False}]}
+        if read:
+            limits["updatedAt"] = read
+        groups = [{"profileKeys": [".claude-work"], "sessions": list(rows), "limits": limits}]
+        td.note_caps(groups, cap, now_ms)
+        with mock.patch.object(td, "in_background", side_effect=lambda task: task()), \
+                mock.patch.object(td, "stop_all", side_effect=lambda home, extra, sessions: (stopped if stopped is not None else []).extend(
+                    s["sessionId"] for s in sessions)):
+            td.look_after_kept(self.home, self.cache_root(), [], groups, now_ms, cap, keeper=keeper)
+        return td.load_keep(self.cache_root())["capped"]
+
+    def test_a_noisy_reading_doesnt_release_the_cap(self):
+        # (2026-11-22, the final check: readings went 88, 83, 88 within 5 s; with a cap of 85 the 83 released
+        # the hold, and the next 88 stopped the chat again, one you had started after the cap)
+        rows = [{"sessionId": "busy1", "chatId": "busy1", "pid": 4242, "state": "working", "kind": "interactive"}]
+        stopped = []
+        for n, pct in enumerate((88, 83, 88)):
+            self.assertEqual(len(self.capped_look(self.now_ms + n * 2000, "plasma:a", 85, pct, read=self.now_ms + n * 2000,
+                                                  rows=rows, stopped=stopped)), 1, pct)
+        self.assertEqual(stopped, ["busy1"], "stopped once")
+
+    def test_a_hold_ends_when_its_window_really_reset_or_its_cap_changed(self):
+        # (2026-11-22, the final check) any copy that looks releases a hold once its window has really reset:
+        # read as reset, another window (another resetsAt), or below half in a reading newer than the hold
+        self.assertEqual(len(self.capped_look(self.now_ms, "vscode:b", 40, 60, read=self.now_ms)), 1)
+        # the copy that set it is gone (VS Code closed): Plasma's, with no cap, looks 30 s later
+        self.assertEqual(len(self.capped_look(self.now_ms + 30_000, "plasma:a", 0, 60, read=self.now_ms + 20_000)), 1,
+                         "still at 60%: held")
+        self.assertEqual(len(self.capped_look(self.now_ms + 31_000, "plasma:a", 0, 2, read=self.now_ms - 1000)), 1,
+                         "an older reading says nothing")
+        self.assertEqual(self.capped_look(self.now_ms + 32_000, "plasma:a", 0, 2, read=self.now_ms + 31_000), {},
+                         "reset early to 2%")
+        for later in ({"resets": self.reset + 3 * 3600_000}, {"pct": 0}):
+            self.capped_look(self.now_ms + 33_000, "vscode:b", 40, 60, read=self.now_ms + 33_000)
+            self.assertEqual(len(td.load_keep(self.cache_root())["capped"]), 1)
+            if "pct" in later:   # (a window past its reset reads as reset)
+                groups = [{"profileKeys": [".claude-work"], "sessions": [], "limits": {"windows": [
+                    {"key": "five_hour", "label": "5h", "pct": 0.0, "resetsAt": None, "reset": True, "endedAt": self.now_ms}]}}]
+                td.note_caps(groups, 0, self.now_ms + 60_000)
+                td.look_after_kept(self.home, self.cache_root(), [], groups, self.now_ms + 60_000, 0, keeper="plasma:a")
+                self.assertEqual(td.load_keep(self.cache_root())["capped"], {}, later)
+            else:
+                self.assertEqual(self.capped_look(self.now_ms + 60_000, "plasma:a", 0, 60, resets=later["resets"]), {}, later)
+        # its own copy changes the cap (to another value, or off): released; the other copy's change doesn't
+        self.capped_look(self.now_ms + 70_000, "vscode:b", 40, 60, read=self.now_ms + 70_000)
+        self.assertEqual(len(self.capped_look(self.now_ms + 100_000, "plasma:a", 30, 60)), 1, "another copy's cap")
+        self.assertEqual(self.capped_look(self.now_ms + 130_000, "vscode:b", 70, 60), {}, "its own: 40 → 70")
+        self.capped_look(self.now_ms + 131_000, "vscode:b", 40, 60)
+        self.assertEqual(self.capped_look(self.now_ms + 132_000, "vscode:b", 0, 60), {}, "its own: off")
+
     def test_the_usage_cap_stops_what_works_once_and_kept_chats_go_on_after(self):
         self.say(reply("On it.", self.now - 30, msg_id="m2"))
         td.keep_chat(self.cache_root(), ".claude-work", self.SID, "Fix it", str(self.folder), now_ms=self.now_ms - 60_000)

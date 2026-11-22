@@ -5158,7 +5158,7 @@ KEEP_HOST_STALE_MS = 15 * 60_000
 def load_keep(cache_root):
     """{"chats": the chats that keep going, "capped": {account|window: when
     that window resets}, for the windows the usage cap stopped chats in
-    ("cappedBy": {account|window: {"by": the copy, "pct": its cap}}),
+    ("cappedBy": {account|window: {"by": the copy, "pct": its cap, "at": when}}),
     "looked": {"at", "by", "cap"}: the copy that last looked after them}."""
     data = read_json(state_dir(cache_root) / "keep.json")
     data = data if isinstance(data, dict) else {}
@@ -5175,7 +5175,8 @@ def load_keep(cache_root):
     return {"chats": chats,
             "capped": capped,
             # (the copy whose cap set each, and that cap: it releases its own once its cap doesn't hold it)
-            "cappedBy": {w: {"by": v.get("by") if isinstance(v.get("by"), str) else "", "pct": int(number(v.get("pct")) or 0)}
+            "cappedBy": {w: {"by": v.get("by") if isinstance(v.get("by"), str) else "", "pct": int(number(v.get("pct")) or 0),
+                             "at": int(number(v.get("at")) or 0)}
                          for w, v in by.items() if w in capped and isinstance(v, dict)},
             # (the copy that looked after them last, when, with what usage cap: look_after_kept)
             "looked": {"at": int(number(looked.get("at")) or 0), "by": looked.get("by") if isinstance(looked.get("by"), str) else "",
@@ -5530,6 +5531,32 @@ def cap_window(group, cap, now_ms):
     return best
 
 
+def hold_over(mark, at, by, groups, keeper, cap, now_ms):
+    """Whether the hold of a window a usage cap reached (keep.json's capped
+    mark account|window, held until at; by: who set it, with what cap, when)
+    is over: its time came; the copy that set it (keeper, looking now with
+    cap) has its cap off or set to another value; or that window has really
+    reset, as this copy reads it (groups): read as reset, another window (a
+    reset that isn't the hold's), or below FREED_PCT in a reading newer than
+    the hold. Never on a reading that only dips below the cap (2026-11-22:
+    88, 83, 88 within 5 s; with a cap of 85 the 83 let the next 88 stop a chat
+    you had started again)."""
+    if at <= now_ms:
+        return True
+    if by.get("by") == keeper and (cap or 0) != (by.get("pct") or 0):
+        return True
+    keys, _, key = mark.rpartition("|")
+    g = next((g for g in groups if "|".join(g.get("profileKeys") or []) == keys), None)
+    limits = ((g.get("limits") or g.get("accountLimits")) if g else None) or {}
+    w = next((w for w in limits.get("windows") or [] if isinstance(w, dict) and w.get("key") == key), None)
+    if w is None:
+        return False
+    if w.get("reset") or (number(w.get("resetsAt")) and not same_window(w["resetsAt"], at)):
+        return True
+    read = number(limits.get("updatedAt"))
+    return number(w.get("pct")) is not None and w["pct"] < FREED_PCT and read is not None and read > (by.get("at") or 0)
+
+
 def note_held_caps(groups, cache_root, now_ms):
     """The windows a usage cap holds (keep.json's "capped": set by the copy
     that looks after the chats that keep going, the one with the lowest cap,
@@ -5621,12 +5648,8 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
         if look_skipped(data, keeper, cap, now_ms):
             return False
         changed = data.get("looked") != before_looked
-        own = {"|".join(g.get("profileKeys") or []) + "|" + g["cap"]["key"]
-               for g in groups if g.get("cap") and not g["cap"].get("held")}
         for mark, at in list(data["capped"].items()):
-            # (that window is over; or this copy set it and its cap doesn't hold it now: switched off, raised,
-            # or the window reset early)
-            if at <= now_ms or ((data["cappedBy"].get(mark) or {}).get("by") == keeper and mark not in own):
+            if hold_over(mark, at, data["cappedBy"].get(mark) or {}, groups, keeper, cap, now_ms):
                 del data["capped"][mark]
                 data["cappedBy"].pop(mark, None)
                 changed = True
@@ -5636,7 +5659,7 @@ def look_after_kept(home, cache_root, extra_dirs, groups, now_ms, cap=0, moves=N
             if not w or w.get("held") or mark in data["capped"]:
                 continue
             data["capped"][mark] = w["resetsAt"]
-            data["cappedBy"][mark] = {"by": keeper, "pct": cap or 0}
+            data["cappedBy"][mark] = {"by": keeper, "pct": cap or 0, "at": now_ms}
             changed = True
             for s in g.get("sessions", []):
                 if s.get("pid") is not None and s.get("state") == "working":
