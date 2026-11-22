@@ -4001,9 +4001,15 @@ Window {
                     HoverHandler {
                         id: listHover
                     }
+                    // (while the wheel or a touchpad moves the list, the message hovered as it began, as a browser
+                    // does: its tools go with their message till it rests, no hop to each one that passes under the
+                    // pointer, nothing to work out each frame)
+                    property Item heldRow: null
                     property Item hoverRow: {   // (a binding; a render sets one to draw its tools)
                         if (!listHover.hovered)
                             return null
+                        if (wheelScroll.moving)
+                            return heldRow
                         const p = listHover.point.position
                         void list.contentY   // (scrolled under the pointer: the one there now)
                         const at = listHover.parent.mapToItem(list.contentItem, p.x, p.y)
@@ -4016,9 +4022,9 @@ Window {
                         active: false
                         source: active ? "MessageTools.qml" : ""
                     }
-                    // (the wheel or a touchpad: the scroll view's Kirigami.WheelHandler moves
-                    // contentY itself, so the list isn't moving, but you scroll all the same;
-                    // this one only looks, the scroll view still scrolls)
+                    // (the wheel or a touchpad moves contentY itself, so the list isn't moving, but you
+                    // scroll all the same; this one only looks: with no key held WheelScroll scrolls, a step
+                    // a frame, and with one the scroll view's Kirigami.WheelHandler, as before)
                     WheelHandler {
                         blocking: false
                         onWheel: {
@@ -4027,6 +4033,17 @@ Window {
                             pane.away = null
                         }
                     }
+                    WheelScroll {
+                        id: wheelScroll
+                        flickable: list
+                        onScrolled: {   // (a touchpad's too, which the one above doesn't see)
+                            settle.stop()
+                            holdTop.stop()
+                            pane.away = null
+                        }
+                        onStarting: list.heldRow = list.hoverRow
+                    }
+                    readonly property QtObject wheelScroller: wheelScroll   // (tools/bench: a touchpad's events, with their phases)
 
                     // Ctrl+wheel: the text size
                     WheelHandler {
