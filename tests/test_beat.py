@@ -39,7 +39,11 @@ def run_qml(body, ms):
             "r = view.rootObject()\n"
             "QTimer.singleShot(int(sys.argv[2]), app.quit)\n"
             "app.exec()\n"
-            "print('REPORT', r.property('report') if r else '')\n")
+            "print('REPORT', r.property('report') if r else '')\n"
+            # (out at once: Python tearing the window down with its render thread still there hung now and then)
+            "sys.stdout.flush()\n"
+            "import os\n"
+            "os._exit(0)\n")
         # (rendered on a thread of its own, as plasmashell renders its windows:
         # how often a window is drawn depends on it; a bus of its own, as the screen lock is told on one)
         out = run_qt(["python3", "-c", script, str(qml), str(ms)], own_bus=bool(shutil.which("dbus-run-session")),
@@ -197,6 +201,19 @@ Item {
         self.assertEqual(seen[4], [True, False], seen)    # (asked as it started: locked)
         self.assertEqual(seen[9], [False, True], seen)    # unlocked: it ticks
         self.assertEqual(seen[15], [True, False], seen)   # locked again: it stops
+
+
+class QtRunTests(unittest.TestCase):
+    def test_its_qt_run_ends_once_it_has_reported(self):
+        # (2026-11-23) run_qml's python3 hung now and then once it had printed its report, as Python tore the
+        # window down with its render thread still there (threaded render loop, software backend): stuck in a
+        # futex for good, so the test hit its 60 s timeout (7 of 60 runs on a loaded machine, with a bus or none).
+        # It ends at once once the report is out
+        import inspect
+        source = inspect.getsource(run_qml)
+        report = source.index("print('REPORT', r.property('report') if r else '')")
+        self.assertIn("sys.stdout.flush()", source[report:])
+        self.assertIn("os._exit(0)", source[report:])
 
 
 class NothingMovesForNobodyTests(unittest.TestCase):
