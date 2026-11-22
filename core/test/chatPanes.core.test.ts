@@ -277,6 +277,14 @@ test("a host's tab reads for what was written at most once per gap, and the last
     changed.fire({ host: "lab", changed: ["h-1"], requests: false, wrote: [] });
     await tick();
     assert.equal(reads.length, first + 3, "its state changed there: at once");
+    // (hidden meanwhile: no read when the gap is over; shown again, it reads then, as it does)
+    await new Promise((r) => setTimeout(r, 100));
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    surfaces.opened[0].visible = false;
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(reads.length, first + 4, "hidden: the burst's last change isn't read");
   } finally {
     panes.dispose();
   }

@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 from test_pets import NEEDS_PLASMA_QML
 
@@ -92,7 +93,7 @@ class MenuCatcherTests(unittest.TestCase):
             qml = Path(tmp) / "page.qml"
             qml.write_text(PAGE % UI.as_uri())
             out = subprocess.run(["python3", "-c", SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertRegex(steps[1] if len(steps) > 1 else "", r"^row\d+$")   # a left click goes to the line, as before
         steps[1:2] = ["row"]
@@ -220,7 +221,7 @@ class PickerReloadTests(unittest.TestCase):
             qml = Path(tmp) / "page.qml"
             qml.write_text(PICKER % {"item": item, "code": code})
             out = subprocess.run(["python3", "-c", PICKER_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         self.assertEqual([eval(line) for line in out.stdout.split("\n") if line], [
             "# SSH hosts | lab | # Containers | box | Reload",
             "# SSH hosts | lab | # Containers | box | Reloading… (off)",   # (open again, at once)

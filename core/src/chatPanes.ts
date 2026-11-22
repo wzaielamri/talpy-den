@@ -775,7 +775,8 @@ class Pane implements Disposable {
     if (this.disposed || this.writtenTimer) return;
     const wait = this.writtenReadAt + Math.max(this.writtenGap, 2 * this.lastReadMs) - Date.now();
     if (wait > 0) {
-      this.writtenTimer = setTimeout(() => ((this.writtenTimer = undefined), this.loadWritten()), wait);
+      // (hidden meanwhile: read when it shows again, as onDidChangeView does)
+      this.writtenTimer = setTimeout(() => ((this.writtenTimer = undefined), this.surface.visible && this.loadWritten()), wait);
       return;
     }
     this.writtenReadAt = Date.now();

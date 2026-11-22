@@ -17,6 +17,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 from unittest import mock
 
 sys.dont_write_bytecode = True  # keep __pycache__ out of the plasmoid package
@@ -4306,7 +4307,7 @@ class CopyAsTextTests(unittest.TestCase):
                                         "text": json.dumps("The plan:\n\n1. item one\n2. item two\n   - nested\n\nend"),
                                         "boxes": "".join(COPY_BOX % {"name": n, "keys": k} for n, k in boxes.items())})
             out = subprocess.run(["python3", "-c", COPY_SCRIPT, str(qml), "item two", *boxes], capture_output=True, text=True,
-                                 timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 timeout=60, env=qt_env())
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         copied = json.loads(out.stdout.strip().splitlines()[-1])
         self.assertEqual(copied, {"qt": "\nitem two", "permission": "item two", "asked": "item two", "made": "item two"})
@@ -4424,7 +4425,7 @@ class NoSideScrollTests(unittest.TestCase):
                 page.write_text(SIDE_PAGE % {"ui": UI.as_uri(), "text": json.dumps(text), "fix": fix})
                 pages += [name, str(page)]
             out = subprocess.run(["python3", "-c", SIDE_SCRIPT, *pages], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         found = json.loads(out.stdout.strip().splitlines()[-1])
         self.assertEqual(found, {"qt": {"sideways": True, "down": True},   # (Qt's own: slid left)

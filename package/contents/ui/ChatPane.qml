@@ -1167,7 +1167,7 @@ Window {
     }
     Timer {
         id: writtenTimer
-        onTriggered: pane.loadWritten()
+        onTriggered: if (pane.shown) pane.loadWritten()   // (hidden meanwhile: read when it shows again, onShownChanged)
     }
 
     // Just after your message went: read often till the conversation has it

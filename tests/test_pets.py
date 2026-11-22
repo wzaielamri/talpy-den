@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 ROOT = Path(__file__).resolve().parent.parent / "package/contents"
 PETS = ROOT / "pets"
@@ -92,7 +93,7 @@ def run_hub(body, ms, live_answer='{"ok": true, "sessions": true}', report=None)
             "print(r.property('outputs'), r.property('liveAnswers'))\n"
             + (f"print('REPORT', r.property({report!r}))\n" if report else ""))
         out = subprocess.run(["python3", "-c", script, str(tmp / "t.qml"), str(ms)], capture_output=True, text=True,
-                             timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1"))
+                             timeout=60, env=qt_env(QT_FORCE_STDERR_LOGGING="1"))
         runs = [len((tmp / f"{name}.runs").read_text().split()) if (tmp / f"{name}.runs").exists() else 0
                 for name in ("check", "live")]
     lines = [line for line in out.stdout.splitlines() if not line.startswith("REPORT ")]
@@ -1860,7 +1861,7 @@ class SeveralCopiesTests(unittest.TestCase):
                 "QTimer.singleShot(120000, app.quit)\n"
                 "app.exec()\n")
             out = subprocess.run(["python3", "-c", script, str(qml)], capture_output=True, text=True, timeout=180,
-                                 env=dict(__import__("os").environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         costs = [float(line) for line in out.stdout.split()]
         self.assertEqual(len(costs), 5, out.stderr[-2000:])
         self.assertLess(costs[-1], 2 * costs[0] + 1, costs)
@@ -2079,7 +2080,7 @@ class QmlLoadsTests(unittest.TestCase):
     @NEEDS_PLASMA_QML
     def test_every_qml_file_of_the_widget_compiles(self):
         out = subprocess.run(["python3", "-c", QML_COMPILE, str(ROOT / "ui")], capture_output=True, text=True, timeout=300,
-                             env={**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"})
+                             env=qt_env())
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         self.assertEqual(out.stdout.strip(), "{}")
 
@@ -2220,6 +2221,8 @@ class NewChatTests(unittest.TestCase):
         written = written[:written.index("\n    }\n")]
         self.assertTrue("Math.max(5000, 2 * lastReadMs)" in written)
         self.assertTrue("writtenTimer.restart()" in written)
+        timer = pane[pane.index("id: writtenTimer"):][:200]
+        self.assertTrue("onTriggered: if (pane.shown) pane.loadWritten()" in timer, "hidden meanwhile: read once shown")
         self.assertTrue("lastReadMs = Date.now() - loadingSince" in pane)
 
     def test_the_watcher_runs_anew_only_for_a_chat_it_doesnt_watch(self):
@@ -3462,7 +3465,7 @@ class PetLifeTests(unittest.TestCase):
                 "app.exec()\n"
                 "print(view.rootObject().property('removed'))\n")
             out = subprocess.run(["python3", "-c", script, str(stage)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
+                                 env=qt_env(QT_QUICK_BACKEND="software",
                                           QT_FORCE_STDERR_LOGGING="1"))
         self.assertEqual(out.stdout.split()[-1:], ["1"], out.stderr[-2000:])
         self.assertNotIn("invalid context", out.stderr)
