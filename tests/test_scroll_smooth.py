@@ -127,7 +127,11 @@ def touchpad(hz, speed, ms, start=5.3):
     return out
 
 
-RUNS = [{"label": "notch", "events": [[0, "none", 120, 0]]},
+# (a first motion: the screen's frame learned, as in a plasmashell that has scrolled since it began; that
+# first one moves with the animation's first step, from its time since the event, and the test checks it
+# neither races nor jumps)
+RUNS = [{"label": "first", "events": [[0, "none", 120, 0]]},
+        {"label": "notch", "events": [[0, "none", 120, 0]]},
         {"label": "spin", "events": [[i * 50, "none", 120, 0] for i in range(6)]},
         {"label": "touchpad 90", "events": touchpad(90, 200, 600)},
         {"label": "touchpad 125", "events": touchpad(125, 200, 600)}]
@@ -295,6 +299,17 @@ class TheListsWheelTests(unittest.TestCase):
         self.assertIn("s.written = Math.round(y);", (UI / "wheel.mjs").read_text())
         self.assertNotIn("Behavior on", ws)
 
+    def test_its_first_step_knows_whether_a_frame_was_drawn_since_its_first_move(self):
+        # (plasmashell shows several windows: Qt steps the animations on a timer of their own then, and the
+        # first step can come before the frame that shows the first move; a frame drawn since, it goes a frame
+        # on from it: wheel.mjs tick()'s `drawn`, vscode/test/wheel.test.ts)
+        ws = (UI / "WheelScroll.qml").read_text()
+        self.assertIn("Wheel.tick(motion, gap, flickable.contentY, top(), bottom(), handler.drawn)", ws)
+        self.assertIn("function onAfterAnimating()", ws)
+        take = ws[ws.index("function take(event)"):ws.index("function tick(gap)")]
+        self.assertLess(take.index("handler.drawn = false"), take.index("flickable.contentY = r.put"))
+        self.assertNotIn("moves nothing", ws)   # (no word of a skip the clock no longer makes)
+
 
 class Retried:
     """Runs measured in real time, offscreen, can catch a computer busy with something else: a check that
@@ -326,6 +341,9 @@ class TheListScrollsEvenlyTests(Retried, unittest.TestCase):
 
     def test_a_notch_is_the_desktops_lines_its_steps_only_fall_by_whole_pixels(self):
         def check(runs):
+            first = runs["first"]["steps"]
+            self.assertEqual(sum(first), 60, first)
+            self.assertTrue(all(a <= 2 * b + 1 for a, b in zip(first, first[1:4])), first)   # (no race, then a crawl)
             r = runs["notch"]
             self.assertEqual(sum(r["steps"]), 60, r["steps"])
             # (its steps only fall; in its first few, where the offscreen loop steps again as an animation

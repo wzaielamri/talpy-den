@@ -123,6 +123,7 @@ function kirigami(events: Ev[]): number[] {
 }
 
 test("a notch eases out over Kirigami's 200 ms: the desktop's lines × 20 px, its steps only fall, the first frame moves", () => {
+  play(notches(1, 0));   // (the screen's frame learned: a window's first motion since plasmashell began is below)
   const { steps, still, late } = play(notches(1, 0));
   assert.equal(late, 0);   // (it moves in the frame that comes next: Kirigami's ease began a frame later)
   assert.equal(sum(steps), STEP);
@@ -156,6 +157,51 @@ test("on a screen of 75, 120, 144 or 165 frames a second every frame of a notch 
     const spin = play(notches(6, 50), { hz }).steps;   // (and a spin as at 60, in a window's first motion too)
     assert.equal(sum(spin), 6 * STEP, `${hz} Hz: ${spin}`);
     assert.ok(spin.every((s) => s > 0) && turns(spin) <= 2, `${hz} Hz: ${spin}`);
+  }
+});
+
+test("a touchpad's swipe on a screen of 120, 144 or 165 frames a second eases in without a frame standing still", () => {
+  for (const hz of [120, 144, 165]) {
+    const s = W.create(0), vs = 1000 / hz;
+    play(notches(1, 0), { hz, s });   // (the screen's frame learned)
+    for (const rate of [60, 90, 125]) {
+      for (const phase of [0.3, 2, 4, 5.3, 9]) {   // (its first move this long after a frame)
+        const at = Math.ceil(1000 / vs) * vs + (phase % vs) - 5.3;
+        const { steps } = play(touchpad(rate, 200, 400).map((e) => ({ ...e, t: e.t + at })), { hz, s, y0: s.written });
+        // (its first frames speed up, by whole pixels: none still, none slower than the one before but for rounding)
+        const start = steps.slice(0, 8);
+        assert.ok(start.every((x, k) => x >= 1 && (k === 0 || x >= start[k - 1] - 1)), `${hz} Hz, ${rate}/s, ${phase} ms: ${start}`);
+      }
+    }
+  }
+});
+
+test("the first motion since plasmashell began (no frame known yet) neither races nor crawls, whatever the screen", () => {
+  for (const hz of [60.03, 120, 144, 165]) {
+    W.resetFrames();   // (as plasmashell starts: no frame learned yet)
+    const { steps, late } = play(notches(1, 0), { hz });
+    assert.equal(sum(steps), STEP);
+    assert.ok(late <= 1, `${hz} Hz: ${late} frames late`);   // (it moves with the animation's first step)
+    for (let k = 1; k < 4; k++) assert.ok(steps[k - 1] <= 2 * steps[k] + 1 && steps[k] <= steps[k - 1] + 1, `${hz} Hz: ${steps}`);
+  }
+  W.resetFrames();
+  play(notches(1, 0));
+});
+
+test("its first step goes on from the frame that showed its first move, or by the time since the event when none was drawn yet", () => {
+  // (a notch 4 ms before the animation's first step: drawn since, that step shows a frame later, a frame
+  // on; not drawn (Qt's animations on a timer of their own, plasmashell's), both are drawn together:
+  // a frame and 4 ms of its way, not two frames)
+  const ease = (ms: number) => Math.round(STEP * (1 - (1 - ms / LONG) ** 3));
+  const vs = 1000 / 60.03;
+  for (const drawn of [true, false, undefined]) {
+    const s = W.create(0);
+    play(notches(1, 0), { s });
+    const at = s.y;
+    const r = W.input(s, { angle: 120, pixel: 0, phase: "none" }, at, -1e9, 1e9, STEP, LONG);
+    assert.equal(at - r.put, ease(vs));
+    const y = W.tick(s, 4, r.put, -1e9, 1e9, drawn);
+    assert.equal(at - y, drawn === false ? ease(vs + 4) : ease(2 * vs), String(drawn));
   }
 });
 

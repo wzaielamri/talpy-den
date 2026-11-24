@@ -12,8 +12,12 @@ import "wheel.mjs" as Wheel
 //
 // Its clock is the screen's frames, as Qt's own animations' (a vsync a step): a FrameAnimation's frameTime
 // is the computer's time between two steps, which comes a millisecond or two early or late, and a step
-// sized by it went up and down by as much. A second step in the same frame (the loop steps again when a
-// step changed nothing) moves nothing.
+// sized by it went up and down by as much; a step about a frame after the last goes a frame, one well
+// within a frame (the loop stepping again, or a screen faster than the frame known so far) goes the time
+// it took (wheel.mjs tick()). Its first step goes a frame on when a frame was drawn since its first move
+// (`drawn`, from the window's afterAnimating: the scene is synced to draw right after it), else the time
+// since the event: plasmashell shows several windows, and then Qt steps the animations on a timer of
+// their own, which can come before the frame that shows the first move.
 WheelHandler {
     id: handler
 
@@ -23,6 +27,7 @@ WheelHandler {
     readonly property real step: Application.styleHints.wheelScrollLines * 20
     readonly property int ease: Kirigami.Settings.smoothScroll ? Kirigami.Units.longDuration : 0
     property var motion: Wheel.create(0)
+    property bool drawn: false   // (a frame drawn since it began to move)
     readonly property bool moving: frames.running   // (it moves the list: a frame at a time)
     // (a scroll in progress: while it moves the list and 400 ms after its last event, Kirigami's)
     readonly property bool latched: moving || latch.running
@@ -44,8 +49,10 @@ WheelHandler {
                               flickable.contentY, top(), bottom(), step, ease)
         if (r.scrolled)
             handler.scrolled()
-        if (r.starting)
+        if (r.starting) {
+            handler.drawn = false
             handler.starting()   // (before its first step: the hovered message is held)
+        }
         if (!isNaN(r.put) && flickable.contentY !== r.put)
             flickable.contentY = r.put
         if (r.starting)
@@ -53,7 +60,8 @@ WheelHandler {
     }
     // A step of the animations: wheel.mjs tick()
     function tick(gap) {
-        const y = Wheel.tick(motion, gap, flickable.contentY, top(), bottom())
+        const y = Wheel.tick(motion, gap, flickable.contentY, top(), bottom(), handler.drawn)
+        handler.drawn = true
         if (!isNaN(y) && flickable.contentY !== y)
             flickable.contentY = y
         if (!Wheel.moving(motion))
@@ -86,6 +94,16 @@ WheelHandler {
             acceptedModifiers: Qt.NoModifier
             orientation: Qt.Vertical
             onWheel: event => handler.take(event)
+        }
+    }
+
+    // (the window about to draw a frame: afterAnimating comes on this thread just before the scene is
+    // synced for it; listened to only from its first move to its first step)
+    property Connections frameDrawn: Connections {
+        target: handler.flickable.Window.window
+        enabled: handler.frames.running && !handler.drawn
+        function onAfterAnimating() {
+            handler.drawn = true
         }
     }
 
