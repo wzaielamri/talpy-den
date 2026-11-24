@@ -11,10 +11,13 @@ own, and child processes inherit the guard.
 
 Each test that runs the guard's claude fails, naming what it was asked.
 
-No test reaches your desktop's session either: your session bus and your display
-(DBUS_SESSION_BUS_ADDRESS, DISPLAY, WAYLAND_DISPLAY) are taken out of the
-environment, so nothing a test starts (Qt runs offscreen; one that needs a bus
-starts its own, dbus-run-session) can find them."""
+No test reaches your desktop's session either: your display (DISPLAY,
+WAYLAND_DISPLAY) is taken out of the environment, the session bus's address is
+one that isn't there (unix:path=/nonexistent/bus: taken out, libdbus and GDBus
+would look for your bus at $XDG_RUNTIME_DIR/bus), and XDG_RUNTIME_DIR is a
+folder of the tests' own (yours has your bus's, your display's and your sound
+server's sockets), removed after. So nothing a test starts (Qt runs offscreen;
+one that needs a bus starts its own, dbus-run-session) can find them."""
 import atexit
 import os
 import shutil
@@ -43,8 +46,12 @@ def _install():
         exe.chmod(0o755)
     os.environ["PATH"] = os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
     os.environ["SHELL"] = str(shell)
-    for k in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY"):
+    for k in ("DISPLAY", "WAYLAND_DISPLAY"):
         os.environ.pop(k, None)
+    run_dir = folder / "run"
+    run_dir.mkdir(mode=0o700)
+    os.environ["XDG_RUNTIME_DIR"] = str(run_dir)
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=/nonexistent/bus"
 
     run = unittest.TestCase.run
 

@@ -39,6 +39,7 @@ for comparing a step with the one before it, on this computer, not what the
 desktop shows.
 """
 
+import atexit
 import json
 import os
 import re
@@ -92,23 +93,38 @@ def home_for(work):
 
 # (your session's D-Bus and your display: never handed to anything the bench starts)
 YOURS = ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY")
+# (the session bus's address it's given instead: one that isn't there. With none, libdbus and GDBus (a
+# browser's, Qt's) look for the session bus at $XDG_RUNTIME_DIR/bus, which is yours)
+NO_BUS = "unix:path=/nonexistent/bus"
 # (a headless Chromium's: no keyring of yours either)
 CHROME_FLAGS = ["--password-store=basic", "--use-mock-keychain"]
+_runtime = []
+
+
+def own_runtime():
+    """A runtime folder of the bench's own (private, removed as it ends), for what it starts: yours has your
+    session bus's, your display's, your sound server's and your keyring's sockets."""
+    if not _runtime:
+        _runtime.append(tempfile.mkdtemp(prefix="talpy-bench-run-"))
+        atexit.register(shutil.rmtree, _runtime[0], True)
+    return _runtime[0]
 
 
 def env_for(home):
     """This environment with the made-up home, none of your own XDG folders (render_popup.sh sets its own),
-    and no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen)."""
+    no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen) and a runtime
+    folder of its own."""
     env = {k: v for k, v in os.environ.items()
-           if (not k.startswith("XDG_") or k in ("XDG_RUNTIME_DIR", "XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and k not in YOURS}
-    env["HOME"] = str(home)
+           if (not k.startswith("XDG_") or k in ("XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and k not in YOURS}
+    env.update(HOME=str(home), DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime())
     return env
 
 
 def browser_env(home=None):
     """A headless browser's: this environment with no session bus or display of yours, none of your XDG
-    folders, and a made-up home when given."""
-    env = {k: v for k, v in os.environ.items() if (not k.startswith("XDG_") or k == "XDG_RUNTIME_DIR") and k not in YOURS}
+    folders, a runtime folder of its own, and a made-up home when given."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_") and k not in YOURS}
+    env.update(DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime())
     if home is not None:
         env["HOME"] = str(home)
     return env

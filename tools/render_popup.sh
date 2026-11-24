@@ -26,27 +26,27 @@
 # in it, which dropped every host's chats from it while a render ran; its
 # watcher could take a chat another program asked to open (opens/); and its
 # SSH connections were your widget's. Nor your session's D-Bus or your display:
-# the render runs on a D-Bus of its own (dbus-run-session), with no display of
-# yours, and what it started on that bus (a portal, the activity manager…) is
-# ended by its pid when it's done.
+# no display of yours, and until the widget runs, a bus address that isn't
+# there (with none, D-Bus's clients look for your bus in your runtime folder);
+# the widget runs on a D-Bus of its own (dbus-run-session), started once its
+# folders are set, so what D-Bus starts on it (a portal, the activity manager…)
+# has the render's folders too, and is ended by its pid when it's done.
 set -euo pipefail
-if [ "${RENDER_OWN_BUS:-}" != "$PPID" ] || [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
-  # (once more, on a bus of its own: dbus-run-session, with this pid as exec keeps it, is its parent there)
-  exec env -u DBUS_SESSION_BUS_ADDRESS -u DISPLAY -u WAYLAND_DISPLAY RENDER_OWN_BUS=$$ QT_QPA_PLATFORM=offscreen \
-    dbus-run-session -- "$BASH" "${BASH_SOURCE[0]}" "$@"
-fi
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/bus QT_QPA_PLATFORM=offscreen
+unset DISPLAY WAYLAND_DISPLAY
 umask 077  # the PNG and log show your real chats: keep them private
 out=$(realpath -m "$1"); secs=${2:-7}
 rm -f -- "$out" "${out%.png}.log"  # new files, so an old render's wider mode doesn't stay
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 work=$(mktemp -d)
-bus=${DBUS_SESSION_BUS_ADDRESS%%,*}
-# (what's still on its bus once it's done: ended by pid, but not this script and dbus-run-session)
+# (what's still on the widget's bus once it's done (its address noted as it starts, below): ended by pid)
 leftovers() {
-  local p a
+  local p a bus=""
+  [ -f "$work/bus" ] && bus=$(cat "$work/bus")
+  [ -n "$bus" ] || return 0
   for p in /proc/[0-9]*; do
     p=${p#/proc/}
-    [ "$p" = "$$" ] || [ "$p" = "$PPID" ] && continue
+    [ "$p" = "$$" ] && continue
     a=$( { tr '\0' '\n' < "/proc/$p/environ"; } 2>/dev/null | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | cut -d, -f1) || true
     [ -n "$a" ] && [ "$a" = "$bus" ] && kill "$p" 2>/dev/null || true
   done
@@ -129,7 +129,7 @@ fi
   [ -n "${SSH_HOSTS:-}" ] && printf '\n[Applets][1][Configuration][General]\nsshHosts=%s\nremotePollSeconds=10\n' "$SSH_HOSTS"
 } > "$work/config/plasmawindowedrc"
 # (its runtime folder always in $work, never RENDER_KEEP's: private as the real one is, and short, for ssh's
-# sockets in it, remote.py's SOCKET_DIR_MAX; its session bus is its own, above)
+# sockets in it, remote.py's SOCKET_DIR_MAX; its session bus is its own, below)
 mkdir -m 700 "$work/run"
 export XDG_CONFIG_HOME="$work/config" XDG_STATE_HOME="$work/state" XDG_DATA_HOME="$data" XDG_CACHE_HOME="$cache" \
   XDG_RUNTIME_DIR="$work/run"
@@ -141,6 +141,9 @@ elif [ -d "$installed" ]; then
 else
   kpackagetool6 -t Plasma/Applet -i "$work/pkg" >/dev/null
 fi
-QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
+# The widget on a session bus of its own, started now that the render's folders are set: the bus, and what
+# D-Bus starts on it (a portal, the activity manager, the secret service…), have them, not yours
+QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
+  dbus-run-session -- bash -c 'printf %s "${DBUS_SESSION_BUS_ADDRESS%%,*}" > "$1"; shift; exec "$@"' render-bus "$work/bus" \
   timeout $((secs + 20)) plasmawindowed org.wzaielamri.talpyden.rendertest > "${out%.png}.log" 2>&1 || true
 grep -E "RENDER|TypeError|ReferenceError|Error:" "${out%.png}.log" || echo "no RENDER line: see ${out%.png}.log"

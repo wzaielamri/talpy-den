@@ -22,6 +22,7 @@ import http.server
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -81,23 +82,25 @@ def main(argv):
         home, profile = work / "home", work / "profile"
         home.mkdir()
         profile.mkdir()
-        env = bench.browser_env(home)   # (a made-up home: nothing of yours is read or written; no bus or display of yours)
+        env = bench.browser_env(home)   # (a made-up home: nothing of yours is read or written; no bus, display or runtime folder of yours)
         url = f"http://127.0.0.1:{server.server_port}/newsince.html"
         chrome = os.environ.get("TALPY_BENCH_CHROME")
         browser = subprocess.Popen([chrome, "--headless=new", f"--user-data-dir={profile}", "--no-first-run", "--window-size=800,760",
                                     *bench.CHROME_FLAGS, url]
                                    if chrome else
                                    ["firefox", "--headless", "--no-remote", "--profile", str(profile), "--window-size", "800,760", url],
-                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                   env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   start_new_session=True)   # (its processes a group of their own: they go with it)
         try:
             if not got.wait(240):
                 result["checks"] = [{"what": "an answer in 4 minutes", "ok": False, "seen": ""}]
         finally:
-            browser.terminate()
+            os.killpg(browser.pid, signal.SIGTERM)
             try:
                 browser.wait(10)
             except subprocess.TimeoutExpired:
-                browser.kill()
+                os.killpg(browser.pid, signal.SIGKILL)
+                browser.wait()
             server.shutdown()
     finally:
         shutil.rmtree(work, ignore_errors=True)
