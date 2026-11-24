@@ -33,6 +33,7 @@ WheelHandler {
     readonly property int ease: Kirigami.Settings.smoothScroll ? Kirigami.Units.longDuration : 0
     property var motion: Wheel.create(0)
     property bool moving: false   // (it moves the list: a step each frame of its window)
+    onMovingChanged: if (!moving) watch.stop()
     // (a scroll in progress: while it moves the list and 400 ms after its last event, Kirigami's)
     readonly property bool latched: moving || latch.running
     signal scrolled()                // (each event that scrolls the list)
@@ -59,6 +60,7 @@ WheelHandler {
             flickable.contentY = r.put
         if (r.starting) {
             moving = true
+            watch.restart()
             next()   // (its first step: the window's next frame)
         }
     }
@@ -67,10 +69,19 @@ WheelHandler {
         const y = Wheel.tick(motion, Date.now(), flickable.contentY, top(), bottom())
         if (!isNaN(y) && flickable.contentY !== y)
             flickable.contentY = y
-        if (Wheel.moving(motion))
+        if (Wheel.moving(motion)) {
+            watch.restart()
             next()
-        else
+        } else {
             moving = false
+        }
+    }
+    // Its window stopped drawing it: there at once, where its frames would have taken it (wheel.mjs finish())
+    function finish() {
+        const y = Wheel.finish(motion, top(), bottom())
+        if (flickable.contentY !== y)
+            flickable.contentY = y
+        moving = false
     }
     function next() {
         const w = flickable.Window.window
@@ -107,6 +118,14 @@ WheelHandler {
         }
     }
 
+    // (no frame of its window for 100 ms: it was hidden, or minimized (Wayland: no frame callback comes, and
+    // Qt takes a window with none for 100 ms for not shown, qwaylandwindow.cpp mFrameCallbackTimeout), and its
+    // frames don't come: it finishes at once rather than wait, held, to jump on when shown. Running only
+    // while it moves, again from each frame)
+    property Timer watch: Timer {
+        interval: 100
+        onTriggered: handler.finish()
+    }
     // (its window about to draw a frame: listened to only while it moves)
     property Connections frames: Connections {
         target: handler.flickable.Window.window

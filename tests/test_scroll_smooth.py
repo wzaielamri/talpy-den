@@ -50,7 +50,7 @@ def what_the_list_has_for_the_wheel():
 
 RUNNER = r"""
 import json, sys, time
-from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication, QWheelEvent
 from PySide6.QtQuick import QQuickView, QQuickWindow
 
@@ -77,31 +77,74 @@ PHASE = {"none": Qt.NoScrollPhase, "begin": Qt.ScrollBegin, "update": Qt.ScrollU
 VSYNC = 1000 / 60.03
 T0 = time.perf_counter()
 
+# The screen as Qt Wayland meets it (qwaylandwindow.cpp): a frame asked for (requestUpdate: here the platform's
+# update request, given at once, QT_QPA_UPDATE_IDLE_TIME=0) with no frame callback pending is drawn at once;
+# a frame drawn, the next waits for the compositor's frame callback, which comes at the next vsync (60.03 a
+# second, a callback reached half a vsync late or more missing that frame). Nothing asked for, nothing drawn.
+# Hidden, or stalled (a minimized window: the compositor sends it no frame callbacks), nothing is drawn
+wl = {"waiting": False, "asked": False, "delivering": False, "stalled": False}
+
+
+def draw():
+    wl["asked"], wl["waiting"], wl["delivering"] = False, True, True
+    QGuiApplication.sendEvent(view, QEvent(QEvent.UpdateRequest))
+    wl["delivering"] = False
+
+
+class Frames(QObject):
+    def eventFilter(self, obj, ev):
+        if ev.type() != QEvent.UpdateRequest or wl["delivering"]:
+            return False
+        if not wl["waiting"] and not wl["stalled"] and view.isVisible():
+            wl["asked"], wl["waiting"] = False, True   # (no callback pending: drawn at once)
+            return False
+        wl["asked"] = True
+        return True
+
+
+frames = Frames()
+view.installEventFilter(frames)
+
+
+def snapshot(tag):
+    return {"tag": tag, "at": len(root.property("ys").toVariant() if hasattr(root.property("ys"), "toVariant") else root.property("ys")),
+            "moving": root.property("idle") is False, "quiet": root.property("quiet"), "y": root.property("listY")}
+
 
 def tick():
-    # The screen's frames: the window gets an update request each vsync (60.03 a second), as a compositor's
-    # frame callbacks come (the platform's own, QT_QPA_UPDATE_IDLE_TIME, never comes); the events that came
-    # before a frame go first
     now = (time.perf_counter() - T0) * 1000
     if state.get("on"):
         events = runs[state["run"]]["events"]
         at = (time.perf_counter() - state["t0"]) * 1000
         while state["i"] < len(events) and events[state["i"]][0] <= at:
             t, phase, angle, pixel = events[state["i"]]
+            state["i"] += 1
+            if phase in ("hide", "show", "stall", "resume"):
+                state["marks"].append(snapshot(phase))
+                if phase == "hide":
+                    view.hide()
+                elif phase == "show":
+                    view.show()
+                else:
+                    wl["stalled"] = phase == "stall"
+                continue
+            if not view.isVisible():
+                continue   # (a hidden window gets no wheel)
             src = Qt.MouseEventNotSynthesized if phase == "none" else Qt.MouseEventSynthesizedBySystem
             ev = QWheelEvent(QPointF(300, 350), QPointF(300, 350), QPoint(0, pixel), QPoint(0, angle), Qt.NoButton,
                              Qt.NoModifier, PHASE[phase], False, src)
             ev.setTimestamp(int(t))
             QGuiApplication.sendEvent(view, ev)
-            state["i"] += 1
         if state["i"] >= len(events) and not state.get("ending"):
             state["ending"] = True
             QTimer.singleShot(900, finish)
     k = int(now // VSYNC)
     if k > state["vsync"]:
         state["vsync"] = k
-        if now - k * VSYNC < 0.5 * VSYNC:   # (late by half a vsync or more, the window missed that frame: none till the next)
-            QGuiApplication.sendEvent(view, QEvent(QEvent.UpdateRequest))
+        if wl["waiting"] and not wl["stalled"] and now - k * VSYNC < 0.5 * VSYNC:   # (the frame callback)
+            wl["waiting"] = False
+            if wl["asked"] and view.isVisible():
+                draw()
 
 
 def start():
@@ -114,8 +157,14 @@ def start():
 
 
 def go():
+    # (its time 0 at `phase` ms after a vsync, when the run says)
     root.setProperty("on", True)
-    state["i"], state["t0"], state["on"], state["ending"] = 0, time.perf_counter(), True, False
+    t0 = time.perf_counter()
+    phase = runs[state["run"]].get("phase")
+    if phase is not None:
+        k = int((t0 - T0) * 1000 // VSYNC) + 2
+        t0 = T0 + (k * VSYNC + phase) / 1000
+    state["i"], state["t0"], state["on"], state["ending"], state["marks"] = 0, t0, True, False, []
 
 
 def finish():
@@ -123,7 +172,8 @@ def finish():
     root.setProperty("on", False)
     get = lambda k: [float(x) for x in (lambda v: v.toVariant() if hasattr(v, "toVariant") else v)(root.property(k))]
     out.append({"label": runs[state["run"]]["label"], "ys": get("ys"), "ts": get("ts"), "idle": root.property("idle"),
-                "inner": root.property("inner")})
+                "inner": root.property("inner"), "quiet": root.property("quiet"), "y": root.property("listY"),
+                "marks": state["marks"]})
     state["run"] += 1
     QTimer.singleShot(300, start)
 
@@ -188,10 +238,11 @@ BOXED = """Item {
 
 
 def run_scene(wheel, nested=False, runs=RUNS, windows=1, ui=None):
-    """The runs above in a list as Talpy Chat's, in a window drawn at 60.03 frames a second (with `windows` - 1
-    more shown beside it, as plasmashell shows its panel and desktop); each run's place in each frame drawn, as
-    the window was about to draw it (its afterAnimating, before the scroller's step there: the place each frame
-    draws, a frame apart either way)."""
+    """The runs above in a list as Talpy Chat's, in a window drawn as Qt Wayland draws it on a 60.03 Hz screen
+    (RUNNER: a frame only when asked for, at once when none is pending, else at the next vsync), with
+    `windows` - 1 more shown beside it (as plasmashell shows its panel and desktop); each run's place in each
+    frame drawn, as the window was about to draw it (its afterAnimating, before the scroller's step there:
+    the place each frame draws, a frame apart either way)."""
     scene = """
 import QtQuick
 import org.kde.plasma.components as PlasmaComponents3
@@ -204,6 +255,10 @@ Item {
     property bool on: false
     property real startY: -1
     readonly property bool idle: wheel === null || !wheel.moving
+    // (nothing of the scroller listening or running: its frames, the lock, its watch)
+    readonly property bool quiet: wheel === null || !(wheel.moving || (wheel.frames && wheel.frames.enabled === true)
+                                                     || (wheel.lock && wheel.lock.enabled === true) || (wheel.watch && wheel.watch.running === true))
+    readonly property real listY: list.contentY
     property var boxes: []
     readonly property real inner: boxes.length ? boxes[0].contentItem.contentY : -1
     property QtObject wheel: %s
@@ -236,7 +291,7 @@ Item {
         # (no D-Bus at all: nothing to start on any bus; offscreen, drawn on a thread of its own as plasmashell
         # draws; its frames the runner's, a vsync apart)
         env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", QSG_RENDER_LOOP="threaded",
-                   QT_QPA_UPDATE_IDLE_TIME="100000000", DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/bus")
+                   QT_QPA_UPDATE_IDLE_TIME="0", DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/bus")
         r = subprocess.run(["python3", str(Path(tmp) / "run.py"), str(Path(tmp) / "scene.qml"), str(Path(tmp) / "runs.json"),
                             str(windows)], capture_output=True, text=True, timeout=120, env=env)
     line = next((x for x in r.stdout.splitlines() if x.startswith("RESULT ")), None)
@@ -248,7 +303,7 @@ Item {
         steps = [a - b for a, b in zip(ys, ys[1:])]
         moving = [k for k, s in enumerate(steps) if abs(s) > 1e-6]
         out[d["label"]] = {"ys": ys, "ts": d["ts"], "steps": steps[moving[0]:moving[-1] + 1] if moving else [],
-                           "idle": d["idle"], "inner": d["inner"]}
+                           "idle": d["idle"], "inner": d["inner"], "quiet": d["quiet"], "y": d["y"], "marks": d["marks"]}
     return out
 
 
@@ -315,14 +370,17 @@ class TheListsWheelTests(unittest.TestCase):
 
     def test_it_runs_only_while_it_moves_and_by_whole_pixels(self):
         ws = (UI / "WheelScroll.qml").read_text()
-        self.assertEqual(ws.count("Timer {"), 1)   # (the 400 ms latch, once, after an event: not repeating)
+        # (the 400 ms latch, after an event, and the watch for a window that stopped drawing, only while it
+        # moves: single-shot both)
+        self.assertEqual(ws.count("Timer {"), 2)
         self.assertNotIn("repeat: true", ws)
+        self.assertIn("onMovingChanged: if (!moving) watch.stop()", ws)
         # (its frames listened to only while it moves; the next one asked for only while it moves)
         frames = ws[ws.index("property Connections frames: Connections {"):]
         self.assertIn("enabled: handler.moving\n", frames[:frames.index("}")])
         self.assertEqual(re.sub(r"//.*", "", ws).count("requestUpdate()"), 1)
         frame = ws[ws.index("function frame()"):ws.index("function next()")]
-        self.assertRegex(frame, r"if \(Wheel\.moving\(motion\)\)\n\s*next\(\)\n\s*else\n\s*moving = false")
+        self.assertRegex(frame, r"if \(Wheel\.moving\(motion\)\) \{\n\s*watch\.restart\(\)\n\s*next\(\)\n\s*\} else \{\n\s*moving = false")
         self.assertIn("s.written = Math.round(y);", (UI / "wheel.mjs").read_text())
         self.assertNotIn("Behavior on", ws)
 
@@ -447,6 +505,80 @@ class AStepEachFrameBesideOtherWindowsTests(Retried, unittest.TestCase):
             # (a spin: up once and down once, no frame still or doubled inside it)
             self.assertLessEqual(turns(spin[3:]), 1, spin)
             self.assertNotIn(0, spin[:-3], spin)
+        self.retried(check)
+
+
+# (a motion from rest a few ms before a vsync: its window, at rest, draws its first frame at once and its
+# second at the vsync, a few ms later)
+VSYNC = 1000 / 60.03
+FROM_REST = [RUNS[0]] + [{"label": f"notch {ms} ms before a vsync", "phase": VSYNC - ms, "events": [[0, "none", 120, 0]]}
+                         for ms in (2, 4, 7)] + \
+            [{"label": "spin 3 ms before a vsync", "phase": VSYNC - 3, "events": [[i * 50, "none", 120, 0] for i in range(4)]}]
+
+
+@NEEDS_QT
+class AMotionFromRestTests(Retried, unittest.TestCase):
+    """A window at rest draws a frame asked for at once, the next at the compositor's frame callback (Qt
+    Wayland, qwaylandwindow.cpp requestUpdate), 0 to a frame later; the two are shown a vsync apart. The
+    runner draws only the frames asked for, so the scroller must ask for its own."""
+    runs_of = FROM_REST
+
+    def test_its_second_frame_goes_a_frame(self):
+        # (round 3: 14, 1, 11 with the vsync 2 ms after the first frame; a frame's way: 14, 11)
+        def check(runs):
+            for label in [r["label"] for r in FROM_REST[1:]]:
+                steps = runs[label]["steps"]
+                self.assertTrue(abs(steps[0] - 14) <= 1 and abs(steps[1] - 11) <= 2, f"{label}: {steps}")
+        self.retried(check)
+
+    def test_a_notch_asks_for_its_frames_moves_and_finishes(self):
+        # (nothing else draws the window here: a scroller that didn't ask for its frames wouldn't move a frame at
+        # a time; it would only jump there as its watch gives up, 100 ms on)
+        def check(runs):
+            for label in [r["label"] for r in FROM_REST[1:4]]:
+                steps = runs[label]["steps"]
+                self.assertEqual(sum(steps), 60, label)
+                self.assertTrue(len(steps) >= 8 and max(steps) <= 15, f"{label}: {steps}")
+                self.assertTrue(runs[label]["idle"] and runs[label]["quiet"], label)
+        self.retried(check)
+
+
+# (its window hidden, or minimized (no frame callbacks; still shown), during a notch, a spin and a touchpad's
+# glide; shown again later)
+GONE = [RUNS[0],
+        {"label": "notch, hidden", "events": [[0, "none", 120, 0], [40, "hide", 0, 0], [700, "show", 0, 0]]},
+        {"label": "spin, hidden", "events": [[i * 50, "none", 120, 0] for i in range(6) if i * 50 < 180]
+                                            + [[180, "hide", 0, 0]] + [[i * 50, "none", 120, 0] for i in range(6) if i * 50 > 180]
+                                            + [[800, "show", 0, 0]]},
+        {"label": "glide", "events": touchpad(125, 200, 300)},
+        {"label": "glide, hidden", "events": touchpad(125, 200, 300) + [[360, "hide", 0, 0], [1000, "show", 0, 0]]},
+        {"label": "notch, minimized", "events": [[0, "none", 120, 0], [40, "stall", 0, 0], [700, "resume", 0, 0]]}]
+
+
+@NEEDS_QT
+class AMotionItsWindowStopsDrawingTests(Retried, unittest.TestCase):
+    """Its window hidden or minimized mid-motion draws no frame, so no step comes: the motion ends at once
+    where it was going (in whole pixels), nothing of it stays on, and showing the window again moves
+    nothing (round 3's held it, moving, and jumped 21 px on show)."""
+    runs_of = GONE
+
+    def test_it_ends_where_it_was_going_and_nothing_stays_on(self):
+        def check(runs):
+            start = {r["label"]: r.get("start", 6000 + k) for k, r in enumerate(GONE)}
+            glide = start["glide"] - runs["glide"]["y"]   # (up: contentY goes down)
+            for label, went, back in (("notch, hidden", 60, "show"), ("spin, hidden", 4 * 60, "show"),
+                                      ("glide, hidden", glide, "show"), ("notch, minimized", 60, "resume")):
+                r = runs[label]
+                mark = next(m for m in r["marks"] if m["tag"] == back)
+                # (by the time it's shown again: ended where it was going, nothing on)
+                self.assertFalse(mark["moving"], f"{label}: {mark}")
+                self.assertTrue(mark["quiet"], f"{label}: {mark}")
+                self.assertLessEqual(abs(start[label] - mark["y"] - went), 2 if label.startswith("glide") else 0, f"{label}: {mark}")
+                self.assertEqual(mark["y"], round(mark["y"]), label)
+                # (shown again: nothing moves)
+                after = r["ys"][mark["at"]:]
+                self.assertTrue(all(y == mark["y"] for y in after), f"{label}: after {back} {after[:12]}")
+                self.assertTrue(r["idle"] and r["quiet"], label)
         self.retried(check)
 
 

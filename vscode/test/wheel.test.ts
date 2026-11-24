@@ -182,7 +182,9 @@ test("the first motion since plasmashell began (no frame known yet) neither race
     W.resetFrames();   // (as plasmashell starts: no frame learned yet)
     const { steps, late } = play(notches(1, 0), { hz });
     assert.equal(sum(steps), STEP);
-    assert.ok(late <= 1, `${hz} Hz: ${late} frames late`);   // (it moves with the animation's first step)
+    // (it moves from its third frame: the gap between its first two isn't a frame where Qt Wayland draws the
+    // first at once)
+    assert.ok(late <= 2, `${hz} Hz: ${late} frames late`);
     for (let k = 1; k < 4; k++) assert.ok(steps[k - 1] <= 2 * steps[k] + 1 && steps[k] <= steps[k - 1] + 1, `${hz} Hz: ${steps}`);
   }
   W.resetFrames();
@@ -203,6 +205,77 @@ test("a step each frame of its window, as long as the frames since the last: whe
     const { ys } = play(notches(1, 0), { miss: (k) => k === missed });
     assert.equal(ys[missed], ys[missed - 1], `frame ${missed}`);
     assert.ok(near(ys.slice(missed + 1, 30), ref.ys.slice(missed + 1, 30)), `frame ${missed} missed: ${stepsOf(ys)} / ${ref.steps}`);
+  }
+});
+
+// (ticks at the given times, as an afterAnimating each: the list's steps)
+function ticks(s: W.Wheel, times: number[], y0: number) {
+  const ys = [y0];
+  let y = y0;
+  for (const t of times) {
+    const p = W.tick(s, Math.floor(t), y, -1e9, 1e9);
+    if (!Number.isNaN(p)) y = p;
+    ys.push(y);
+    if (!W.moving(s)) break;
+  }
+  return stepsOf(ys);
+}
+
+test("a notch on a window at rest: its second step goes a frame, though Qt Wayland drew its first at once", () => {
+  // (Qt Wayland: an update asked for with no frame callback pending comes at once, the next at the
+  // compositor's frame callback, 0 to a frame later; the two are shown a vsync apart all the same.
+  // Before: 14, 1, 11 with the callback 2 ms after the first frame)
+  const ref = play(notches(1, 0)).steps;
+  for (const callback of [2, 4, 6, 8, 10, 14, 16]) {
+    const s = W.create(0);
+    const e = 5000.2;
+    W.input(s, { angle: 120, pixel: 0, phase: "none" }, 0, -1e9, 1e9, STEP, LONG);
+    const steps = ticks(s, [e + 0.5, ...Array.from({ length: 20 }, (_, n) => e + callback + n * F)], 0);
+    assert.ok(steps.length === ref.length && steps.every((x, k) => Math.abs(x - ref[k]) <= 1), `callback ${callback} ms after: ${steps} / ${ref}`);
+  }
+});
+
+test("frames missed for a while (a busy window) don't teach it a longer frame: back on every frame, back to its pace", () => {
+  // (a spin; for ten frames the window draws every other vsync, then every vsync again: each frame's step
+  // goes the vsyncs it stands for, and none after alternates single and double)
+  const s = W.create(0);
+  let y = 0;
+  const t0 = 5000, notch = Array.from({ length: 40 }, (_, i) => t0 + i * 25);
+  const frames: number[] = [];
+  let t = t0 + F;
+  while (t < t0 + 300) { frames.push(t); t += F; }
+  for (let i = 0; i < 10; i++) { t += F; frames.push(t); t += F; }
+  for (let i = 0; i < 20; i++) { frames.push(t); t += F; }
+  let i = 0;
+  const steps: number[] = [];
+  for (const ft of frames) {
+    while (i < notch.length && notch[i] <= ft) { W.input(s, { angle: 120, pixel: 0, phase: "none" }, y, -1e9, 1e9, STEP, LONG); i++; }
+    const p = W.tick(s, Math.floor(ft), y, -1e9, 1e9);
+    const prev = y;
+    if (!Number.isNaN(p)) y = p;
+    steps.push(prev - y);
+  }
+  const after = steps.slice(-20, -2);   // (every vsync again)
+  const pace = after.slice().sort((a, b) => a - b)[after.length >> 1];
+  assert.ok(after.every((x) => Math.abs(x - pace) <= 0.15 * pace + 1), `after the busy frames: ${after} (busy: ${steps.slice(-30, -20)})`);
+  const busy = steps.slice(-30, -20);   // (every other vsync: two frames' way each)
+  assert.ok(busy.every((x) => x <= 2.6 * pace), `the busy frames: ${busy} (pace after: ${pace})`);
+});
+
+test("a motion its window stops drawing ends where it was going: finish() is where its frames would have taken it", () => {
+  for (const [what, events] of [["notch", notches(1, 0)], ["spin", notches(6, 50)], ["glide", touchpad(125, 200, 300)]] as [string, Ev[]][]) {
+    const whole = play(events);
+    const end = whole.ys[whole.ys.length - 1];
+    for (const at of [3, 8, 20]) {   // (its window hidden after this many frames; the events till then came)
+      const s = W.create(0);
+      const { ys } = play(events.filter((e) => e.t <= at * F), { s, miss: (k) => k > at });
+      const was = ys[at];
+      const y = W.finish(s, -1e9, 1e9);
+      assert.equal(W.moving(s), false, `${what} at ${at}`);
+      if (events.every((e) => e.t <= at * F))
+        assert.ok(Math.abs(y - end) <= 1, `${what}, hidden at frame ${at} (at ${was}): ended at ${y}, its frames took it to ${end}`);
+      assert.equal(y, Math.round(y));
+    }
   }
 });
 

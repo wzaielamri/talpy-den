@@ -451,6 +451,10 @@
                 const t0 = Date.now()
                 const onHover = function() { hoverChanges++ }
                 const onFrame = function() { frames++; sample() }
+                // (each frame Qt readied (afterAnimating, where the scroller steps): its time, so a frame drawn
+                // without one shows)
+                const synced = []
+                const onSync = function() { synced.push(Date.now() - t0) }
                 log("mark", { name: "motion-start", label: label })
                 function sample() {
                     if (over)
@@ -476,16 +480,19 @@
                     if ((i >= events.length && still >= 45) || n > 600) {   // (0.75 s still after the last event)
                         over = true
                         win.frameSwapped.disconnect(onFrame)
+                        win.afterAnimating.disconnect(onSync)
                         log("mark", { name: "motion-end", label: label })
                         const m = ys.length - 45
                         log("motion", { label: label, ys: ys.slice(0, m), given: given.slice(0, m), ms: ts.slice(0, m),
-                                        framesDrawn: frames, steps: c, scroller: scroller !== null, hoverRowChanges: hoverChanges })
+                                        framesDrawn: frames, steps: c, scroller: scroller !== null, hoverRowChanges: hoverChanges,
+                                        synced: synced })
                         list.hoverRowChanged.disconnect(onHover)
                         cb()
                     }
                 }
                 list.hoverRowChanged.connect(onHover)
                 win.frameSwapped.connect(onFrame)
+                win.afterAnimating.connect(onSync)
                 win.update()
             })
         }

@@ -20,21 +20,24 @@ export const PAD_GLIDE = 40;         // ms: lifted this soon after its last move
 
 // The screen's frame (ms), as its window's frames come (WheelScroll.qml: the window's afterAnimating, once
 // a frame it draws): the mean of the last 60 gaps between them that were about one frame (within a
-// quarter of the middle of the last nine: a missed frame's two aren't; another screen's are left out as
-// soon as five of its frames have come), NaN till two frames have come; one more gap moves it by a
-// sixtieth, so a motion's steps stay even while it learns. One for the module (QML has one an engine:
+// quarter of the middle of the last nine), NaN till it has seen one; one more gap moves it by a
+// sixtieth, so a motion's steps stay even while it learns. A gap of over one and a half frames isn't
+// learned from (frames the window missed, busy: two or three frames' way, not a longer frame), unless
+// five in a row agree and aren't a whole number of frames (a slower screen than the one it knew: 60 a
+// second after 144); a faster screen's are learned at once. One for the module (QML has one an engine:
 // plasmashell's Talpy Chat windows learn it together, once). QML can't read the screen's refresh rate
 // (Qt 6.11: Screen, Qt.application.screens and Window have none), so it's learned, not asked
-const screen = { frame: NaN, gaps: [] };
+const screen = { frame: NaN, gaps: [], odd: [] };
 
 // (as plasmashell starts: nothing learned yet; for the tests)
 export function resetFrames() {
     screen.frame = NaN;
     screen.gaps = [];
+    screen.odd = [];
 }
 
 export function create(y) {
-    return { y: y, v: 0, curve: null, pad: null, fling: null, written: NaN, clock: { last: NaN } };
+    return { y: y, v: 0, curve: null, pad: null, fling: null, written: NaN, clock: { last: NaN, k: 0 } };
 }
 
 // One event of the wheel or a touchpad, as WheelScroll.qml takes it: { angle, pixel, phase } (its
@@ -65,6 +68,7 @@ export function input(s, ev, at, lo, hi, step, long) {
         return { put: put(s, frame(s, 0, lo, hi)), starting: false, scrolled: scrolled };   // (no ease: there at once)
     if (!was) {
         s.clock.last = NaN;
+        s.clock.k = 0;
         s.written = at;   // (it starts where the list is)
         return { put: NaN, starting: true, scrolled: scrolled };
     }
@@ -84,22 +88,43 @@ export function tick(s, now, at, lo, hi) {
 // How far on its frame goes, in ms: the screen's frame times the frames since its last (a frame the
 // window didn't draw, busy, keeps the speed: the next goes two), not the milliseconds between them, which
 // come early or late by a millisecond or more (and in whole ms here). Its first frame, the first drawn after
-// the event, goes a frame; before any frame is known (the first motion since plasmashell began) it goes
-// nothing and the next frame tells it one. Two frames within half a frame go by their time; a stall
-// (the window hidden) goes six frames at most
+// the event, goes a frame. Its second goes a frame at least: on a window at rest Qt Wayland draws the first
+// at once (an update asked for with no frame callback pending, qwaylandwindow.cpp requestUpdate) and the
+// second at the compositor's frame callback, 0 to a frame later, but the two are shown a vsync apart. Past
+// those, two frames within half a frame go by their time (an extra frame, as on an expose: both shown in
+// one vsync). Before any frame is known (the first motion since plasmashell began) it goes nothing till
+// its third frame, whose gap is the first that is a frame. A stall goes six frames at most
 function frameStep(c, now) {
     const last = c.last;
+    const k = c.k;
     c.last = now;
+    c.k = k + 1;
     if (!(now >= last))
         return isNaN(screen.frame) ? 0 : screen.frame;
     const gap = now - last;
+    if (k === 1)
+        return isNaN(screen.frame) ? 0 : Math.max(1, Math.min(6, Math.round(gap / screen.frame))) * screen.frame;
     if (isNaN(screen.frame)) {
         learn(gap);
         return gap;
     }
     const n = Math.round(gap / screen.frame);
-    if (n <= 6)
+    if (gap <= 1.5 * screen.frame) {
+        screen.odd = [];
         learn(gap);
+    } else if (n <= 6 && Math.abs(gap / screen.frame - n) > 0.2) {
+        screen.odd.push(gap);
+        const mid = screen.odd.slice().sort(function (x, y) { return x - y; })[screen.odd.length >> 1];
+        if (!screen.odd.every(function (g) { return Math.abs(g - mid) <= 0.1 * mid; }))
+            screen.odd = [gap];
+        else if (screen.odd.length >= 5) {   // (another screen, slower: its frames from now on)
+            screen.gaps = [];
+            screen.odd.forEach(learn);
+            screen.odd = [];
+        }
+    } else {
+        screen.odd = [];
+    }
     return n < 1 ? gap : Math.min(n, 6) * screen.frame;
 }
 
@@ -111,6 +136,15 @@ function learn(gap) {
     const mid = last[last.length >> 1];
     const one = screen.gaps.filter(function (g) { return Math.abs(g - mid) <= 0.25 * mid; });
     screen.frame = Math.max(3, Math.min(50, one.reduce(function (a, b) { return a + b; }, 0) / one.length));
+}
+
+// Its window stopped drawing it (hidden, minimized, its frames no longer come): it goes to where its frames
+// would have taken it, at once, and stops there. That place (whole px)
+export function finish(s, lo, hi) {
+    for (let k = 0; k < 2000 && moving(s); k++)
+        frame(s, isNaN(screen.frame) ? 1000 / 60 : screen.frame, lo, hi);
+    stop(s, s.y);
+    return put(s, s.y);
 }
 
 // (whole pixels: every line moves the same; remembered, so a move by anything else is seen)
@@ -246,7 +280,7 @@ function padFrame(s, dt, lo, hi) {
         // at first; ahead, as it starts with fewer than that, it's let back that far over its first frames,
         // so the start isn't held back and the lift, a move later, comes before it has shown the last. The
         // ease-in leaves it further behind the faster the moves come, and its catching up goes a little past
-        // the pace: 60 moves a second on a 75 a second screen go 6, 9, 14, 17, then 15, 15, 16 (its pace 16).
+        // the pace: 60 moves a second on a 75 a second screen go 6, 9, 14, 18, then 15, 15, 16 (its pace 16).
         // Not shaped away: an ease-in as long as the moves' pace allows would need that pace before it's
         // counted, and pulling toward where the next move is due ran further past it)
         const behind = p.n - PAD_LAG - p.c;
