@@ -10,9 +10,12 @@ touchpad's stream was a chain of 50 ms eases (steps up and down, now and then a
 frame that didn't move), and as the fingers lifted its glide began at less than
 half the speed. Run here as Talpy Chat's list is (a ListView in a
 PlasmaComponents3.ScrollView, with what ChatPane.qml gives its list for the
-wheel), offscreen on Qt Quick's threaded loop, given the events as Plasma's
-Wayland gives them (a notch's 120; a touchpad's phases, its pixels and its angle
-12 a pixel) at their times, the list's place read once a frame.
+wheel), offscreen on Qt Quick's threaded loop, its window drawn at 60.03 frames
+a second as a screen would (and beside another window, as plasmashell shows its
+panel and desktop: Qt then steps its animations on a timer of its own), given
+the events as Plasma's Wayland gives them (a notch's 120; a touchpad's phases,
+its pixels and its angle 12 a pixel) at their times, the list's place read in
+each frame drawn.
 """
 import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
@@ -47,11 +50,12 @@ def what_the_list_has_for_the_wheel():
 
 RUNNER = r"""
 import json, sys, time
-from PySide6.QtCore import QPoint, QPointF, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt, QTimer, QUrl
 from PySide6.QtGui import QGuiApplication, QWheelEvent
-from PySide6.QtQuick import QQuickView
+from PySide6.QtQuick import QQuickView, QQuickWindow
 
 runs = json.loads(open(sys.argv[2]).read())
+windows = int(sys.argv[3])
 app = QGuiApplication(sys.argv)
 view = QQuickView()
 view.setSource(QUrl.fromLocalFile(sys.argv[1]))
@@ -59,9 +63,45 @@ if view.status() != QQuickView.Ready:
     print("ERROR", [e.toString() for e in view.errors()])
     sys.exit(1)
 view.show()
+# (more windows shown, as plasmashell's panel and desktop are beside a popup or a Talpy Chat window: Qt's threaded
+# loop then steps its animations on a timer of its own, not once a frame)
+others = []
+for _ in range(windows - 1):
+    other = QQuickWindow()
+    other.resize(40, 40)
+    other.show()
+    others.append(other)
 root = view.rootObject()
-out, state = [], {"run": 0, "i": 0, "t0": 0.0}
+out, state = [], {"run": 0, "i": 0, "t0": 0.0, "vsync": 0}
 PHASE = {"none": Qt.NoScrollPhase, "begin": Qt.ScrollBegin, "update": Qt.ScrollUpdate, "end": Qt.ScrollEnd}
+VSYNC = 1000 / 60.03
+T0 = time.perf_counter()
+
+
+def tick():
+    # The screen's frames: the window gets an update request each vsync (60.03 a second), as a compositor's
+    # frame callbacks come (the platform's own, QT_QPA_UPDATE_IDLE_TIME, never comes); the events that came
+    # before a frame go first
+    now = (time.perf_counter() - T0) * 1000
+    if state.get("on"):
+        events = runs[state["run"]]["events"]
+        at = (time.perf_counter() - state["t0"]) * 1000
+        while state["i"] < len(events) and events[state["i"]][0] <= at:
+            t, phase, angle, pixel = events[state["i"]]
+            src = Qt.MouseEventNotSynthesized if phase == "none" else Qt.MouseEventSynthesizedBySystem
+            ev = QWheelEvent(QPointF(300, 350), QPointF(300, 350), QPoint(0, pixel), QPoint(0, angle), Qt.NoButton,
+                             Qt.NoModifier, PHASE[phase], False, src)
+            ev.setTimestamp(int(t))
+            QGuiApplication.sendEvent(view, ev)
+            state["i"] += 1
+        if state["i"] >= len(events) and not state.get("ending"):
+            state["ending"] = True
+            QTimer.singleShot(900, finish)
+    k = int(now // VSYNC)
+    if k > state["vsync"]:
+        state["vsync"] = k
+        if now - k * VSYNC < 0.5 * VSYNC:   # (late by half a vsync or more, the window missed that frame: none till the next)
+            QGuiApplication.sendEvent(view, QEvent(QEvent.UpdateRequest))
 
 
 def start():
@@ -75,27 +115,11 @@ def start():
 
 def go():
     root.setProperty("on", True)
-    state["i"], state["t0"] = 0, time.perf_counter()
-    pump.start()
-
-
-def tick():
-    events = runs[state["run"]]["events"]
-    now = (time.perf_counter() - state["t0"]) * 1000
-    while state["i"] < len(events) and events[state["i"]][0] <= now:
-        t, phase, angle, pixel = events[state["i"]]
-        src = Qt.MouseEventNotSynthesized if phase == "none" else Qt.MouseEventSynthesizedBySystem
-        ev = QWheelEvent(QPointF(300, 350), QPointF(300, 350), QPoint(0, pixel), QPoint(0, angle), Qt.NoButton,
-                         Qt.NoModifier, PHASE[phase], False, src)
-        ev.setTimestamp(int(t))
-        QGuiApplication.sendEvent(view, ev)
-        state["i"] += 1
-    if state["i"] >= len(events):
-        pump.stop()
-        QTimer.singleShot(900, finish)
+    state["i"], state["t0"], state["on"], state["ending"] = 0, time.perf_counter(), True, False
 
 
 def finish():
+    state["on"] = False
     root.setProperty("on", False)
     get = lambda k: [float(x) for x in (lambda v: v.toVariant() if hasattr(v, "toVariant") else v)(root.property(k))]
     out.append({"label": runs[state["run"]]["label"], "ys": get("ys"), "ts": get("ts"), "idle": root.property("idle"),
@@ -108,6 +132,7 @@ pump = QTimer()
 pump.setTimerType(Qt.PreciseTimer)
 pump.setInterval(1)
 pump.timeout.connect(tick)
+pump.start()
 QTimer.singleShot(1500, start)
 app.exec()
 """
@@ -128,8 +153,8 @@ def touchpad(hz, speed, ms, start=5.3):
 
 
 # (a first motion: the screen's frame learned, as in a plasmashell that has scrolled since it began; that
-# first one moves with the animation's first step, from its time since the event, and the test checks it
-# neither races nor jumps)
+# first one moves a frame later, once two frames have told it the screen's, and the test checks it neither
+# races nor jumps)
 RUNS = [{"label": "first", "events": [[0, "none", 120, 0]]},
         {"label": "notch", "events": [[0, "none", 120, 0]]},
         {"label": "spin", "events": [[i * 50, "none", 120, 0] for i in range(6)]},
@@ -162,10 +187,11 @@ BOXED = """Item {
             }"""
 
 
-def run_scene(wheel, nested=False, runs=RUNS):
-    """The runs above in a list as Talpy Chat's; each run's place a frame (an animation step that came less than
-    0.6 of a frame after the one before isn't a frame of its own: the loop steps again as an animation begins
-    or when a step changed nothing; what it moved is drawn with the next frame)."""
+def run_scene(wheel, nested=False, runs=RUNS, windows=1, ui=None):
+    """The runs above in a list as Talpy Chat's, in a window drawn at 60.03 frames a second (with `windows` - 1
+    more shown beside it, as plasmashell shows its panel and desktop); each run's place in each frame drawn, as
+    the window was about to draw it (its afterAnimating, before the scroller's step there: the place each frame
+    draws, a frame apart either way)."""
     scene = """
 import QtQuick
 import org.kde.plasma.components as PlasmaComponents3
@@ -177,7 +203,7 @@ Item {
     property var ts: []
     property bool on: false
     property real startY: -1
-    readonly property bool idle: wheel === null || !wheel.frames.running
+    readonly property bool idle: wheel === null || !wheel.moving
     property var boxes: []
     readonly property real inner: boxes.length ? boxes[0].contentItem.contentY : -1
     property QtObject wheel: %s
@@ -196,36 +222,33 @@ Item {
             %s
         }
     }
-    function sample() { if (on) { ys.push(list.contentY); ts.push(Date.now()) } }
-    FrameAnimation { running: root.on; onTriggered: Qt.callLater(root.sample) }
+    Connections {
+        target: root.Window.window
+        function onAfterAnimating() { if (root.on) { root.ys.push(list.contentY); root.ts.push(Date.now()) } }
+    }
 }
-""" % (UI.as_uri(), "wheelScroll" if wheel else "null", BOXED if nested else PLAIN, wheel)
+""" % ((ui or UI).as_uri(), "wheelScroll" if wheel else "null", BOXED if nested else PLAIN, wheel)
     with tempfile.TemporaryDirectory() as tmp:
         (Path(tmp) / "scene.qml").write_text(scene)
         (Path(tmp) / "runs.json").write_text(json.dumps(runs))
         (Path(tmp) / "run.py").write_text(RUNNER)
         env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "QT_QPA_PLATFORMTHEME")}
-        # (no D-Bus at all: nothing to start on any bus; offscreen, drawn on a thread of its own as plasmashell draws)
+        # (no D-Bus at all: nothing to start on any bus; offscreen, drawn on a thread of its own as plasmashell
+        # draws; its frames the runner's, a vsync apart)
         env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software", QSG_RENDER_LOOP="threaded",
-                   DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/bus")
-        r = subprocess.run(["python3", str(Path(tmp) / "run.py"), str(Path(tmp) / "scene.qml"), str(Path(tmp) / "runs.json")],
-                           capture_output=True, text=True, timeout=90, env=env)
+                   QT_QPA_UPDATE_IDLE_TIME="100000000", DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/bus")
+        r = subprocess.run(["python3", str(Path(tmp) / "run.py"), str(Path(tmp) / "scene.qml"), str(Path(tmp) / "runs.json"),
+                            str(windows)], capture_output=True, text=True, timeout=120, env=env)
     line = next((x for x in r.stdout.splitlines() if x.startswith("RESULT ")), None)
     if not line:
         raise AssertionError(r.stdout[-2000:] + r.stderr[-3000:])
     out = {}
     for d in json.loads(line[len("RESULT "):]):
-        ys, kept = [d["ys"][0]], [d["ts"][0]]
-        for y, t in zip(d["ys"][1:], d["ts"][1:]):
-            if len(ys) > 1 and t - kept[-1] < 0.6 * FRAME:
-                continue   # (drawn with the next frame: that one counts it)
-            else:
-                ys.append(y)
-                kept.append(t)
+        ys = d["ys"]
         steps = [a - b for a, b in zip(ys, ys[1:])]
         moving = [k for k, s in enumerate(steps) if abs(s) > 1e-6]
-        out[d["label"]] = {"ys": d["ys"], "steps": steps[moving[0]:moving[-1] + 1] if moving else [], "idle": d["idle"],
-                           "inner": d["inner"]}
+        out[d["label"]] = {"ys": ys, "ts": d["ts"], "steps": steps[moving[0]:moving[-1] + 1] if moving else [],
+                           "idle": d["idle"], "inner": d["inner"]}
     return out
 
 
@@ -258,8 +281,8 @@ class TheListsWheelTests(unittest.TestCase):
         self.assertIn("return heldRow", hover)
         self.assertIn("onStarting: list.heldRow = list.hoverRow", the_list())
         ws = (UI / "WheelScroll.qml").read_text()
-        self.assertIn("readonly property bool moving: frames.running", ws)
-        take = ws[ws.index("function take(event)"):ws.index("function tick(gap)")]
+        self.assertIn("property bool moving: false", ws)
+        take = ws[ws.index("function take(event)"):ws.index("function frame()")]
         self.assertLess(take.index("handler.starting()"), take.index("flickable.contentY = r.put"))
 
     def test_it_takes_the_wheel_and_the_touchpad_with_no_key_held(self):
@@ -294,21 +317,25 @@ class TheListsWheelTests(unittest.TestCase):
         ws = (UI / "WheelScroll.qml").read_text()
         self.assertEqual(ws.count("Timer {"), 1)   # (the 400 ms latch, once, after an event: not repeating)
         self.assertNotIn("repeat: true", ws)
-        self.assertRegex(ws, r"FrameAnimation \{\n\s*running: false\n")
-        self.assertIn("frames.running = false", ws)
+        # (its frames listened to only while it moves; the next one asked for only while it moves)
+        frames = ws[ws.index("property Connections frames: Connections {"):]
+        self.assertIn("enabled: handler.moving\n", frames[:frames.index("}")])
+        self.assertEqual(re.sub(r"//.*", "", ws).count("requestUpdate()"), 1)
+        frame = ws[ws.index("function frame()"):ws.index("function next()")]
+        self.assertRegex(frame, r"if \(Wheel\.moving\(motion\)\)\n\s*next\(\)\n\s*else\n\s*moving = false")
         self.assertIn("s.written = Math.round(y);", (UI / "wheel.mjs").read_text())
         self.assertNotIn("Behavior on", ws)
 
-    def test_its_first_step_knows_whether_a_frame_was_drawn_since_its_first_move(self):
-        # (plasmashell shows several windows: Qt steps the animations on a timer of their own then, and the
-        # first step can come before the frame that shows the first move; a frame drawn since, it goes a frame
-        # on from it: wheel.mjs tick()'s `drawn`, vscode/test/wheel.test.ts)
+    def test_it_steps_on_its_windows_frames_not_on_qts_animation_timer(self):
+        # (plasmashell shows several windows: Qt steps its animations on a timer of its own then, which drifts
+        # against the frames: a FrameAnimation's steps doubled up in a frame about every 0.4 s. Its step is
+        # taken as its window readies a frame, the window's afterAnimating: AStepEachFrameBesideOtherWindowsTests)
         ws = (UI / "WheelScroll.qml").read_text()
-        self.assertIn("Wheel.tick(motion, gap, flickable.contentY, top(), bottom(), handler.drawn)", ws)
-        self.assertIn("function onAfterAnimating()", ws)
-        take = ws[ws.index("function take(event)"):ws.index("function tick(gap)")]
-        self.assertLess(take.index("handler.drawn = false"), take.index("flickable.contentY = r.put"))
-        self.assertNotIn("moves nothing", ws)   # (no word of a skip the clock no longer makes)
+        self.assertNotIn("FrameAnimation", re.sub(r"//.*", "", ws))
+        self.assertRegex(ws, r"target: handler\.flickable\.Window\.window\n\s*enabled: handler\.moving\n"
+                             r"\s*function onAfterAnimating\(\) \{\n\s*handler\.frame\(\)")
+        self.assertIn("Wheel.tick(motion, Date.now(), flickable.contentY, top(), bottom())", ws)
+        self.assertNotIn("moves nothing", ws)
 
 
 class Retried:
@@ -316,17 +343,18 @@ class Retried:
     fails is tried once more on a second run, and fails only if it fails there too (Kirigami's fail both)."""
     nested = False
     runs_of = RUNS
+    windows = 1
 
     @classmethod
     def setUpClass(cls):
-        cls.runs = [run_scene(what_the_list_has_for_the_wheel(), cls.nested, cls.runs_of)]
+        cls.runs = [run_scene(what_the_list_has_for_the_wheel(), cls.nested, cls.runs_of, cls.windows)]
 
     def retried(self, check):
         try:
             check(self.runs[0])
         except AssertionError:
             if len(self.runs) == 1:
-                self.runs.append(run_scene(what_the_list_has_for_the_wheel(), self.nested, self.runs_of))
+                self.runs.append(run_scene(what_the_list_has_for_the_wheel(), self.nested, self.runs_of, self.windows))
             check(self.runs[1])
 
 
@@ -346,8 +374,8 @@ class TheListScrollsEvenlyTests(Retried, unittest.TestCase):
             self.assertTrue(all(a <= 2 * b + 1 for a, b in zip(first, first[1:4])), first)   # (no race, then a crawl)
             r = runs["notch"]
             self.assertEqual(sum(r["steps"]), 60, r["steps"])
-            # (its steps only fall; in its first few, where the offscreen loop steps again as an animation
-            # begins, within 2 px: Kirigami's went 13, 21)
+            # (its steps only fall, within 2 px in its first few (a frame the busy runner missed goes two
+            # frames' way): Kirigami's went 13, 21)
             self.assertTrue(all(b <= a + (2 if k < 3 else 1) for k, (a, b) in enumerate(zip(r["steps"], r["steps"][1:]))), r["steps"])
             self.assertTrue(all(y == round(y) for y in r["ys"]), r["ys"])
         self.retried(check)
@@ -356,7 +384,7 @@ class TheListScrollsEvenlyTests(Retried, unittest.TestCase):
         def check(runs):
             r = runs["spin"]
             self.assertEqual(sum(r["steps"]), 360, r["steps"])
-            # (past its first steps, where the offscreen loop steps again as an animation begins: Kirigami's 9 to 12)
+            # (past its first steps, up once and down once: Kirigami's 9 to 12)
             self.assertLessEqual(turns(r["steps"][3:]), 2, r["steps"])
             self.assertLessEqual(r["steps"].count(0), 1, r["steps"])
         self.retried(check)
@@ -388,6 +416,38 @@ class TheListScrollsEvenlyTests(Retried, unittest.TestCase):
     def test_nothing_runs_once_it_is_still(self):
         for label, r in self.runs[0].items():
             self.assertTrue(r["idle"], label)
+
+
+# (a second of each: about two and a half times the 0.4 s in which Qt's own timer and the frames drift a step apart)
+LONG_RUNS = [RUNS[0],
+             {"label": "spin", "events": [[i * 50, "none", 120, 0] for i in range(14)]},
+             {"label": "touchpad 90", "events": touchpad(90, 200, 1000)},
+             {"label": "touchpad 125", "events": touchpad(125, 200, 1000)}]
+
+
+@NEEDS_QT
+class AStepEachFrameBesideOtherWindowsTests(Retried, unittest.TestCase):
+    """Run as plasmashell shows it, beside other windows (its panel, its desktop): Qt's threaded loop then steps
+    its animations on a timer of its own (int(1000 / the screen's rate) ms: 16 at 60.03 a second), not once a
+    frame (qsgthreadedrenderloop.cpp, startOrStopAnimationTimer: exposedWindows == 1), so a FrameAnimation's steps
+    and the frames drift apart and about every 0.4 s a frame draws two steps (Talpy Chat's scroller till
+    round 3: 19, 38, 19 in a touchpad's stream). The scroller steps on the window's own frames: one step a
+    frame drawn."""
+    windows = 2
+    runs_of = LONG_RUNS
+
+    def test_every_frame_drawn_in_a_motion_moves_it_one_step(self):
+        def check(runs):
+            for label in ("touchpad 90", "touchpad 125"):
+                steps = runs[label]["steps"]
+                mid = steps[8:-12]   # (from its start's ease-in to its glide)
+                pace = sorted(mid)[len(mid) // 2]
+                self.assertEqual(missed(mid, pace), [], f"{label}: {steps}")
+            spin = runs["spin"]["steps"]
+            # (a spin: up once and down once, no frame still or doubled inside it)
+            self.assertLessEqual(turns(spin[3:]), 1, spin)
+            self.assertNotIn(0, spin[:-3], spin)
+        self.retried(check)
 
 
 @NEEDS_QT

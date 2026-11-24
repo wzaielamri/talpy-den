@@ -34,13 +34,14 @@ function touchpad(hz: number, speed: number, ms: number, late = 0, seed = 1): Ev
 const moves = (events: Ev[]) => sum(events.map((e) => (e.phase === "none" || e.phase === "update" ? e.angle / 120 * STEP : 0)));
 
 // The scroller as WheelScroll.qml runs it (wheel.mjs input() and tick(), the same code): a screen of `hz`
-// frames a second, its animation steps right after each frame (FrameAnimation, its frameTime `jitter` ms
-// early or late); the events that came before a frame are taken, the frame shows where the list is, then
-// the step. The list's place each frame, and its steps from the first that moved to the last
-function play(events: Ev[], o: { hz?: number; lo?: number; hi?: number; y0?: number; jitter?: number; s?: W.Wheel } = {}) {
+// frames a second; the events that came before a frame are taken, then, as the window is about to draw
+// it (its afterAnimating), the step, drawn in that frame: tick() given the time as Date.now() gives it
+// (whole ms, `jitter` ms early or late). A frame `miss` says is one the window didn't draw (busy): no
+// step then. The list's place each frame, and its steps from the first that moved to the last
+function play(events: Ev[], o: { hz?: number; lo?: number; hi?: number; y0?: number; jitter?: number; s?: W.Wheel; miss?: (k: number) => boolean } = {}) {
   const vs = 1000 / (o.hz || 60.03), lo = o.lo === undefined ? -1e9 : o.lo, hi = o.hi === undefined ? 1e9 : o.hi;
   const s = o.s || W.create(o.y0 || 0);
-  let y = o.y0 || 0, i = 0, running = false, first = -1, startedAt = 0, lastStep = 0, r = 7;
+  let y = o.y0 || 0, i = 0, running = false, first = -1, r = 7;
   const rnd = () => { r = (r * 16807) % 2147483647; return r / 2147483647 - 0.5; };
   const ys = [y];
   for (let k = 1; k < 600; k++) {
@@ -49,17 +50,14 @@ function play(events: Ev[], o: { hz?: number; lo?: number; hi?: number; y0?: num
       if (first < 0 && e.angle !== 0) first = k;
       const res = W.input(s, { angle: e.angle, pixel: e.pixel, phase: e.phase }, y, lo, hi, STEP, LONG);
       if (!Number.isNaN(res.put)) y = res.put;
-      if (res.starting) { running = W.moving(s); startedAt = e.t; }
+      if (res.starting) running = W.moving(s);
     }
-    ys.push(y);
-    if (running) {   // (the step after this frame: frameTime since the last step, or since it started)
-      const at = k * vs + (o.jitter ? rnd() * o.jitter : 0);
-      const p = W.tick(s, at - Math.max(startedAt, lastStep), y, lo, hi);
-      lastStep = at;
-      startedAt = 0;
+    if (running && !(o.miss && o.miss(k))) {
+      const p = W.tick(s, Math.floor(k * vs + (o.jitter ? rnd() * o.jitter : 0)), y, lo, hi);
       if (!Number.isNaN(p)) y = p;
       running = W.moving(s);
     }
+    ys.push(y);
   }
   const moved = ys.findIndex((v, k) => k > 0 && v !== ys[k - 1]);
   const steps = stepsOf(ys);
@@ -129,7 +127,10 @@ test("a notch eases out over Kirigami's 200 ms: the desktop's lines × 20 px, it
   assert.equal(sum(steps), STEP);
   assert.ok(steps[0] >= 12, String(steps));   // (as Kirigami's first: 23% of the way)
   for (let k = 1; k < steps.length; k++) assert.ok(steps[k] <= steps[k - 1] + 1, String(steps));
-  assert.deepEqual(steps, kirigami(notches(1, 0)));   // (one notch alone: the same ease)
+  // (one notch alone: the same ease, but for a pixel's rounding: its frame is learned from frames whose times
+  // are whole ms, Kirigami's is Qt's)
+  const old = kirigami(notches(1, 0));
+  assert.ok(steps.length === old.length && steps.every((x, k) => Math.abs(x - old[k]) <= 1), `${steps} / Kirigami's ${old}`);
   assert.ok(still);
 });
 
@@ -188,20 +189,20 @@ test("the first motion since plasmashell began (no frame known yet) neither race
   play(notches(1, 0));
 });
 
-test("its first step goes on from the frame that showed its first move, or by the time since the event when none was drawn yet", () => {
-  // (a notch 4 ms before the animation's first step: drawn since, that step shows a frame later, a frame
-  // on; not drawn (Qt's animations on a timer of their own, plasmashell's), both are drawn together:
-  // a frame and 4 ms of its way, not two frames)
-  const ease = (ms: number) => Math.round(STEP * (1 - (1 - ms / LONG) ** 3));
-  const vs = 1000 / 60.03;
-  for (const drawn of [true, false, undefined]) {
-    const s = W.create(0);
-    play(notches(1, 0), { s });
-    const at = s.y;
-    const r = W.input(s, { angle: 120, pixel: 0, phase: "none" }, at, -1e9, 1e9, STEP, LONG);
-    assert.equal(at - r.put, ease(vs));
-    const y = W.tick(s, 4, r.put, -1e9, 1e9, drawn);
-    assert.equal(at - y, drawn === false ? ease(vs + 4) : ease(2 * vs), String(drawn));
+test("a step each frame of its window, as long as the frames since the last: when in its vsync a frame comes changes nothing, a missed one keeps the speed", () => {
+  const ref = play(notches(1, 0));   // (the screen's frame learned before: the first test)
+  const near = (a: number[], b: number[]) => a.length === b.length && a.every((x, k) => Math.abs(x - b[k]) <= 1);
+  for (const jitter of [1.5, 4, 8]) {
+    // (a frame's afterAnimating a few ms early or late, its time in whole ms: the same steps, but for a
+    // pixel's rounding as the frame it learns moves by a hundredth of a ms)
+    const { steps } = play(notches(1, 0), { jitter });
+    assert.ok(near(steps, ref.steps) && sum(steps) === STEP, `±${jitter / 2} ms: ${steps} / ${ref.steps}`);
+  }
+  for (const missed of [2, 3, 5]) {
+    // (a frame the window didn't draw: the next is where the list would have been by then)
+    const { ys } = play(notches(1, 0), { miss: (k) => k === missed });
+    assert.equal(ys[missed], ys[missed - 1], `frame ${missed}`);
+    assert.ok(near(ys.slice(missed + 1, 30), ref.ys.slice(missed + 1, 30)), `frame ${missed} missed: ${stepsOf(ys)} / ${ref.steps}`);
   }
 });
 
@@ -316,7 +317,10 @@ test("a glide into an end slows to a stop at it", () => {
   const { steps, ys } = play(touchpad(125, 200, 300), { lo: -380, hi: 1e9 });   // (360 px of moves, then the glide)
   assert.equal(Math.min(...ys), -380);
   const up = steps.filter((s) => s > 0);
-  assert.ok(up[up.length - 1] <= 4, `it stopped at ${up[up.length - 1]} px a frame: ${up}`);
+  // (its last frame, into the end, a third of its pace at most: 20 px from the end at 20 px a frame, it can't
+  // stop in less than two frames)
+  const pace = up.slice(8, 16).sort((a, b) => a - b)[4];
+  assert.ok(up[up.length - 1] <= pace / 3, `it stopped at ${up[up.length - 1]} px a frame: ${up}`);
 });
 
 test("it stops at an end; a touch held there goes back the other way at once", () => {
@@ -333,6 +337,6 @@ test("moved by anything else, it stops there", () => {
   const s = W.create(0);
   W.input(s, { angle: 120, pixel: 0, phase: "none" }, 0, -1e9, 1e9, STEP, LONG);
   assert.equal(W.moving(s), true);
-  assert.ok(Number.isNaN(W.tick(s, F, 500, -1e9, 1e9)));   // (the list was put at 500 meanwhile)
+  assert.ok(Number.isNaN(W.tick(s, 1000, 500, -1e9, 1e9)));   // (the list was put at 500 meanwhile)
   assert.equal(W.moving(s), false);
 });

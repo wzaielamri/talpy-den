@@ -218,6 +218,9 @@ def render(scenario, out, idle_s, keep=None):
             env["QT_LOGGING_RULES"] = "qt.scenegraph.time.renderloop.debug=true"
         if scenario == "wheel":   # (a frame a vsync, animations a step a frame, as plasmashell draws on a screen; Qt's timing)
             env["QSG_RENDER_LOOP"] = "threaded"
+            # (offscreen, a frame asked for comes 16 ms later, not 5: about a screen's frames, which Talpy Chat's
+            # scroller steps on; tests/test_scroll_smooth.py's runner gives them at 60.03 a second exactly)
+            env["QT_QPA_UPDATE_IDLE_TIME"] = "16"
             env["QT_LOGGING_RULES"] = "qt.scenegraph.time.renderloop.debug=true"
             env["QSG_RENDER_TIMING"] = "1"
         if keep:

@@ -329,11 +329,10 @@
         // spins, a touchpad's stream at 60, 90 and 125 events a second (as Plasma's Wayland gives
         // them: per event, the finger's move in angle eighths of a degree, 12 for each pixel, and in
         // whole pixels, the rest carried), a slow touchpad drag, and the scroll bar dragged. Run with
-        // Qt Quick's threaded loop (bench.py): the window is drawn once a vsync of 60 Hz and the
-        // animations step once a frame, as on a screen. The events go by a frame clock (frame n at
-        // n × 1000/60.03 ms, the owner's screen): each is given as the frame it would come before is
-        // about to be drawn (afterAnimating), and the list's place is read then, so every frame's
-        // place is what that frame shows, whatever the offscreen computer's own pace
+        // Qt Quick's threaded loop (bench.py), a frame drawn about every 16 ms offscreen. The events go by
+        // a frame clock (frame n at n × 1000/60.03 ms, the owner's screen): each is given after the frame
+        // drawn before the one it would come before, and the list's place is read after each frame drawn,
+        // so every frame's place is what that frame showed, whatever the offscreen computer's own pace
         readonly property real frameMs: 1000 / 60.03
         function touchpad(hz, speed, ms, start) {
             // (Wayland: a ScrollBegin, ScrollUpdates of the finger's move, then a ScrollEnd as it lifts)
@@ -439,25 +438,19 @@
                         tester.mouseWheel(list, x, y, 0, e.angle)
                 } }))
             }
-            // The frame clock is the animation steps (a FrameAnimation's): one a vsync, as on a screen. Just
-            // after each step (Qt.callLater: when the step's animations are all done, before the next frame is
-            // drawn), the events that come before the next step are given and the list's place is read: what
-            // the next frame shows. (Not each frame drawn: the offscreen loop sometimes draws one with no step
-            // since the one before, or takes two steps between two it draws; a pixel of nothing in the window
-            // changes each step, so it draws one a step as far as it can)
-            const poke = Qt.createQmlObject("import QtQuick; Rectangle { width: 1; height: 1; color: 'transparent'; opacity: 0.5 }", win.contentItem)
-            const keep = Qt.createQmlObject("import QtQuick; FrameAnimation { running: true; property Item poke; signal step(); "
-                                            + "onTriggered: { poke.opacity = poke.opacity > 0.55 ? 0.5 : 0.6; step() } }", bench)
-            keep.poke = poke
+            // The frame clock is the window's frames drawn (frameSwapped, taken on this thread after the frame
+            // is done): after each, the list's place is read (what that frame showed), the events that come
+            // before the next frame are given, and the next frame is asked for (update(): drawn even if nothing
+            // changed), so it draws one a frame as far as it can (offscreen, 16 ms after it's asked for:
+            // bench.py). Not Qt's animation steps: with the popup and Talpy Chat's window shown, Qt steps
+            // animations on a timer of its own that drifts against the frames, and a step isn't a frame
             let frames = 0
-            const drawn = function() { frames++ }
             after(600, () => {
                 const ys = [], ts = [], given = []
                 let i = 0, still = 0, over = false, c = 0, hoverChanges = 0
                 const t0 = Date.now()
                 const onHover = function() { hoverChanges++ }
-                const onStep = function() { Qt.callLater(sample) }
-                win.frameSwapped.connect(drawn)
+                const onFrame = function() { frames++; sample() }
                 log("mark", { name: "motion-start", label: label })
                 function sample() {
                     if (over)
@@ -479,14 +472,11 @@
                     ts.push(Date.now() - t0)
                     const n = ys.length - 1
                     still = n > 0 && ys[n] === ys[n - 1] ? still + 1 : 0
+                    win.update()
                     if ((i >= events.length && still >= 45) || n > 600) {   // (0.75 s still after the last event)
                         over = true
-                        keep.step.disconnect(onStep)
-                        win.frameSwapped.disconnect(drawn)
+                        win.frameSwapped.disconnect(onFrame)
                         log("mark", { name: "motion-end", label: label })
-                        keep.running = false
-                        keep.destroy()
-                        poke.destroy()
                         const m = ys.length - 45
                         log("motion", { label: label, ys: ys.slice(0, m), given: given.slice(0, m), ms: ts.slice(0, m),
                                         framesDrawn: frames, steps: c, scroller: scroller !== null, hoverRowChanges: hoverChanges })
@@ -495,7 +485,8 @@
                     }
                 }
                 list.hoverRowChanged.connect(onHover)
-                keep.step.connect(onStep)
+                win.frameSwapped.connect(onFrame)
+                win.update()
             })
         }
         function scrollTab(win, tab, cb) {

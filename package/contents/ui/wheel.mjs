@@ -18,27 +18,30 @@ export const PAD_RATE = 0.06;        // moves a ms (60 a second) at first, till 
 export const PAD_IDLE = 150;         // ms: no move for this long and no lift seen (X11's touchpads): it's over, no glide
 export const PAD_GLIDE = 40;         // ms: lifted this soon after its last move, it glides on (later: the fingers had stopped)
 
-// The screen's frame, as the animation's steps come (the middle of the last nine gaps between them): one
-// for the module (QML has one a engine: plasmashell's Talpy Chat windows learn it together, once)
-const screen = { frame: 1000 / 60, gaps: [] };
+// The screen's frame (ms), as its window's frames come (WheelScroll.qml: the window's afterAnimating, once
+// a frame it draws): the mean of the last 60 gaps between them that were about one frame (within a
+// quarter of the middle of the last nine: a missed frame's two aren't; another screen's are left out as
+// soon as five of its frames have come), NaN till two frames have come; one more gap moves it by a
+// sixtieth, so a motion's steps stay even while it learns. One for the module (QML has one an engine:
+// plasmashell's Talpy Chat windows learn it together, once). QML can't read the screen's refresh rate
+// (Qt 6.11: Screen, Qt.application.screens and Window have none), so it's learned, not asked
+const screen = { frame: NaN, gaps: [] };
 
 // (as plasmashell starts: nothing learned yet; for the tests)
 export function resetFrames() {
-    screen.frame = 1000 / 60;
+    screen.frame = NaN;
     screen.gaps = [];
 }
 
 export function create(y) {
-    return { y: y, v: 0, curve: null, pad: null, fling: null, written: NaN, clock: { first: false, put: false, late: 0 } };
+    return { y: y, v: 0, curve: null, pad: null, fling: null, written: NaN, clock: { last: NaN } };
 }
 
 // One event of the wheel or a touchpad, as WheelScroll.qml takes it: { angle, pixel, phase } (its
 // angleDelta.y, pixelDelta.y, and "none", "begin", "update" or "end"), the list at `at` (its contentY),
 // between `lo` and `hi`, a notch `step` px eased over `long` ms. What follows: { put: the list's place
-// now (whole px; NaN: it stays), starting: it begins to move (put is its first step, a frame's way, shown
-// in the next frame; none before a frame is known: a guess would race on a faster screen, or crawl on a
-// slower one; the animation's first step moves it then, by the time it took), scrolled: the event moves
-// the list }
+// now (whole px; NaN: it stays), starting: it begins to move (its first step comes with the window's next
+// frame: tick()), scrolled: the event moves the list }
 export function input(s, ev, at, lo, hi, step, long) {
     follow(s, at);
     const was = moving(s);
@@ -61,56 +64,53 @@ export function input(s, ev, at, lo, hi, step, long) {
     if (!moving(s))
         return { put: put(s, frame(s, 0, lo, hi)), starting: false, scrolled: scrolled };   // (no ease: there at once)
     if (!was) {
-        s.clock.first = true;
-        s.clock.put = screen.gaps.length > 0;
-        if (s.clock.put)
-            return { put: put(s, frame(s, screen.frame, lo, hi)), starting: true, scrolled: scrolled };
+        s.clock.last = NaN;
         s.written = at;   // (it starts where the list is)
         return { put: NaN, starting: true, scrolled: scrolled };
     }
     return { put: NaN, starting: false, scrolled: scrolled };
 }
 
-// A step of the animations (WheelScroll.qml's FrameAnimation), `gap` ms after the one before (its
-// frameTime), the list at `at`; `drawn`: a frame was drawn since it began to move (false: not yet; left
-// out: it was, as when the loop steps the animations after each frame). The list's place now (whole px),
-// or NaN (no move this step)
-export function tick(s, gap, at, lo, hi, drawn) {
-    const dt = clockStep(s.clock, gap, drawn !== false);
+// A frame of its window, about to be drawn (WheelScroll.qml: the window's afterAnimating), at `now`
+// (Date.now(), ms), the list at `at`: the list's place in that frame (whole px), or NaN (it stays)
+export function tick(s, now, at, lo, hi) {
+    const dt = frameStep(s.clock, now);
     follow(s, at);
-    if (!moving(s))
+    if (!moving(s) || !(dt > 0))
         return NaN;
     return put(s, frame(s, dt, lo, hi));
 }
 
-// How far on this step goes, in ms: a frame of the screen's, as Qt's own animations go (a vsync a step:
-// a millisecond or two early or late, or a frame drawn late, doesn't make it jump); the time it took
-// when it came well within a frame (a screen faster than the frame known so far; a second step in a
-// frame: the loop steps again when an animation begins, and twice at once after a stall); frames missed
-// again and again (ten in a row: a busy computer), all the time that passed. The screen's frame (above)
-// is the middle of the last nine gaps between steps (16.7 ms at 60 a second, 6.9 at 144, whatever the
-// screen), 60 a second weighing in till there are nine.
-// Its first step goes from the event: a frame on from the frame that showed its first move, when one was
-// drawn since (a loop that steps the animations after each frame: the step is shown a frame after it);
-// otherwise the time since the event, a frame at most (Qt steps the animations on a timer of their own
-// when a program shows more than one window, as plasmashell does: a step can come before any frame
-// showed the first move, and both are drawn together; or it didn't move at once)
-function clockStep(c, gap, drawn) {
-    if (c.first) {
-        c.first = false;
-        c.late = 0;
-        return c.put && drawn ? screen.frame : Math.max(0, Math.min(gap, screen.frame));
+// How far on its frame goes, in ms: the screen's frame times the frames since its last (a frame the
+// window didn't draw, busy, keeps the speed: the next goes two), not the milliseconds between them, which
+// come early or late by a millisecond or more (and in whole ms here). Its first frame, the first drawn after
+// the event, goes a frame; before any frame is known (the first motion since plasmashell began) it goes
+// nothing and the next frame tells it one. Two frames within half a frame go by their time; a stall
+// (the window hidden) goes six frames at most
+function frameStep(c, now) {
+    const last = c.last;
+    c.last = now;
+    if (!(now >= last))
+        return isNaN(screen.frame) ? 0 : screen.frame;
+    const gap = now - last;
+    if (isNaN(screen.frame)) {
+        learn(gap);
+        return gap;
     }
+    const n = Math.round(gap / screen.frame);
+    if (n <= 6)
+        learn(gap);
+    return n < 1 ? gap : Math.min(n, 6) * screen.frame;
+}
+
+function learn(gap) {
     screen.gaps.push(gap);
-    if (screen.gaps.length > 9)
+    if (screen.gaps.length > 60)
         screen.gaps.shift();
-    const pool = (screen.gaps.length < 9 ? screen.gaps.concat([1000 / 60, 1000 / 60]) : screen.gaps.slice())
-        .sort(function (x, y) { return x - y; });
-    screen.frame = Math.max(3, Math.min(50, pool[pool.length >> 1]));
-    c.late = gap > 1.5 * screen.frame ? c.late + 1 : 0;
-    if (gap < 0.75 * screen.frame || c.late >= 10)
-        return Math.min(gap, 6 * screen.frame);
-    return screen.frame;
+    const last = screen.gaps.slice(-9).sort(function (x, y) { return x - y; });
+    const mid = last[last.length >> 1];
+    const one = screen.gaps.filter(function (g) { return Math.abs(g - mid) <= 0.25 * mid; });
+    screen.frame = Math.max(3, Math.min(50, one.reduce(function (a, b) { return a + b; }, 0) / one.length));
 }
 
 // (whole pixels: every line moves the same; remembered, so a move by anything else is seen)
@@ -119,9 +119,10 @@ function put(s, y) {
     return s.written;
 }
 
-// (moved by anything else since it last put it there, or at rest: from where it is)
+// (moved by anything else since it last put it there, or at rest: from where it is, a whole pixel, not
+// where its last motion's arithmetic ended a fraction away)
 function follow(s, at) {
-    if (!(Math.abs(at - s.written) < 0.5))
+    if (!moving(s) || !(Math.abs(at - s.written) < 0.5))
         stop(s, at);
 }
 
@@ -243,7 +244,11 @@ function padFrame(s, dt, lo, hi) {
         p.c += p.r * dt * ease(t0 + dt / 2);
         // (kept PAD_LAG moves behind the last that came, a tenth of the way each 16.7 ms: falling behind, more
         // at first; ahead, as it starts with fewer than that, it's let back that far over its first frames,
-        // so the start isn't held back and the lift, a move later, comes before it has shown the last)
+        // so the start isn't held back and the lift, a move later, comes before it has shown the last. The
+        // ease-in leaves it further behind the faster the moves come, and its catching up goes a little past
+        // the pace: 60 moves a second on a 75 a second screen go 6, 9, 14, 17, then 15, 15, 16 (its pace 16).
+        // Not shaped away: an ease-in as long as the moves' pace allows would need that pace before it's
+        // counted, and pulling toward where the next move is due ran further past it)
         const behind = p.n - PAD_LAG - p.c;
         if (p.lift < 0)
             p.c += behind * per(behind > 0 ? Math.max(0.1, 0.5 * 16.67 / p.t) : 0.1);

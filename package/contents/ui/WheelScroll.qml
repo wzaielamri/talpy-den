@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "hub"
 import "wheel.mjs" as Wheel
 
 // Talpy Chat's conversation scrolled by the wheel and the touchpad at an even pace, a step a frame
@@ -7,17 +8,21 @@ import "wheel.mjs" as Wheel
 // takes the wheel's events with no key held before the scroll view's Kirigami.WheelHandler, whose eases
 // went up and down in a spin and along a touchpad's stream; with a key held they go on as before (Ctrl:
 // the text's size, the list's own handler; Shift: a page, Alt: sideways, Kirigami's). It moves the list
-// on the frames (FrameAnimation) only while it moves, by whole pixels (every line moves the same:
+// a step each frame its window draws, only while it moves, by whole pixels (every line moves the same:
 // tests/test_scroll_crisp.py), and stops where anything else moved it (a jump, the scroll bar, a drag).
 //
-// Its clock is the screen's frames, as Qt's own animations' (a vsync a step): a FrameAnimation's frameTime
-// is the computer's time between two steps, which comes a millisecond or two early or late, and a step
-// sized by it went up and down by as much; a step about a frame after the last goes a frame, one well
-// within a frame (the loop stepping again, or a screen faster than the frame known so far) goes the time
-// it took (wheel.mjs tick()). Its first step goes a frame on when a frame was drawn since its first move
-// (`drawn`, from the window's afterAnimating: the scene is synced to draw right after it), else the time
-// since the event: plasmashell shows several windows, and then Qt steps the animations on a timer of
-// their own, which can come before the frame that shows the first move.
+// Its steps are its window's frames, not Qt's animations': plasmashell shows several windows (its panel,
+// its desktop, a popup, Talpy Chat's), and then Qt's threaded loop steps its animations (a FrameAnimation
+// too) on a timer of its own, int(1000 / the screen's rate) ms, not once a frame (qsgthreadedrenderloop.cpp,
+// startOrStopAnimationTimer: vsync-driven only with one window shown); that timer and the frames drift
+// apart, and about every 0.4 s at 60 a second a frame drew two steps (19, 38, 19 px) or none. So it takes
+// its step as its window is about to draw a frame: the window's afterAnimating, which Qt emits on this
+// thread once each time it readies that window's frame, after polishing and before syncing the scene
+// (polishAndSync), so the list's place set there is in that frame; and while it moves it asks for the
+// window's next frame (requestUpdate(): what the list's own change asks for too, but a frame that moved
+// it less than a pixel asks for nothing). A step goes the screen's frame times the frames since the last
+// (wheel.mjs tick(): learned from the frames' times; a frame the window missed keeps the speed). Still,
+// nothing listens or asks for frames.
 WheelHandler {
     id: handler
 
@@ -27,8 +32,7 @@ WheelHandler {
     readonly property real step: Application.styleHints.wheelScrollLines * 20
     readonly property int ease: Kirigami.Settings.smoothScroll ? Kirigami.Units.longDuration : 0
     property var motion: Wheel.create(0)
-    property bool drawn: false   // (a frame drawn since it began to move)
-    readonly property bool moving: frames.running   // (it moves the list: a frame at a time)
+    property bool moving: false   // (it moves the list: a step each frame of its window)
     // (a scroll in progress: while it moves the list and 400 ms after its last event, Kirigami's)
     readonly property bool latched: moving || latch.running
     signal scrolled()                // (each event that scrolls the list)
@@ -49,23 +53,29 @@ WheelHandler {
                               flickable.contentY, top(), bottom(), step, ease)
         if (r.scrolled)
             handler.scrolled()
-        if (r.starting) {
-            handler.drawn = false
+        if (r.starting)
             handler.starting()   // (before its first step: the hovered message is held)
-        }
         if (!isNaN(r.put) && flickable.contentY !== r.put)
             flickable.contentY = r.put
-        if (r.starting)
-            frames.running = Wheel.moving(motion)
+        if (r.starting) {
+            moving = true
+            next()   // (its first step: the window's next frame)
+        }
     }
-    // A step of the animations: wheel.mjs tick()
-    function tick(gap) {
-        const y = Wheel.tick(motion, gap, flickable.contentY, top(), bottom(), handler.drawn)
-        handler.drawn = true
+    // A frame of its window, about to be drawn: its step, drawn in that frame (wheel.mjs tick())
+    function frame() {
+        const y = Wheel.tick(motion, Date.now(), flickable.contentY, top(), bottom())
         if (!isNaN(y) && flickable.contentY !== y)
             flickable.contentY = y
-        if (!Wheel.moving(motion))
-            frames.running = false
+        if (Wheel.moving(motion))
+            next()
+        else
+            moving = false
+    }
+    function next() {
+        const w = flickable.Window.window
+        if (w)
+            w.requestUpdate()
     }
     function top() {
         return flickable.originY
@@ -97,18 +107,23 @@ WheelHandler {
         }
     }
 
-    // (the window about to draw a frame: afterAnimating comes on this thread just before the scene is
-    // synced for it; listened to only from its first move to its first step)
-    property Connections frameDrawn: Connections {
+    // (its window about to draw a frame: listened to only while it moves)
+    property Connections frames: Connections {
         target: handler.flickable.Window.window
-        enabled: handler.frames.running && !handler.drawn
+        enabled: handler.moving
         function onAfterAnimating() {
-            handler.drawn = true
+            handler.frame()
         }
     }
-
-    property FrameAnimation frames: FrameAnimation {
-        running: false
-        onTriggered: handler.tick(frameTime * 1000)
+    // (the screen locked: nothing of the widget shows, nothing moves, hub/Beat.qml; it stops where it is)
+    property Connections lock: Connections {
+        target: Beat
+        enabled: handler.moving
+        function onLockedChanged() {
+            if (Beat.locked) {
+                Wheel.stop(handler.motion, handler.flickable.contentY)
+                handler.moving = false
+            }
+        }
     }
 }

@@ -7,7 +7,7 @@ export interface Wheel {
   pad: object | null;
   fling: number | null;
   written: number;
-  clock: { first: boolean; put: boolean; late: number };
+  clock: { last: number };
 }
 export interface WheelEvent {
   angle: number;
@@ -23,7 +23,7 @@ export function create(y: number): Wheel;
 export function resetFrames(): void;
 export function input(s: Wheel, ev: WheelEvent, at: number, lo: number, hi: number, step: number, long: number):
   { put: number; starting: boolean; scrolled: boolean };
-export function tick(s: Wheel, gap: number, at: number, lo: number, hi: number, drawn?: boolean): number;
+export function tick(s: Wheel, now: number, at: number, lo: number, hi: number): number;
 export function moving(s: Wheel): boolean;
 export function stop(s: Wheel, y: number): void;
 export function notch(s: Wheel, dist: number, long: number, step: number, lo: number, hi: number): void;
