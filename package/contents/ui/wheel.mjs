@@ -93,7 +93,9 @@ export function tick(s, now, at, lo, hi) {
 // second at the compositor's frame callback, 0 to a frame later, but the two are shown a vsync apart. Past
 // those, two frames within half a frame go by their time (an extra frame, as on an expose: both shown in
 // one vsync). Before any frame is known (the first motion since plasmashell began) it goes nothing till
-// its third frame, whose gap is the first that is a frame. A stall goes six frames at most
+// its third frame, whose gap is the first that is a frame. Frames missed go their time, three frames at
+// most: after a stall (this thread busy a few hundred ms) it goes on from where it was shown, not in a
+// jump to where the stall's time would have taken it
 function frameStep(c, now) {
     const last = c.last;
     const k = c.k;
@@ -103,7 +105,7 @@ function frameStep(c, now) {
         return isNaN(screen.frame) ? 0 : screen.frame;
     const gap = now - last;
     if (k === 1)
-        return isNaN(screen.frame) ? 0 : Math.max(1, Math.min(6, Math.round(gap / screen.frame))) * screen.frame;
+        return isNaN(screen.frame) ? 0 : Math.max(1, Math.min(3, Math.round(gap / screen.frame))) * screen.frame;
     if (isNaN(screen.frame)) {
         learn(gap);
         return gap;
@@ -125,7 +127,7 @@ function frameStep(c, now) {
     } else {
         screen.odd = [];
     }
-    return n < 1 ? gap : Math.min(n, 6) * screen.frame;
+    return n < 1 ? gap : Math.min(n, 3) * screen.frame;
 }
 
 function learn(gap) {

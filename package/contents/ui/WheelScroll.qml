@@ -60,7 +60,7 @@ WheelHandler {
             flickable.contentY = r.put
         if (r.starting) {
             moving = true
-            watch.restart()
+            rearm()
             next()   // (its first step: the window's next frame)
         }
     }
@@ -70,7 +70,7 @@ WheelHandler {
         if (!isNaN(y) && flickable.contentY !== y)
             flickable.contentY = y
         if (Wheel.moving(motion)) {
-            watch.restart()
+            rearm()
             next()
         } else {
             moving = false
@@ -121,10 +121,24 @@ WheelHandler {
     // (no frame of its window for 100 ms: it was hidden, or minimized (Wayland: no frame callback comes, and
     // Qt takes a window with none for 100 ms for not shown, qwaylandwindow.cpp mFrameCallbackTimeout), and its
     // frames don't come: it finishes at once rather than wait, held, to jump on when shown. Running only
-    // while it moves, again from each frame)
+    // while it moves, again from each frame. Fired well after its 100 ms, it's this thread that stalled
+    // (plasmashell loading chats, another widget): no frame came, but no timer ran either, and the frame
+    // due comes next: it asks for it and goes on, the frame after the stall going as missed frames do)
+    property real armed: 0   // (when the watch was last started, Date.now())
+    function rearm() {
+        armed = Date.now()
+        watch.restart()
+    }
     property Timer watch: Timer {
         interval: 100
-        onTriggered: handler.finish()
+        onTriggered: {
+            if (Date.now() - handler.armed > 150) {
+                handler.rearm()
+                handler.next()
+            } else {
+                handler.finish()
+            }
+        }
     }
     // (its window about to draw a frame: listened to only while it moves)
     property Connections frames: Connections {

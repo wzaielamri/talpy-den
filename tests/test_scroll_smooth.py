@@ -119,12 +119,14 @@ def tick():
         while state["i"] < len(events) and events[state["i"]][0] <= at:
             t, phase, angle, pixel = events[state["i"]]
             state["i"] += 1
-            if phase in ("hide", "show", "stall", "resume"):
+            if phase in ("hide", "show", "stall", "resume", "freeze"):
                 state["marks"].append(snapshot(phase))
                 if phase == "hide":
                     view.hide()
                 elif phase == "show":
                     view.show()
+                elif phase == "freeze":
+                    time.sleep(angle / 1000)   # (the GUI thread busy: nothing runs, no frame, no timer)
                 else:
                     wl["stalled"] = phase == "stall"
                 continue
@@ -380,7 +382,7 @@ class TheListsWheelTests(unittest.TestCase):
         self.assertIn("enabled: handler.moving\n", frames[:frames.index("}")])
         self.assertEqual(re.sub(r"//.*", "", ws).count("requestUpdate()"), 1)
         frame = ws[ws.index("function frame()"):ws.index("function next()")]
-        self.assertRegex(frame, r"if \(Wheel\.moving\(motion\)\) \{\n\s*watch\.restart\(\)\n\s*next\(\)\n\s*\} else \{\n\s*moving = false")
+        self.assertRegex(frame, r"if \(Wheel\.moving\(motion\)\) \{\n\s*rearm\(\)\n\s*next\(\)\n\s*\} else \{\n\s*moving = false")
         self.assertIn("s.written = Math.round(y);", (UI / "wheel.mjs").read_text())
         self.assertNotIn("Behavior on", ws)
 
@@ -552,7 +554,9 @@ GONE = [RUNS[0],
                                             + [[800, "show", 0, 0]]},
         {"label": "glide", "events": touchpad(125, 200, 300)},
         {"label": "glide, hidden", "events": touchpad(125, 200, 300) + [[360, "hide", 0, 0], [1000, "show", 0, 0]]},
-        {"label": "notch, minimized", "events": [[0, "none", 120, 0], [40, "stall", 0, 0], [700, "resume", 0, 0]]}]
+        {"label": "notch, minimized", "events": [[0, "none", 120, 0], [40, "stall", 0, 0], [700, "resume", 0, 0]]},
+        {"label": "fast glide", "events": touchpad(125, 400, 300)},
+        {"label": "fast glide, frozen", "events": touchpad(125, 400, 300) + [[360, "freeze", 250, 0]]}]
 
 
 @NEEDS_QT
@@ -579,6 +583,30 @@ class AMotionItsWindowStopsDrawingTests(Retried, unittest.TestCase):
                 after = r["ys"][mark["at"]:]
                 self.assertTrue(all(y == mark["y"] for y in after), f"{label}: after {back} {after[:12]}")
                 self.assertTrue(r["idle"] and r["quiet"], label)
+        self.retried(check)
+
+
+@NEEDS_QT
+class AFrozenEventLoopTests(Retried, unittest.TestCase):
+    """Plasmashell's GUI thread stalls now and then (loading chats, other widgets): no frame comes, but its timers
+    don't run either. A glide frozen 250 ms mid-way goes on to where it was going over the frames after, as
+    after missed frames, not in one jump there (the window didn't stop drawing it: its watch fired late)."""
+    runs_of = [GONE[0], GONE[6], GONE[7]]
+
+    def test_it_goes_on_after_the_freeze(self):
+        def check(runs):
+            r = runs["fast glide, frozen"]
+            mark = next(m for m in r["marks"] if m["tag"] == "freeze")
+            left = mark["y"] - r["y"]   # (what was left of it as the freeze began)
+            ys = r["ys"][mark["at"] - 1:]
+            after = [a - b for a, b in zip(ys, ys[1:])]
+            moving = [x for x in after if x]
+            pace = r["ys"][mark["at"] - 2] - r["ys"][mark["at"] - 1]
+            self.assertGreater(left, 3 * pace, f"the freeze came too late in the glide: {left} px left, pace {pace}")
+            self.assertGreaterEqual(len(moving), 3, f"after the freeze: {after[:12]} (left {left})")
+            self.assertLess(max(moving), left, f"after the freeze: {after[:12]} (left {left})")
+            self.assertLessEqual(max(moving), 3.5 * pace + 1, f"after the freeze: {after[:12]} (pace {pace})")
+            self.assertTrue(r["idle"] and r["quiet"])
         self.retried(check)
 
 
