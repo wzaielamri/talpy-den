@@ -1,4 +1,4 @@
-"""No test runs the real claude.
+"""No test runs the real claude, nor Plasma's kscreen-doctor.
 
 The real claude is usually on PATH (~/.local/bin), and find_claude(ask_shell=True)
 asks your login shell for it besides. So a test that reaches a command line
@@ -10,6 +10,11 @@ sets PATH or SHELL itself (a fake bin, the find_claude tests) still gets its
 own, and child processes inherit the guard.
 
 Each test that runs the guard's claude fails, naming what it was asked.
+
+Nor does a test ask your desktop about its screens: kscreen-doctor (Talpy
+Chat's scroller asks it for the screen's refresh rate, code/screen_rate.py) is
+the guard's too, first on PATH, and one that runs it fails the same way. A
+test that needs one puts its own first on PATH.
 
 No test reaches your desktop's session either: your display (DISPLAY,
 WAYLAND_DISPLAY) is taken out of the environment, the session bus's address is
@@ -42,7 +47,11 @@ def _install():
     # claude; anything else (tmux's panes, a terminal's script) gets a plain sh
     shell.write_text('#!/bin/sh\n[ "$*" = "-l -i -c env" ] && exec echo "PATH=%s:/usr/bin:/bin"\n'
                      'exec /bin/sh "$@"\n' % bin_dir)
-    for exe in (claude, shell):
+    doctor = bin_dir / "kscreen-doctor"
+    doctor.write_text('#!/bin/sh\nprintf "kscreen-doctor %%s\\n" "$*" >> "%s"\n'
+                      'echo "a test ran kscreen-doctor outside its own fake bin (tests/claude_guard.py)" >&2\n'
+                      'exit 97\n' % log)
+    for exe in (claude, shell, doctor):
         exe.chmod(0o755)
     os.environ["PATH"] = os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")])
     os.environ["SHELL"] = str(shell)
@@ -61,7 +70,7 @@ def _install():
         new = ran()[before:]
         if new and result is not None:
             try:
-                raise AssertionError("ran claude outside the test's own fake bin: " + "; ".join(new))
+                raise AssertionError("ran claude or kscreen-doctor outside the test's own fake bin: " + "; ".join(new))
             except AssertionError:
                 result.addFailure(self, sys.exc_info())
         return outcome

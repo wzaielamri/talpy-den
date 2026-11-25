@@ -110,13 +110,33 @@ def own_runtime():
     return _runtime[0]
 
 
+# (Talpy Chat's scroller asks for its screen's refresh rate, code/screen_rate.py: Plasma's kscreen-doctor, which
+# would ask your desktop. A render's is the bench's own: the owner's screen, eDP-1 at 60.03 a second)
+SCREENS = {"outputs": [{"name": "eDP-1", "enabled": True, "connected": True, "currentModeId": "1",
+                        "modes": [{"id": "1", "name": "1920x1080@60", "refreshRate": 60.033}]}]}
+_bin = []
+
+
+def own_bin():
+    """A folder of the bench's own (removed as it ends), first on a render's PATH: its kscreen-doctor answers
+    for SCREENS."""
+    if not _bin:
+        _bin.append(tempfile.mkdtemp(prefix="talpy-bench-bin-"))
+        atexit.register(shutil.rmtree, _bin[0], True)
+        doctor = Path(_bin[0]) / "kscreen-doctor"
+        doctor.write_text("#!/bin/sh\n[ \"$1\" = \"-j\" ] || exit 2\ncat <<'EOF'\n%s\nEOF\n" % json.dumps(SCREENS))
+        doctor.chmod(0o755)
+    return _bin[0]
+
+
 def env_for(home):
     """This environment with the made-up home, none of your own XDG folders (render_popup.sh sets its own),
-    no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen) and a runtime
-    folder of its own."""
+    no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen), a runtime
+    folder of its own, and a kscreen-doctor of its own first on PATH (own_bin)."""
     env = {k: v for k, v in os.environ.items()
            if (not k.startswith("XDG_") or k in ("XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and k not in YOURS}
-    env.update(HOME=str(home), DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime())
+    env.update(HOME=str(home), DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime(),
+               PATH=os.pathsep.join([own_bin(), os.environ.get("PATH", "")]))
     return env
 
 

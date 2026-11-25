@@ -6,6 +6,7 @@ Taking the bus's address out isn't enough: with none given, libdbus and GDBus (a
 the session bus at $XDG_RUNTIME_DIR/bus, which is yours, so each is given an address that isn't there and
 a runtime folder of its own; checked for real with a stand-in bus at that place."""
 import claude_guard  # noqa: F401  (first: no test runs the real claude)
+import json
 import os
 import shutil
 import socket
@@ -132,6 +133,15 @@ class TheBenchsEnvironmentTests(unittest.TestCase):
             self.assertNotEqual(env.get(k), YOURS[k], k)
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("WAYLAND_DISPLAY", env)
+
+    def test_a_renders_widget_asks_a_kscreen_doctor_of_the_benchs(self):
+        # (Talpy Chat's scroller asks for its screen's refresh rate, code/screen_rate.py: never your desktop)
+        env = bench.env_for(Path("/nonexistent/home"))
+        doctor = shutil.which("kscreen-doctor", path=env["PATH"])
+        self.assertEqual(Path(doctor).parent, Path(bench.own_bin()))
+        r = subprocess.run([sys.executable, "-I", str(ROOT / "package/contents/code/screen_rate.py"), ""],
+                           capture_output=True, text=True, env=env, timeout=30)
+        self.assertEqual(json.loads(r.stdout), {"ok": True, "name": "eDP-1", "hz": 60.033, "rates": [60.033]})
 
     def test_the_browsers_start_with_no_bus_and_no_display_of_yours(self):
         with mock.patch.dict(os.environ, YOURS):

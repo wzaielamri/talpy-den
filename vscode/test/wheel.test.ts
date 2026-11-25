@@ -34,17 +34,22 @@ function touchpad(hz: number, speed: number, ms: number, late = 0, seed = 1): Ev
 const moves = (events: Ev[]) => sum(events.map((e) => (e.phase === "none" || e.phase === "update" ? e.angle / 120 * STEP : 0)));
 
 // The scroller as WheelScroll.qml runs it (wheel.mjs input() and tick(), the same code): a screen of `hz`
-// frames a second; the events that came before a frame are taken, then, as the window is about to draw
-// it (its afterAnimating), the step, drawn in that frame: tick() given the time as Date.now() gives it
-// (whole ms, `jitter` ms early or late). A frame `miss` says is one the window didn't draw (busy): no
-// step then. The list's place each frame, and its steps from the first that moved to the last
-function play(events: Ev[], o: { hz?: number; lo?: number; hi?: number; y0?: number; jitter?: number; s?: W.Wheel; miss?: (k: number) => boolean } = {}) {
+// frames a second (the system's rate given, rate(), unless `learn`: what it learns without); the events
+// that came before a frame are taken, then, as the window is about to draw it (its afterAnimating), the
+// step, drawn in that frame: tick() given the time as Date.now() gives it (whole ms, `jitter` ms early or
+// late). A frame `miss` says is one the window didn't draw (busy): no step then. During a `stall` (from, to:
+// ms) this thread is busy: no frame, no event taken; the events meanwhile are taken together after it. The
+// list's place each frame, and its steps from the first that moved to the last
+function play(events: Ev[], o: { hz?: number; lo?: number; hi?: number; y0?: number; jitter?: number; s?: W.Wheel; learn?: boolean;
+                                 miss?: (k: number) => boolean; stall?: [number, number] } = {}) {
   const vs = 1000 / (o.hz || 60.03), lo = o.lo === undefined ? -1e9 : o.lo, hi = o.hi === undefined ? 1e9 : o.hi;
   const s = o.s || W.create(o.y0 || 0);
+  if (!o.s && !o.learn) W.rate(s, o.hz || 60.03, []);
   let y = o.y0 || 0, i = 0, running = false, first = -1, r = 7;
   const rnd = () => { r = (r * 16807) % 2147483647; return r / 2147483647 - 0.5; };
   const ys = [y];
   for (let k = 1; k < 600; k++) {
+    if (o.stall && k * vs > o.stall[0] && k * vs < o.stall[1]) { ys.push(y); continue; }
     while (i < events.length && events[i].t <= k * vs) {
       const e = events[i++];
       if (first < 0 && e.angle !== 0) first = k;
@@ -121,7 +126,6 @@ function kirigami(events: Ev[]): number[] {
 }
 
 test("a notch eases out over Kirigami's 200 ms: the desktop's lines × 20 px, its steps only fall, the first frame moves", () => {
-  play(notches(1, 0));   // (the screen's frame learned: a window's first motion since plasmashell began is below)
   const { steps, still, late } = play(notches(1, 0));
   assert.equal(late, 0);   // (it moves in the frame that comes next: Kirigami's ease began a frame later)
   assert.equal(sum(steps), STEP);
@@ -137,15 +141,8 @@ test("a notch eases out over Kirigami's 200 ms: the desktop's lines × 20 px, it
 test("on a screen of 75, 120, 144 or 165 frames a second every frame of a notch moves, and it lasts its 200 ms", () => {
   for (const hz of [60.03, 75, 120, 144, 165]) {
     for (const jitter of [0, 1.5]) {
-      // (its first motion in a window learns the screen's frame: 60 a second till its steps say otherwise)
-      const first = play(notches(1, 0), { hz, jitter });
-      assert.equal(sum(first.steps), STEP);
-      assert.equal(first.steps.filter((x, k) => x === 0 && (first.steps[k - 1] + first.steps[k + 1]) / 2 >= 2).length, 0, `${hz} Hz: ${first.steps}`);
-      // (while it learns, its steps go by their times: within 2 px of falling)
-      for (let k = 1; k < first.steps.length; k++) assert.ok(first.steps[k] <= first.steps[k - 1] + 2, `${hz} Hz: ${first.steps}`);
-      const s = W.create(0);
-      play(notches(1, 0), { hz, jitter, s });
-      const { steps, still, ms } = play(notches(1, 0), { hz, jitter, s, y0: s.y });
+      // (the system's rate for its window's screen: its first motion steps the screen's frames)
+      const { steps, still, ms } = play(notches(1, 0), { hz, jitter });
       assert.equal(sum(steps), STEP, `${hz} Hz: ${steps}`);
       // (a frame that didn't move while the list went a pixel or more a frame: one missed; at the tail,
       // moving less than a pixel a frame, a whole-pixel list stays put a frame now and then)
@@ -164,7 +161,7 @@ test("on a screen of 75, 120, 144 or 165 frames a second every frame of a notch 
 test("a touchpad's swipe on a screen of 120, 144 or 165 frames a second eases in without a frame standing still", () => {
   for (const hz of [120, 144, 165]) {
     const s = W.create(0), vs = 1000 / hz;
-    play(notches(1, 0), { hz, s });   // (the screen's frame learned)
+    W.rate(s, hz, []);   // (the system's rate for its window's screen)
     for (const rate of [60, 90, 125]) {
       for (const phase of [0.3, 2, 4, 5.3, 9]) {   // (its first move this long after a frame)
         const at = Math.ceil(1000 / vs) * vs + (phase % vs) - 5.3;
@@ -177,18 +174,65 @@ test("a touchpad's swipe on a screen of 120, 144 or 165 frames a second eases in
   }
 });
 
-test("the first motion since plasmashell began (no frame known yet) neither races nor crawls, whatever the screen", () => {
-  for (const hz of [60.03, 120, 144, 165]) {
-    W.resetFrames();   // (as plasmashell starts: no frame learned yet)
-    const { steps, late } = play(notches(1, 0), { hz });
-    assert.equal(sum(steps), STEP);
-    // (it moves from its third frame: the gap between its first two isn't a frame where Qt Wayland draws the
-    // first at once)
-    assert.ok(late <= 2, `${hz} Hz: ${late} frames late`);
-    for (let k = 1; k < 4; k++) assert.ok(steps[k - 1] <= 2 * steps[k] + 1 && steps[k] <= steps[k - 1] + 1, `${hz} Hz: ${steps}`);
+// (a notch from rest at `e` on a `hz` screen, its frames from the vsync just after the event on, as rates.mjs
+// gives them; review round 5: per notch, its steps)
+function notchAt(s: W.Wheel, y: number, e: number, hz: number) {
+  W.input(s, { angle: 120, pixel: 0, phase: "none" }, y, -1e9, 1e9, STEP, LONG);
+  return ticks(s, Array.from({ length: 200 }, (_, k) => e + 0.3 + k * 1000 / hz), y);
+}
+const near = (a: number[], b: number[]) => a.length === b.length && a.every((x, k) => Math.abs(x - b[k]) <= 1);
+
+test("a window moved to a screen of another rate: the system's rate steps its frames at once; without it, faster ones are learned in a motion, slower ones in two", () => {
+  const pairs = [[60.03, 120], [60.03, 144], [60.03, 165], [60.03, 240], [120, 60.03], [144, 60.03], [165, 60.03], [240, 60.03], [75, 144], [144, 165], [165, 144]];
+  for (const [h1, h2] of pairs) {
+    const ref = (() => { const s = W.create(0); W.rate(s, h2, []); return notchAt(s, 0, 1000, h2); })();
+    // (the system's: told the new screen's rate as the window moves there)
+    const told = W.create(0);
+    W.rate(told, h1, []);
+    let y = 0;
+    for (let i = 0; i < 3; i++) y += sum(notchAt(told, y, 1000 + i * 1000, h1)) * -1;
+    W.rate(told, h2, []);
+    const first = notchAt(told, y, 9000, h2);
+    assert.ok(near(first, ref), `${h1} -> ${h2}, told: ${first} / ${ref}`);
+    // (without it: from what the frames show, the steps of each notch on the new screen)
+    const s = W.create(0);
+    y = 0;
+    for (let i = 0; i < 3; i++) y -= sum(notchAt(s, y, 1000 + i * 1000, h1));
+    const on = [0, 1, 2, 3].map((i) => { const st = notchAt(s, y, 10000 + i * 1000, h2); y -= sum(st); return st; });
+    const from = h2 > h1 ? 1 : 2;   // (a faster screen's frames: learned in the first motion there; a slower one's in two)
+    for (let i = from; i < 4; i++)
+      assert.ok(on[i].length === ref.length && on[i].every((x, k) => Math.abs(x - ref[k]) <= 1), `${h1} -> ${h2}, notch ${i + 1} there: ${on[i]} / ${ref}`);
+    on.forEach((st) => assert.equal(sum(st), STEP, `${h1} -> ${h2}: ${on}`));
+    assert.ok(Math.abs(W.period(s) - 1000 / h2) <= 0.002 * 1000 / h2, `${h1} -> ${h2}: learned ${W.period(s)} ms`);
   }
-  W.resetFrames();
-  play(notches(1, 0));
+});
+
+test("without the system's rate a window starts at 60 a second: a session's first motion moves from its first frame, and its first gaps (the pipeline's) teach it nothing", () => {
+  // (lock.mjs, review round 5: a session's first motion from rest, Wayland's frames, then ten notches long after,
+  // each 14, 11, 10 … in its 10 moving frames; round 4 learned a frame from the first gaps in 24 of 96)
+  let bad = 0, n = 0;
+  for (let phase = 1.5; phase <= 17; phase += 0.5) {
+    for (const frac of [0.1, 0.4, 0.7]) {
+      const s = W.create(0);
+      const e = 5000 + frac;
+      W.input(s, { angle: 120, pixel: 0, phase: "none" }, 0, -1e9, 1e9, STEP, LONG);
+      const first = ticks(s, [e + 0.3, e + 1.3, ...Array.from({ length: 60 }, (_, k) => e + phase + k * F)], 0);
+      let y = -sum(first), last: number[] = [];
+      for (let i = 0; i < 10; i++) {
+        W.input(s, { angle: 120, pixel: 0, phase: "none" }, y, -1e9, 1e9, STEP, LONG);
+        last = ticks(s, Array.from({ length: 60 }, (_, k) => 7000 + i * 1000 + frac + 0.3 + k * F), y);
+        y -= sum(last);
+      }
+      n++;
+      if (last.filter((x) => x).length !== 10 || last[0] !== 14 || first.slice(0, 3).join() !== "14,11,10") bad++;
+      assert.ok(Math.abs(W.period(s) - 1000 / 60) < 0.01, `phase ${phase}: learned ${W.period(s)}`);
+    }
+  }
+  assert.equal(bad, 0, `${bad} of ${n}`);
+  // (and a first motion with nothing given starts at once at 60 a second)
+  const { steps, late } = play(notches(1, 0), { learn: true });
+  assert.equal(late, 0);
+  assert.ok(near(steps, play(notches(1, 0)).steps), String(steps));
 });
 
 test("a step each frame of its window, as long as the frames since the last: when in its vsync a frame comes changes nothing, a missed one keeps the speed", () => {
@@ -221,17 +265,43 @@ function ticks(s: W.Wheel, times: number[], y0: number) {
   return stepsOf(ys);
 }
 
-test("a notch on a window at rest: its second step goes a frame, though Qt Wayland drew its first at once", () => {
-  // (Qt Wayland: an update asked for with no frame callback pending comes at once, the next at the
-  // compositor's frame callback, 0 to a frame later; the two are shown a vsync apart all the same.
-  // Before: 14, 1, 11 with the callback 2 ms after the first frame)
+// (a motion from rest at `e` as Qt Wayland draws it (qwaylandwindow.cpp requestUpdate and handleUpdate,
+// qwaylandglcontext.cpp swapBuffers, qsgthreadedrenderloop.cpp polishAndSync): its first frame at once, its second
+// as soon as the first is handed on, a millisecond later (its update asked for before the first's swap, with no
+// frame callback pending yet), its third at the first's frame callback `callback` ms after the event, then one
+// each vsync; the events taken before the frame after them. Its steps)
+function fromRest(events: Ev[], callback: number) {
+  const s = W.create(0), e = 5000.2;
+  W.rate(s, 60.03, []);
+  const times = [e + 0.5, e + 1.6, ...Array.from({ length: 60 }, (_, n) => e + Math.max(callback, 1.7) + n * F)];
+  let y = 0, i = 0, running = false;
+  const ys = [0];
+  for (const ft of times) {
+    while (i < events.length && e + events[i].t <= ft) {
+      const ev = events[i++];
+      W.input(s, { angle: ev.angle, pixel: ev.pixel, phase: ev.phase }, y, -1e9, 1e9, STEP, LONG);
+      running = W.moving(s);
+    }
+    if (running) {
+      const p = W.tick(s, Math.floor(ft), y, -1e9, 1e9);
+      if (!Number.isNaN(p)) y = p;
+      running = W.moving(s);
+    }
+    ys.push(y);
+  }
+  return stepsOf(ys);
+}
+
+test("a motion from rest on Wayland: each frame goes a frame, its second (drawn a ms after its first) and third (at the first's callback) too", () => {
+  // (start2.mjs, review round 5: with the callback 0 to 16 ms after the event round 4 went 14, 11, 1 … 5, 9, 8; a
+  // frame's way each: 14, 11, 10)
   const ref = play(notches(1, 0)).steps;
-  for (const callback of [2, 4, 6, 8, 10, 14, 16]) {
-    const s = W.create(0);
-    const e = 5000.2;
-    W.input(s, { angle: 120, pixel: 0, phase: "none" }, 0, -1e9, 1e9, STEP, LONG);
-    const steps = ticks(s, [e + 0.5, ...Array.from({ length: 20 }, (_, n) => e + callback + n * F)], 0);
-    assert.ok(steps.length === ref.length && steps.every((x, k) => Math.abs(x - ref[k]) <= 1), `callback ${callback} ms after: ${steps} / ${ref}`);
+  for (let callback = 0; callback <= 16; callback += 0.5) {
+    const steps = fromRest(notches(1, 0), callback);
+    assert.ok(near(steps, ref), `a notch, callback ${callback} ms after: ${steps} / ${ref}`);
+    const spin = fromRest(notches(6, 50), callback);
+    assert.ok(Math.abs(spin[0] - 14) <= 1 && Math.abs(spin[1] - 11) <= 1 && Math.abs(spin[2] - 10) <= 1, `a spin, callback ${callback} ms after: ${spin}`);
+    assert.ok(spin.every((x) => x > 0) && turns(spin) <= 2 && sum(spin) === 6 * STEP, `a spin, callback ${callback} ms after: ${spin}`);
   }
 });
 
@@ -260,6 +330,43 @@ test("frames missed for a while (a busy window) don't teach it a longer frame: b
   assert.ok(after.every((x) => Math.abs(x - pace) <= 0.15 * pace + 1), `after the busy frames: ${after} (busy: ${steps.slice(-30, -20)})`);
   const busy = steps.slice(-30, -20);   // (every other vsync: two frames' way each)
   assert.ok(busy.every((x) => x <= 2.6 * pace), `the busy frames: ${busy} (pace after: ${pace})`);
+  assert.equal(W.period(s), 1000 / 60);   // (busy.mjs, review round 5: its frame never changed)
+});
+
+test("a window that draws one vsync in four keeps its speed: each frame goes four (the first, as after a stall, three)", () => {
+  // (a touchpad's steady swipe, 125 moves a second; the window draws every 4th vsync for a while: the first of those
+  // frames goes three frames' way, as after a stall, each after it four, so the list keeps its speed; back on every
+  // vsync, its pace; round 4's cap of three went three of four the whole while)
+  const s = W.create(0);
+  W.rate(s, 60.03, []);
+  const events = touchpad(125, 400, 1300);
+  const frames: number[] = [];
+  let t = F;
+  while (t < 400) { frames.push(t); t += F; }
+  const busyFrom = frames.length;
+  for (let i = 0; i < 8; i++) { t += 3 * F; frames.push(t); t += F; }
+  const busyTo = frames.length;
+  while (t < 1200) { frames.push(t); t += F; }
+  let y = 0, i = 0;
+  const steps: number[] = [];
+  for (const ft of frames) {
+    while (i < events.length && events[i].t <= ft) {
+      const e = events[i++];
+      W.input(s, { angle: e.angle, pixel: e.pixel, phase: e.phase }, y, -1e9, 1e9, STEP, LONG);
+    }
+    const p = W.tick(s, Math.floor(ft), y, -1e9, 1e9);
+    const prev = y;
+    if (!Number.isNaN(p)) y = p;
+    steps.push(prev - y);
+  }
+  const before = steps.slice(busyFrom - 6, busyFrom);
+  const pace = before.slice().sort((a, b) => a - b)[3];
+  const busy = steps.slice(busyFrom, busyTo);
+  assert.ok(Math.abs(busy[0] - 3 * pace) <= 0.1 * 3 * pace + 1, `the first busy frame: ${busy} (pace ${pace})`);
+  assert.ok(busy.slice(1).every((x) => Math.abs(x - 4 * pace) <= 0.1 * 4 * pace + 1), `the busy frames: ${busy} (pace ${pace})`);
+  const back = steps.slice(busyTo + 1, busyTo + 10);
+  assert.ok(back.every((x) => Math.abs(x - pace) <= 0.15 * pace + 1), `back on every vsync: ${back} (pace ${pace})`);
+  assert.ok(Math.abs(W.period(s) - F) < 1e-9);
 });
 
 test("a motion its window stops drawing ends where it was going: finish() is where its frames would have taken it", () => {
@@ -334,6 +441,45 @@ for (const hz of [60, 90, 125]) {
     }
   });
 }
+
+// (steps of a run around a stall: the frame before it, the frames from the first after it on)
+function aroundStall(r: { ys: number[] }, stall: [number, number]) {
+  const k0 = Math.ceil(stall[1] / F - 1e-9);   // (the first frame after it)
+  const kb = Math.floor(stall[0] / F + 1e-9);   // (the last before it)
+  return { before: r.ys[kb - 1] - r.ys[kb], after: r.ys.slice(k0 - 1).map((v, k, a) => (k ? a[k - 1] - v : NaN)).slice(1) };
+}
+
+test("a stall mid-swipe (this thread busy 200 to 300 ms, the moves meanwhile taken together after it) doesn't speed the touch up: it ends where it would have, at the fingers' pace again at once", () => {
+  // (stream3.py, review round 5: the moves that came together after a stall, counted against its frames' time,
+  // made a pace twice the fingers' and its glide went 180-720 px further; now its pace isn't counted from them)
+  const events = touchpad(125, 400, 600);
+  const total = sum(play(events).steps);
+  for (const ms of [200, 250, 300]) {
+    const stall: [number, number] = [200, 200 + ms];
+    const r = play(events, { stall });
+    assert.ok(Math.abs(sum(r.steps) - total) <= 0.05 * total, `${ms} ms: went ${sum(r.steps)}, ${total} without`);
+    const { before, after } = aroundStall(r, stall);
+    // (its first frame after: three frames' way at most; then the fingers' pace (a tenth more while it catches up))
+    assert.ok(after[0] <= 3 * before + 2 && after[0] >= 1.5 * before, `${ms} ms: ${before} before, then ${after.slice(0, 10)}`);
+    assert.ok(after.slice(1, 12).every((x) => Math.abs(x - before) <= 0.15 * before + 1), `${ms} ms: ${before} before, then ${after.slice(0, 12)}`);
+  }
+});
+
+test("a stall mid-glide goes on after it: three frames' way at most, then its glide, no frame standing still", () => {
+  // (freeze2.py, review round 5: stalls of 90 to 250 ms mid-glide)
+  const events = touchpad(125, 400, 300);
+  const whole = play(events);
+  for (const ms of [90, 110, 120, 130, 140, 150, 200, 250]) {
+    const stall: [number, number] = [360, 360 + ms];
+    const r = play(events, { stall });
+    const { before, after } = aroundStall(r, stall);
+    const moving = after.filter((x, k) => k < after.findIndex((y, j) => j > 0 && after.slice(j).every((z) => z === 0)) || after.every((z) => z !== 0));
+    assert.ok(after[0] <= 3 * before + 2, `${ms} ms: ${before} before, then ${after.slice(0, 10)}`);
+    assert.ok(after[1] >= 0.5 * before - 2 || after[1] >= after[0] / 6, `${ms} ms: a frame near still after it: ${before}, then ${after.slice(0, 10)}`);
+    assert.ok(moving.length >= 3, `${ms} ms: ${after.slice(0, 10)}`);
+    assert.ok(r.still && Math.abs(r.ys[r.ys.length - 1] - whole.ys[whole.ys.length - 1]) <= 2, `${ms} ms: ended ${r.ys[r.ys.length - 1]}, ${whole.ys[whole.ys.length - 1]} without`);
+  }
+});
 
 test("a touchpad on a screen of 144 frames a second is followed evenly too", () => {
   for (const hz of [90, 125]) {

@@ -20,9 +20,12 @@ import "wheel.mjs" as Wheel
 // thread once each time it readies that window's frame, after polishing and before syncing the scene
 // (polishAndSync), so the list's place set there is in that frame; and while it moves it asks for the
 // window's next frame (requestUpdate(): what the list's own change asks for too, but a frame that moved
-// it less than a pixel asks for nothing). A step goes the screen's frame times the frames since the last
-// (wheel.mjs tick(): learned from the frames' times; a frame the window missed keeps the speed). Still,
-// nothing listens or asks for frames.
+// it less than a pixel asks for nothing). A step goes the screen's frame for each vsync since the last,
+// one at least (wheel.mjs tick(): on Wayland every frame drawn is a vsync of its own; a frame the window
+// missed keeps the speed). The screen's frame is the system's (code/screen_rate.py: its refresh rate, as
+// Plasma's kscreen-doctor gives it), asked as it starts and when its window moves to another screen;
+// till it answers, or if it can't, 60 a second and what the frames show (wheel.mjs). Still, nothing
+// listens or asks for frames.
 WheelHandler {
     id: handler
 
@@ -33,7 +36,10 @@ WheelHandler {
     readonly property int ease: Kirigami.Settings.smoothScroll ? Kirigami.Units.longDuration : 0
     property var motion: Wheel.create(0)
     property bool moving: false   // (it moves the list: a step each frame of its window)
-    onMovingChanged: if (!moving) watch.stop()
+    onMovingChanged: if (!moving) {
+        watch.stop()
+        checking = false
+    }
     // (a scroll in progress: while it moves the list and 400 ms after its last event, Kirigami's)
     readonly property bool latched: moving || latch.running
     signal scrolled()                // (each event that scrolls the list)
@@ -118,25 +124,28 @@ WheelHandler {
         }
     }
 
-    // (no frame of its window for 100 ms: it was hidden, or minimized (Wayland: no frame callback comes, and
-    // Qt takes a window with none for 100 ms for not shown, qwaylandwindow.cpp mFrameCallbackTimeout), and its
-    // frames don't come: it finishes at once rather than wait, held, to jump on when shown. Running only
-    // while it moves, again from each frame. Fired well after its 100 ms, it's this thread that stalled
-    // (plasmashell loading chats, another widget): no frame came, but no timer ran either, and the frame
-    // due comes next: it asks for it and goes on, the frame after the stall going as missed frames do)
-    property real armed: 0   // (when the watch was last started, Date.now())
+    // (no frame of its window for 100 ms: it may have been hidden, or minimized (Wayland: no frame callback
+    // comes, and Qt takes a window with none for 100 ms for not shown, qwaylandwindow.cpp mFrameCallbackTimeout),
+    // and its frames don't come: it finishes at once rather than wait, held, to jump on when shown. Or this
+    // thread stalled (plasmashell loading chats, another widget): no frame came, but no timer ran either, and
+    // the frame due comes right after. So it looks twice: no frame in 100 ms, it asks for one and looks again
+    // two frames later; only no frame then either ends it, where it was going (a stall holds back both looks,
+    // and the frame asked for comes after it: the motion goes on). Running only while it moves, again from
+    // each frame)
+    property bool checking: false   // (its second look: a frame asked for)
     function rearm() {
-        armed = Date.now()
+        checking = false
         watch.restart()
     }
     property Timer watch: Timer {
-        interval: 100
+        interval: handler.checking ? Math.max(34, Math.round(2 * Wheel.period(handler.motion))) : 100
         onTriggered: {
-            if (Date.now() - handler.armed > 150) {
-                handler.rearm()
-                handler.next()
-            } else {
+            if (handler.checking) {
                 handler.finish()
+            } else {
+                handler.checking = true
+                handler.next()
+                watch.restart()
             }
         }
     }
@@ -157,6 +166,41 @@ WheelHandler {
                 Wheel.stop(handler.motion, handler.flickable.contentY)
                 handler.moving = false
             }
+        }
+    }
+
+    // The refresh rate of its window's screen, from the system (code/screen_rate.py: Plasma's kscreen-doctor),
+    // the length of the frames its steps go by (wheel.mjs rate()): asked as it starts and when its window moves
+    // to another screen (Screen.name: the output's connector, eDP-1), never more; an answer for a screen it's no
+    // longer on is left out
+    readonly property string screenName: flickable.Screen.name || ""
+    onScreenNameChanged: askRate()
+    Component.onCompleted: askRate()
+    property string rateAsked: "\n"   // (the screen it last asked for)
+    property string rateSource: ""     // (and the command: only its answer is taken)
+    readonly property string codeDir: decodeURIComponent(Qt.resolvedUrl("../code/").toString().replace(/^file:\/\//, ""))
+    function quote(s) {
+        return "'" + String(s).replace(/'/g, "'\\''") + "'"
+    }
+    function askRate() {
+        if (screenName === rateAsked)
+            return
+        rateAsked = screenName
+        rateSource = "python3 -I " + quote(codeDir + "screen_rate.py") + " " + quote(screenName) + " # " + Date.now()
+        rateRunner.connectSource(rateSource)
+    }
+    property Exec rateRunner: Exec {
+        onNewData: (source, data) => {
+            if (source !== handler.rateSource)
+                return
+            let r = null
+            try {
+                r = JSON.parse(data.stdout)
+            } catch (e) {
+                return
+            }
+            if (r)
+                Wheel.rate(handler.motion, r.ok ? Number(r.hz) : 0, Array.isArray(r.rates) ? r.rates.map(Number) : [])
         }
     }
 }
