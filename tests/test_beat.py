@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from qt_offscreen import run_qt  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 UI = Path(__file__).resolve().parent.parent / "package/contents/ui"
 
@@ -38,13 +39,15 @@ def run_qml(body, ms):
             "r = view.rootObject()\n"
             "QTimer.singleShot(int(sys.argv[2]), app.quit)\n"
             "app.exec()\n"
-            "print('REPORT', r.property('report') if r else '')\n")
-        own_bus = ["dbus-run-session", "--"] if shutil.which("dbus-run-session") else []
+            "print('REPORT', r.property('report') if r else '')\n"
+            # (out at once: Python tearing the window down with its render thread still there hung now and then)
+            "sys.stdout.flush()\n"
+            "import os\n"
+            "os._exit(0)\n")
         # (rendered on a thread of its own, as plasmashell renders its windows:
-        # how often a window is drawn depends on it)
-        out = subprocess.run(own_bus + ["python3", "-c", script, str(qml), str(ms)], capture_output=True, text=True, timeout=60,
-                             env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
-                                      QSG_RENDER_LOOP="threaded", QT_FORCE_STDERR_LOGGING="1"))
+        # how often a window is drawn depends on it; a bus of its own, as the screen lock is told on one)
+        out = run_qt(["python3", "-c", script, str(qml), str(ms)], own_bus=bool(shutil.which("dbus-run-session")),
+                     timeout=60, QT_QUICK_BACKEND="software", QSG_RENDER_LOOP="threaded", QT_FORCE_STDERR_LOGGING="1")
     report = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
     if not report:
         raise AssertionError(out.stderr[-3000:])
@@ -190,9 +193,7 @@ Item {
                 "QTimer.singleShot(1800, app.quit)\n"
                 "app.exec()\n"
                 "print('REPORT', o.property('report') if o else c.errorString())\n")
-            out = subprocess.run(["dbus-run-session", "--", "python3", "-c", script, str(qml)], capture_output=True,
-                                 text=True, timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen",
-                                                                 QT_FORCE_STDERR_LOGGING="1"))
+            out = run_qt(["python3", "-c", script, str(qml)], own_bus=True, timeout=60, QT_FORCE_STDERR_LOGGING="1")
         report = next((line[len("REPORT "):] for line in out.stdout.splitlines() if line.startswith("REPORT ")), "")
         if not report.startswith("["):
             raise AssertionError((report, out.stderr[-3000:]))
@@ -200,6 +201,19 @@ Item {
         self.assertEqual(seen[4], [True, False], seen)    # (asked as it started: locked)
         self.assertEqual(seen[9], [False, True], seen)    # unlocked: it ticks
         self.assertEqual(seen[15], [True, False], seen)   # locked again: it stops
+
+
+class QtRunTests(unittest.TestCase):
+    def test_its_qt_run_ends_once_it_has_reported(self):
+        # (2026-11-23) run_qml's python3 hung now and then once it had printed its report, as Python tore the
+        # window down with its render thread still there (threaded render loop, software backend): stuck in a
+        # futex for good, so the test hit its 60 s timeout (7 of 60 runs on a loaded machine, with a bus or none).
+        # It ends at once once the report is out
+        import inspect
+        source = inspect.getsource(run_qml)
+        report = source.index("print('REPORT', r.property('report') if r else '')")
+        self.assertIn("sys.stdout.flush()", source[report:])
+        self.assertIn("os._exit(0)", source[report:])
 
 
 class NothingMovesForNobodyTests(unittest.TestCase):

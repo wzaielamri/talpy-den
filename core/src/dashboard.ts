@@ -107,12 +107,13 @@ export class Dashboard implements Disposable {
   // whose prompts Talpy Den's hook answers works or waits
   private watches = new Map<string, HostWatch>();
   private paneHosts = new Set<string>();
+  private paneChats = new Map<string, string[]>(); // host -> the chats of its tabs that show (their watcher's --chats)
   private hostPolledAt = new Map<string, number>(); // host -> when its check was last asked for
   private hostPollDue = new Map<string, NodeJS.Timeout>(); // a check held back by the 2 s between two
   private readonly watchAs: string; // (this window's name on the hosts it watches: watchName)
-  private readonly onHostChangedEmitter = new Emitter<{ host: string; changed: string[]; requests: boolean }>();
-  // A host's watcher answered: the chats there whose session files or requests changed (a tab of one
-  // reads it at once)
+  private readonly onHostChangedEmitter = new Emitter<{ host: string; changed: string[]; requests: boolean; wrote: string[] }>();
+  // A host's watcher answered: the chats there whose session files or requests changed, and the tabs'
+  // chats that were written (a tab of one reads it at once)
   readonly onHostChanged = this.onHostChangedEmitter.event;
   private again = false; // a chat changed while a check ran: check again once it's done
 
@@ -307,18 +308,23 @@ export class Dashboard implements Disposable {
     if (r.ok && r.kept) this.setActionInfo(`${hostLabel(host)}: ${String(r.message ?? "")}`);
   }
 
-  // The hosts of Talpy Chat tabs that show (or start a chat), from ChatPanes
-  setPaneHosts(hosts: Iterable<string>): void {
+  // The hosts of Talpy Chat tabs that show (or start a chat), and the chats of those that show, from ChatPanes
+  setPaneHosts(hosts: Iterable<string>, chats: Map<string, string[]> = new Map()): void {
     const next = new Set(hosts);
-    if (next.size === this.paneHosts.size && [...next].every((h) => this.paneHosts.has(h))) return;
+    const nextChats = new Map([...chats].map(([h, c]) => [h, [...new Set(c)].sort()] as [string, string[]]));
+    const same = (a: Map<string, string[]>, b: Map<string, string[]>) =>
+      a.size === b.size && [...a].every(([h, c]) => (b.get(h) ?? []).join(",") === c.join(","));
+    if (next.size === this.paneHosts.size && [...next].every((h) => this.paneHosts.has(h)) && same(nextChats, this.paneChats)) return;
     this.paneHosts = next;
+    this.paneChats = nextChats;
     this.updateWatches();
   }
 
-  // Whether host's watcher answers: what changes there comes with it (a tab there reads less often)
-  hostWatched(host: string): boolean {
+  // Whether host's watcher answers: what changes there comes with it (a tab there reads less often); with
+  // chat, whether it says when that chat is written there too
+  hostWatched(host: string, chat?: string): boolean {
     const w = this.watches.get(host);
-    return !!w && w.running && !w.trouble;
+    return !!w && w.running && !w.trouble && (chat === undefined || w.watches(chat));
   }
 
   // Why host can't be watched now ("" when it can, or isn't watched); "check": not reached, till its next check
@@ -340,11 +346,13 @@ export class Dashboard implements Disposable {
         w.stop();
         this.watches.delete(host);
       }
+    for (const host of want) this.watches.get(host)?.setChats(this.paneChats.get(host) ?? []);
     for (const host of want)
       if (!this.watches.has(host)) {
-        const w = new HostWatch(host, async (args, ms) => (await this.backend.watchHost(args, ms)) as WatchAnswer, this.watchAs,
+        const w = new HostWatch(host, async (args, ms, signal) => (await this.backend.watchHost(args, ms, signal)) as WatchAnswer, this.watchAs,
                                 (h, a) => this.hostChanged(h, a), () => this.emit());
         this.watches.set(host, w);
+        w.setChats(this.paneChats.get(host) ?? []);
         w.start();
       }
   }
@@ -357,7 +365,9 @@ export class Dashboard implements Disposable {
       hookedAtWork(s) && !!changed && (changed.includes(s.sessionId) || (!!s.chatId && changed.includes(s.chatId)))));
     if (a.requests) this.pollHostNow(host);
     else if (!changed || hooked) this.pollHostSoon(host);
-    this.onHostChangedEmitter.fire({ host, changed: changed ?? [], requests: !!a.requests });
+    // (a tab's chat written there: that tab reads it; not a reason to check the host)
+    const wrote = Array.isArray(a.wrote) ? a.wrote.filter((c) => typeof c === "string") : [];
+    this.onHostChangedEmitter.fire({ host, changed: changed ?? [], requests: !!a.requests, wrote });
   }
 
   pollHostNow(host: string): void {

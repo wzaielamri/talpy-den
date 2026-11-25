@@ -4,8 +4,11 @@
 // request there changes (within 50 s anyway), and runs again at once while
 // it's wanted: a Talpy Chat tab of a chat there shows (or starts one), or,
 // in the window that notifies, a chat there whose prompts Talpy Den's hook
-// answers works or waits. Unwanted, it stops; the run on its way ends by
-// itself within 50 s (or the backend's timeout ends its ssh).
+// answers works or waits. It also watches the chats of the tabs that show
+// there (setChats: --chats), and says which were written ("wrote"): a tab
+// reads its conversation then, not every few seconds in case, each read
+// sending the script there (2026-11-22). Other chats, or unwanted: the run
+// on its way ends (its ssh too), and with other chats it runs again at once.
 
 import * as crypto from "node:crypto";
 import * as os from "node:os";
@@ -15,6 +18,7 @@ export interface WatchAnswer {
   sessions?: boolean;
   requests?: boolean;
   changed?: string[];
+  wrote?: string[]; // (the chats of the tabs there that were written: --chats)
   timeout?: boolean;
   reached?: boolean;
   error?: string;
@@ -37,12 +41,14 @@ export class HostWatch {
   private stopped = false;
   private failures = 0;
   private pause?: { timer: NodeJS.Timeout; done: () => void };
+  private chats: string[] = []; // (sorted)
+  private inFlight?: { chats: string[]; end: AbortController }; // the run on its way, and the chats it watches
   // why it can't watch now ("" when it can); "check": the host couldn't be reached, so not until its next check
   trouble = "";
 
   constructor(
     readonly host: string,
-    private readonly run: (args: string[], timeoutMs: number) => Promise<WatchAnswer>,
+    private readonly run: (args: string[], timeoutMs: number, signal?: AbortSignal) => Promise<WatchAnswer>,
     private readonly name: string,
     private readonly onChange: (host: string, answer: WatchAnswer) => void,
     private readonly onTrouble: (host: string, trouble: string) => void = () => undefined,
@@ -59,10 +65,26 @@ export class HostWatch {
 
   stop(): void {
     this.stopped = true;
+    this.inFlight?.end.abort();
     if (this.pause) {
       clearTimeout(this.pause.timer);
       this.pause.done();
     }
+  }
+
+  // The chats of the tabs that show there. One the run on its way doesn't watch ends it, and it runs again
+  // with them at once; fewer (a tab hidden) keep it going, the next run has just these: each run ended
+  // early leaves an ssh channel and a python3 there for a while
+  setChats(chats: Iterable<string>): void {
+    const next = [...new Set(chats)].sort();
+    if (next.join(",") === this.chats.join(",")) return;
+    this.chats = next;
+    if (this.inFlight && next.some((c) => !this.inFlight!.chats.includes(c))) this.inFlight.end.abort();
+  }
+
+  // Whether it says when chat is written there (one of the tabs' chats)
+  watches(chat: string): boolean {
+    return !this.stopped && this.chats.includes(chat);
   }
 
   // The host answered its check: a watcher that couldn't reach it runs again
@@ -88,13 +110,19 @@ export class HostWatch {
   private async loop(): Promise<void> {
     while (!this.stopped) {
       const asked = Date.now();
+      const chats = this.chats;
+      const end = new AbortController();
+      this.inFlight = { chats, end };
       let answer: WatchAnswer;
       try {
-        answer = await this.run(["remote.py", "--watch", this.host, "--as", this.name], WATCH_TIMEOUT_MS);
+        answer = await this.run(["remote.py", "--watch", this.host, "--as", this.name, ...(chats.length ? ["--chats", chats.join(",")] : [])],
+                                WATCH_TIMEOUT_MS, end.signal);
       } catch (e) {
         answer = { ok: false, error: e instanceof Error ? e.message : String(e) };
       }
+      this.inFlight = undefined;
       if (this.stopped) return;
+      if (end.signal.aborted && !answer.ok) continue; // (ended for other chats: again at once with them, not a failure)
       if (!answer.ok) {
         this.failures += 1;
         if (answer.reached === false) return this.setTrouble("check"); // (till its next check answers: checked)
@@ -104,7 +132,7 @@ export class HostWatch {
       }
       this.failures = 0;
       this.setTrouble("");
-      if (answer.sessions || answer.requests) this.onChange(this.host, answer);
+      if (answer.sessions || answer.requests || answer.wrote?.length) this.onChange(this.host, answer);
       if (Date.now() - asked < this.delays.again) await this.wait(this.delays.again);
     }
   }

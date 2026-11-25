@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 ROOT = Path(__file__).resolve().parent.parent / "package/contents"
 PETS = ROOT / "pets"
@@ -92,7 +93,7 @@ def run_hub(body, ms, live_answer='{"ok": true, "sessions": true}', report=None)
             "print(r.property('outputs'), r.property('liveAnswers'))\n"
             + (f"print('REPORT', r.property({report!r}))\n" if report else ""))
         out = subprocess.run(["python3", "-c", script, str(tmp / "t.qml"), str(ms)], capture_output=True, text=True,
-                             timeout=60, env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1"))
+                             timeout=60, env=qt_env(QT_FORCE_STDERR_LOGGING="1"))
         runs = [len((tmp / f"{name}.runs").read_text().split()) if (tmp / f"{name}.runs").exists() else 0
                 for name in ("check", "live")]
     lines = [line for line in out.stdout.splitlines() if not line.startswith("REPORT ")]
@@ -1860,7 +1861,7 @@ class SeveralCopiesTests(unittest.TestCase):
                 "QTimer.singleShot(120000, app.quit)\n"
                 "app.exec()\n")
             out = subprocess.run(["python3", "-c", script, str(qml)], capture_output=True, text=True, timeout=180,
-                                 env=dict(__import__("os").environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         costs = [float(line) for line in out.stdout.split()]
         self.assertEqual(len(costs), 5, out.stderr[-2000:])
         self.assertLess(costs[-1], 2 * costs[0] + 1, costs)
@@ -2055,6 +2056,42 @@ class UnderWindowsTests(unittest.TestCase):
         self.assertIn("onDataChanged: if (!check.running) check.start()", watch)
         self.assertNotIn("onDataChanged: check.restart()", watch)
 
+QML_COMPILE = """import sys
+from pathlib import Path
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QGuiApplication
+from PySide6.QtQml import QQmlComponent, QQmlEngine
+app = QGuiApplication(sys.argv)
+bad = {}
+for f in sorted(Path(sys.argv[1]).rglob("*.qml")):
+    engine = QQmlEngine()   # (kept: a component without its engine is never ready)
+    c = QQmlComponent(engine, QUrl.fromLocalFile(str(f)), QQmlComponent.PreferSynchronous)
+    if c.status() != QQmlComponent.Ready:
+        bad[f.name] = [e.toString().rsplit("/", 1)[-1] for e in c.errors()][:2]
+print(repr(bad))
+"""
+
+
+class QmlLoadsTests(unittest.TestCase):
+    """(2026-11-22) A second onChatIdChanged on ChatPane's window made QML
+    refuse the whole file ("Property value set multiple times"): no Talpy
+    Chat window opened at all, and its tests, which read the text, passed."""
+
+    @NEEDS_PLASMA_QML
+    def test_every_qml_file_of_the_widget_compiles(self):
+        out = subprocess.run(["python3", "-c", QML_COMPILE, str(ROOT / "ui")], capture_output=True, text=True, timeout=300,
+                             env=qt_env())
+        self.assertEqual(out.returncode, 0, out.stderr[-2000:])
+        self.assertEqual(out.stdout.strip(), "{}")
+
+    def test_no_handler_twice_on_a_files_top_object(self):
+        # (the same check without Qt: QML takes one handler of a signal per object)
+        for path in sorted((ROOT / "ui").rglob("*.qml")):
+            handlers = re.findall(r"^    (on[A-Z]\w*)\s*:", path.read_text(), re.M)
+            twice = sorted({h for h in handlers if handlers.count(h) > 1})
+            self.assertEqual(twice, [], path.name)
+
+
 class NewChatTests(unittest.TestCase):
     def test_only_a_new_chat_switches_vscode_on_a_host(self):
         # A new chat on an SSH host's other account opens in VS Code, which
@@ -2121,13 +2158,13 @@ class NewChatTests(unittest.TestCase):
         # of a chat of interest at most every 2 s (trailing), and that window reads its conversation; a shown
         # host window reads every minute while its watcher answers and Claude neither works nor waits there
         hub = (ROOT / "ui/hub/Hub.qml").read_text()
-        for name in ("function wantWatch(id, host, command)", "function dropWatch(id, host)", "function watchChecked(host)",
+        for name in ("function wantWatch(id, host, command, chats)", "function dropWatch(id, host)", "function watchChecked(host)",
                      "signal hostChanged(string host, var answer)", 'Qt.md5("talpy-den plasma " + instanceName).slice(0, 12)'):
             self.assertIn(name, hub)
         self.assertIn("watchNext[host] = Date.now() + (n >= 3 ? 60000 : 5000)", hub)
         # (again first, a function of its own per host: Qt.callLater runs one function once a pass; one that
         # answered at once a moment later; dropped, it starts afresh)
-        self.assertLess(hub.index("Qt.callLater(() => hub.runWatch(host))"), hub.index("hub.hostChanged(host, answer)"))
+        self.assertLess(hub.index("Qt.callLater(() => hub.runWatch(host))"), hub.rindex("hub.hostChanged(host, answer)"))
         self.assertIn("if (Date.now() - startedAt < 250) {", hub)
         drop = hub[hub.index("function dropWatch(id, host) {"):]
         self.assertIn("delete watchFailures[host]", drop[:drop.index("\n    }\n")])
@@ -2144,8 +2181,58 @@ class NewChatTests(unittest.TestCase):
         # (a binding's second line stays its own: a handler put between them took it)
         self.assertIn('readonly property bool starting: (!!fresh && pendingSent.some(p => p.chat === chatId && p.state !== "held"))\n'
                       '                                     || (!!chat.startedAt && !row)\n', pane)
-        self.assertIn('interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)', pane)
+        self.assertTrue("interval: pane.host ? (pane.hostWatched ? 60000 : 5000)" in pane)
         self.assertIn("caution: pane.hostTrouble !== \"\"", pane)
+
+    def test_a_host_window_reads_its_chat_when_the_watcher_says_it_changed(self):
+        # (2026-11-22) a window of a chat on a host read it every 5 s while Claude worked or waited (every second
+        # after a send), each read sending ~270 KB of code there over a slow link: the host's watcher watches the
+        # chats of the windows that show (--chats, the union of every copy's) and says which were written
+        # ("wrote"), and the window reads then; a look every minute only, no chase while it's watched
+        # (the line it builds, run: test_remote's HostWatchTests.test_the_line_plasma_builds_runs)
+        hub = (ROOT / "ui/hub/Hub.qml").read_text()
+        line = hub[hub.index("function watchLine(host) {"):]
+        line = line[:line.index("\n    }\n")]
+        self.assertTrue('" --chats " + shellQuote(chats.join(","))' in line)
+        self.assertTrue("answer.sessions || answer.requests || (answer.wrote || []).length" in hub)
+        # (an earlier run's answer, for the chats before, is still handed on: nothing it says is lost)
+        self.assertTrue("watchLines[source]" in hub)
+        main = (ROOT / "ui/main.qml").read_text()
+        wanted = main[main.index("function hostWatchWanted() {"):]
+        wanted = wanted[:wanted.index("\n    }\n")]
+        self.assertTrue("if (w.shown && w.chatId && !w.fresh && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(w.chatId))" in wanted)
+        self.assertTrue("Hub.wantWatch(instanceId, host, " in main)
+        changed = main[main.index("function onHostChanged(host, answer) {"):][:2500]
+        self.assertTrue("const wrote = answer.wrote || []" in changed)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        self.assertTrue("running: pane.shown && pane.chaseUntil > 0 && !(pane.host && pane.hostWatched)" in pane)
+
+    def test_a_host_windows_reads_for_what_was_written_are_paced(self):
+        # (review, 2026-11-22) live.py says a chat was written up to every 0.4 s while Claude works, and each
+        # read sends ~216 KB there and brings ~266 KB back: a window reads for "wrote" at most once per gap
+        # (5 s, or twice its last read), the last change of a burst too; its state changing or a request
+        # still reads at once
+        main = (ROOT / "ui/main.qml").read_text()
+        changed = main[main.index("function onHostChanged(host, answer) {"):][:2500]
+        self.assertTrue("if (w.shown && ofWindow(w))\n                    w.load()" in changed)
+        self.assertTrue("else if (w.shown && wrote.indexOf(w.chatId) >= 0)\n                    w.loadWritten()" in changed)
+        pane = (ROOT / "ui/ChatPane.qml").read_text()
+        written = pane[pane.index("function loadWritten() {"):]
+        written = written[:written.index("\n    }\n")]
+        self.assertTrue("Math.max(5000, 2 * lastReadMs)" in written)
+        self.assertTrue("writtenTimer.restart()" in written)
+        timer = pane[pane.index("id: writtenTimer"):][:200]
+        self.assertTrue("onTriggered: if (pane.shown) pane.loadWritten()" in timer, "hidden meanwhile: read once shown")
+        self.assertTrue("lastReadMs = Date.now() - loadingSince" in pane)
+
+    def test_the_watcher_runs_anew_only_for_a_chat_it_doesnt_watch(self):
+        # (review: shown flips at each minimize; each new run kept an ssh channel and a python3 there for up to
+        # 50 s, toward sshd's MaxSessions) the run on its way goes on while its chats include every one wanted
+        hub = (ROOT / "ui/hub/Hub.qml").read_text()
+        run = hub[hub.index("function runWatch(host) {"):]
+        run = run[:run.index("\n    }\n")]
+        self.assertTrue("watchRuns[host].chats.indexOf(c) >= 0" in run)
+        self.assertTrue("watchRuns[host] = { line: line, at: Date.now(), chats: chats }" in run)
 
     def test_stop_is_made_only_for_a_chat_it_can_stop_and_keeps_the_line_still(self):
         # Talpy Chat's Stop (A1): its button's QML is read and made only while a chat it can stop
@@ -3378,7 +3465,7 @@ class PetLifeTests(unittest.TestCase):
                 "app.exec()\n"
                 "print(view.rootObject().property('removed'))\n")
             out = subprocess.run(["python3", "-c", script, str(stage)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="software",
+                                 env=qt_env(QT_QUICK_BACKEND="software",
                                           QT_FORCE_STDERR_LOGGING="1"))
         self.assertEqual(out.stdout.split()[-1:], ["1"], out.stderr[-2000:])
         self.assertNotIn("invalid context", out.stderr)

@@ -950,7 +950,12 @@ Window {
             Qt.callLater(loadReview)
     }
     property bool ready: false   // (nothing runs while the window is being made)
-    onChatIdChanged: if (ready) (chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset())
+    onChatIdChanged: {
+        if (host)
+            root.watchesChanged()   // (its host's watcher watches this chat: Hub --chats)
+        if (ready)
+            chat.from && draftKey === (chat.host || "") + "\n" + chat.from ? follow() : reset()
+    }
     Component.onCompleted: {
         ready = true
         newDay()   // (when midnight is: two Dates)
@@ -1024,6 +1029,7 @@ Window {
     readonly property int staleMs: 120000
     property bool loading: false
     property real loadingSince: 0
+    property real lastReadMs: 0   // (how long the last read took: what was written there is read at most every twice that)
     property bool loadAgain: false   // (something changed while it was read: read it again then)
 
     function load() {
@@ -1072,9 +1078,9 @@ Window {
     }
     Timer {
         // (with the watcher, only for what it can't see: a moment it wasn't running. An SSH host's or a
-        // container's: every 5 s, but every minute while its host's watcher answers and Claude doesn't work
-        // or wait there: what changes comes with the watcher's answer, root.onHostChanged)
-        interval: pane.host ? (pane.hostWatched && pane.chatState !== "working" && pane.chatState !== "waiting" ? 60000 : 5000)
+        // container's: every 5 s, but every minute while its host's watcher answers: it says when this chat
+        // was written or changed state there, root.onHostChanged; each read sends the script there)
+        interval: pane.host ? (pane.hostWatched ? 60000 : 5000)
                   : pane.watchOk ? 15000 : pane.followsLive ? 5000 : 1500
         running: pane.shown && pane.chatId !== "" && !pane.fresh
         repeat: true
@@ -1084,8 +1090,10 @@ Window {
     // The watcher: a chat of this computer is read the moment its transcript
     // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
     // and runs again), so your message and what Claude writes show at once,
-    // not at the next look. Not for an SSH host's (a look every 5 s, and
-    // often just after you sent something, chase)
+    // not at the next look. Not for an SSH host's: its host's watcher says
+    // when it was written (root.onHostChanged), so the script goes there once
+    // per change, not with every look; without it, a look every 5 s, and
+    // often just after you sent something (chase)
     readonly property bool watching: shown && !host && chatId !== "" && loaded && stamp !== "" && watchFailures < 3 && !awayNext
     // (an SSH host's or a container's chat: its host's watcher answers, root.watchedHosts)
     readonly property bool hostWatched: !!host && !!root.watchedHosts[host] && Hub.watching(host)
@@ -1139,12 +1147,36 @@ Window {
         onTriggered: pane.watchNow()
     }
 
+    // An SSH host's or a container's chat that its host's watcher says was
+    // written there (root.onHostChanged): read at most once every 5 s, or
+    // twice as long as the last read took, and the last change of a burst
+    // too. While Claude works it's written up to every 0.4 s, and each read
+    // sends the script there (~216 KB) and brings the chat back (~266 KB)
+    property real writtenReadAt: 0
+    function loadWritten() {
+        const wait = writtenReadAt + Math.max(5000, 2 * lastReadMs) - Date.now()
+        if (wait > 0) {
+            if (!writtenTimer.running) {
+                writtenTimer.interval = wait
+                writtenTimer.restart()
+            }
+            return
+        }
+        writtenReadAt = Date.now()
+        load()
+    }
+    Timer {
+        id: writtenTimer
+        onTriggered: if (pane.shown) pane.loadWritten()   // (hidden meanwhile: read when it shows again, onShownChanged)
+    }
+
     // Just after your message went: read often till the conversation has it
-    // (the watcher has it at once; this is for an SSH host's chat, and in case)
+    // (the watcher has it at once; this is for an SSH host's chat whose host's
+    // watcher doesn't answer, and in case)
     property real chaseUntil: 0
     Timer {
         interval: pane.host ? 1000 : 400
-        running: pane.shown && pane.chaseUntil > 0
+        running: pane.shown && pane.chaseUntil > 0 && !(pane.host && pane.hostWatched)
         repeat: true
         onTriggered: {
             if (Date.now() > pane.chaseUntil || !pane.pendingSent.some(p => p.state === "sent" && p.chat === pane.chatId))
@@ -2216,6 +2248,8 @@ Window {
             return
         }
         if (kind === "conversation") {
+            if (loading)
+                lastReadMs = Date.now() - loadingSince
             loading = false
             if (awayAsking && asked.chat === chatId) {   // (asked once: what it did since, or nothing new)
                 awayAsking = false

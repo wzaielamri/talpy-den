@@ -78,3 +78,43 @@ test("the chats whose prompts only Talpy Den can show: the window that notifies 
   assert.equal(hookedAtWork({ hooked: false, state: "working", permission: null }), false, "a terminal's asks in its terminal");
   assert.equal(hookedAtWork({ hooked: false, state: "waiting", permission: { answer: "hook" } as never }), true, "the hook for every chat");
 });
+
+// (2026-11-22) The chats of the tabs that show there go along (--chats): it says when one was written ("wrote"),
+// so a tab reads its conversation then, not every few seconds in case. A chat it doesn't watch yet ends the run on
+// its way (it can't take it in) and it runs again with it at once, which isn't a failure; fewer chats (a tab hidden,
+// minimized) keep the run on its way: each run ended early left an ssh channel and a python3 there behind it
+test("the chats of the tabs that show go along; only a chat it doesn't watch yet ends the run on its way", async () => {
+  const asked: string[][] = [];
+  const ended: string[][] = [];
+  const got: WatchAnswer[] = [];
+  const answers: WatchAnswer[] = [{ ok: true, sessions: false, requests: false, changed: [], wrote: ["c1"] }];
+  const w = new HostWatch("lab", (args, _ms, signal) => {
+    asked.push(args);
+    const a = answers.shift();
+    if (a) return Promise.resolve(a);
+    return new Promise((resolve) => {
+      signal?.addEventListener("abort", () => (ended.push(args), resolve({ ok: false, message: "the helper gave no answer" })));
+    });
+  }, "a1b2c3d4e5f6", (_h, a) => got.push(a), undefined, fast);
+  const line = (chats: string) => ["remote.py", "--watch", "lab", "--as", "a1b2c3d4e5f6", ...(chats ? ["--chats", chats] : [])];
+  w.setChats(["c2", "c1"]);
+  w.start();
+  await tick(30);
+  assert.deepEqual(asked, [line("c1,c2"), line("c1,c2")]);
+  assert.deepEqual(got.map((a) => a.wrote), [["c1"]], "a chat written is handed on");
+  assert.equal(w.watches("c2"), true);
+  w.setChats(["c1", "c2"]);
+  w.setChats(["c1"]);
+  w.setChats([]);
+  await tick();
+  assert.deepEqual(ended, [], "fewer chats: the run on its way goes on");
+  assert.equal(w.watches("c2"), false);
+  w.setChats(["c3"]);
+  await tick();
+  assert.deepEqual(ended, [line("c1,c2")], "a chat it doesn't watch: the run on its way ended");
+  assert.deepEqual(asked[2], line("c3"));
+  assert.equal(w.trouble, "", "not a failure");
+  w.stop();
+  await tick();
+  assert.equal(ended.length, 2, "stopped: the run on its way ends too");
+});

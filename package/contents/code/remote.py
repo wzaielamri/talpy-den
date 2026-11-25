@@ -36,8 +36,9 @@
                                                     a new chat there with a task: in the background there,
                                                     or in a terminal here (or print its command)
     python3 -I remote.py --put-image HOST PATH      a picture pasted here (jump.py --paste-image) to HOST, for a task there
-    python3 -I remote.py --watch HOST --as NAME [--timeout S]   wait (up to S, 50) for a chat's session file or a
-                                                    permission request on HOST to change (live.py there), for Talpy Chat
+    python3 -I remote.py --watch HOST --as NAME [--timeout S] [--chats ID,ID...]   wait (up to S, 50) for a chat's
+                                                    session file or a permission request on HOST to change (live.py
+                                                    there), for Talpy Chat; with --chats, those chats' transcripts too
     python3 -I remote.py --plan HOST SLUG [PROFILE] [--no-open]   a plan there, as a Markdown file here
     python3 -I remote.py --share-plan HOST SLUG PROFILE [TO]      share a plan with every account there (or TO)
     python3 -I remote.py --unshare-plan HOST SLUG PROFILE         keep a shared plan only on PROFILE there
@@ -74,6 +75,7 @@ its stdin, as on a host), over ssh in HOST's shared connection for one on a host
 """
 
 import glob
+import hashlib
 import json
 import os
 import re
@@ -87,6 +89,10 @@ import sys
 import time
 import zlib
 from pathlib import Path
+try:
+    import lzma
+except ImportError:  # (a Python built without liblzma: the code goes with zlib)
+    lzma = None
 
 sys.dont_write_bytecode = True  # no __pycache__ inside the installed widget...
 if sys.version_info >= (3, 8):  # ...but talpy_den.py compiled in the data folder, as poll.py does (never the cache)
@@ -250,9 +256,9 @@ def answer_after_mark(stdout):
     return answer if isinstance(answer, dict) else None
 
 
-def ssh(host, command, stdin=None, timeout=RUN_TIMEOUT):
+def ssh(host, command, stdin=None, timeout=RUN_TIMEOUT, binary=False):
     """Run command on host, an SSH host or a container (run_on): the CompletedProcess."""
-    return run_on(host, command, stdin, timeout)
+    return run_on(host, command, stdin, timeout, binary)
 
 
 # First on a host: a python3 older than 3.7 there (RHEL 8's is 3.6) says so,
@@ -270,14 +276,203 @@ PYTHON_CHECK = ("import sys\n"
 # Talpy Chat's read of a chat is ~920 KB of it, a status check ~630 KB, and
 # through a jump host or a home uplink sending it was most of their time
 # (a chat's read there: 4.1 s, the host's own part 0.3 s; with a quarter of
-# it, 1.6 s, 2026-11-19). zlib's level 6: ~20 ms here for 920 KB.
-UNPACK = "import sys,zlib;exec(compile(zlib.decompress(sys.stdin.buffer.read()),\"<stdin>\",\"exec\"))"
+# it, 1.6 s, 2026-11-19). zlib's level 6: ~20 ms here for 920 KB. With xz
+# it's a fifth smaller again (a chat's read: 264 KB -> 210 KB, the status
+# 183 KB -> 147 KB, 2026-11-22), and it goes so when python3 there has
+# lzma (xz_program). One without it (lzma is optional in a Python built
+# from source, and its _lzma can be there but fail to load, its liblzma
+# gone) says so first, NO_LZMA and the bytes it read, before it runs
+# anything: the call goes again with zlib (run_script). One line (tcsh
+# takes no newline in a command): the import is tried in exec's own lines.
+NO_LZMA = "@@talpy-den-no-lzma@@"
+UNPACK = ('import sys,zlib;d=sys.stdin.buffer.read();x=d[:6]==b"\\xfd7zXZ\\0";L=None;'
+          'x and exec("try:\\n import lzma as L\\nexcept Exception:\\n pass");'
+          'x and not L and sys.exit("' + NO_LZMA + ' %d"%len(d));'
+          'exec(compile(L.decompress(d) if x else zlib.decompress(d),"<stdin>","exec"))')
 PYTHON = "python3 -I -c " + shlex.quote(UNPACK)
+XZ_MAGIC = b"\xfd7zXZ\x00"
+PACKED_DIR = "packed"   # (here: the code packed with xz, by its hash; the hosts whose python3 has no lzma)
+PACKED_DAYS = 7         # (a copy not used for that long goes; a host's "no lzma" is asked again after it)
 
 
 def packed(script):
     """script as PYTHON takes it on its stdin."""
     return zlib.compress(script.encode("utf-8"), 6)
+
+
+def xz_program(script):
+    """script packed with xz, as PYTHON takes it too: kept here by its hash
+    (in the cache folder, 0600), since xz takes ~0.4 s for a chat's read's
+    ~1 MB, once per version of it; a copy that isn't whole is packed again."""
+    data = script.encode("utf-8")
+    key = hashlib.sha256(data).hexdigest()
+    folder = td.cache_dir(Path.home()) / PACKED_DIR
+    path = folder / (key + ".xz")
+    try:
+        blob = path.read_bytes()
+        # (unpacked no further than the script's size: a copy that would unpack to more isn't it)
+        if hashlib.sha256(lzma.LZMADecompressor().decompress(blob, max_length=len(data) + 1)).hexdigest() == key:
+            if time.time() - path.stat().st_mtime > 86400:
+                os.utime(str(path))   # (in use: kept)
+            return blob
+    except (OSError, lzma.LZMAError, EOFError):
+        pass
+    blob = lzma.compress(data, preset=6)
+    tmp = folder / f".{key}.{os.getpid()}.tmp"
+    try:
+        td.private_dir(folder)
+        with os.fdopen(os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "wb") as f:
+            f.write(blob)
+        os.replace(str(tmp), str(path))
+        for old in folder.iterdir():   # (other versions' copies, not used for a while)
+            if old != path and time.time() - old.stat().st_mtime > PACKED_DAYS * 86400:
+                old.unlink()
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    return blob
+
+
+def no_lzma_file(host):
+    return td.cache_dir(Path.home()) / PACKED_DIR / ("no-lzma-" + hashlib.sha1(host.encode()).hexdigest()[:16])
+
+
+def lzma_there(host):
+    """Whether the code goes to host with xz: this computer's Python has lzma, and host's python3 didn't say it
+    has none in the last PACKED_DAYS."""
+    if lzma is None:
+        return False
+    try:
+        return time.time() - no_lzma_file(host).stat().st_mtime > PACKED_DAYS * 86400
+    except OSError:
+        return True
+
+
+def said_no_lzma(r, sent):
+    """Whether python3 there said it has no lzma (UNPACK), before it ran anything: its last line is NO_LZMA
+    and the bytes it was sent, and nothing answered."""
+    if r.returncode != 1 or not isinstance(r.stderr, bytes) or not isinstance(r.stdout, bytes):
+        return False
+    lines = r.stderr.strip().splitlines()
+    return bool(lines) and lines[-1].strip() == ("%s %d" % (NO_LZMA, len(sent))).encode() \
+        and td.REMOTE_MARK.encode() not in r.stdout and PACKED_MARK.encode() not in r.stdout
+
+
+# And its answer comes back compressed: a chat's read there answers ~1 MB
+# of JSON, and at 150-300 KB/s that took most of its 9.6 s (2026-11-22);
+# zlib makes it a quarter (~25 ms there). What goes there first sets up
+# sys.stdout (ANSWER_PACKER, after PYTHON_CHECK): what the script prints
+# goes out as it comes up to its answer (the marker line); that and all
+# after it is kept, and at the end goes compressed, after a line
+# "PACKED_MARK <bytes>" (as it was when that isn't smaller: an "unchanged"
+# check's 47 bytes). Here inflated() puts it back in place, so what's read
+# is what the script printed. Only for what remote.py sends (run_script):
+# poll.py --remote's answer here, and an answer that comes plain (python3
+# 3.6's message), are as they were. A process the script forks keeps its
+# copy of what's kept, but ends with os._exit (talpy_den.in_background), so
+# only the script answers.
+PACKED_MARK = "@@talpy-den-z@@"
+ANSWER_PACKER = r'''
+def _talpy_den_packer():
+    import atexit, sys, zlib
+    mark, real = "\n%(mark)s", sys.stdout
+
+    class Packer(object):
+        def __init__(self):
+            self.held, self.answer = "", None
+
+        def write(self, text):
+            if self.answer is not None:
+                self.answer.append(text)
+                return len(text)
+            both = self.held + text
+            at = both.find(mark)
+            if at >= 0:
+                real.write(both[:at + 1])
+                self.held, self.answer = "", [both[at + 1:]]
+                return len(text)
+            cut = both.rfind("\n")   # (a marker's start, at the end: held till the next write says)
+            keep = cut if cut >= 0 and mark.startswith(both[cut:]) else len(both)
+            real.write(both[:keep])
+            self.held = both[keep:]
+            return len(text)
+
+        def writelines(self, lines):
+            for line in lines:
+                self.write(line)
+
+        def flush(self):
+            real.flush()
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        def end(self):
+            if sys.stdout is self:
+                sys.stdout = real
+            try:
+                if self.answer is None:
+                    real.write(self.held)
+                    real.flush()
+                    return
+                tail = "".join(self.answer).encode(real.encoding or "utf-8", real.errors or "strict")
+                blob = zlib.compress(tail, 6)
+                head = ("%(packed)s %%d\n" %% len(blob)).encode("ascii")
+                real.flush()
+                real.buffer.write(head + blob if len(head) + len(blob) < len(tail) else tail)
+                real.buffer.flush()
+            except (OSError, ValueError, UnicodeError):
+                pass   # (nobody reads it any more)
+
+    sys.stdout = Packer()
+    atexit.register(sys.stdout.end)
+
+
+_talpy_den_packer()
+del _talpy_den_packer
+''' % {"mark": td.REMOTE_MARK, "packed": PACKED_MARK}
+
+
+def inflated(out):
+    """A host's stdout (bytes) with its answer put back in place where it
+    came compressed (ANSWER_PACKER); as it is when it came plain, or is cut
+    or broken (then no answer is found in it). Past ANSWER_MAX unpacked,
+    TooMuch: a few KB there can't fill this computer's memory."""
+    at = out.rfind(b"\n" + PACKED_MARK.encode() + b" ")
+    if at < 0:
+        return out
+    start = at + 2 + len(PACKED_MARK)
+    end = out.find(b"\n", start)
+    size = out[start:end] if end > start else b""
+    if not size.isdigit():
+        return out
+    blob = out[end + 1:end + 1 + int(size)]
+    if len(blob) != int(size):
+        return out
+    unpack = zlib.decompressobj()
+    try:
+        tail = unpack.decompress(blob, ANSWER_MAX + 1)
+    except zlib.error:
+        return out
+    if len(tail) > ANSWER_MAX:
+        raise TooMuch(f"over {ANSWER_MAX >> 20} MB")
+    if not unpack.eof:
+        return out
+    return out[:at + 1] + tail + out[end + 1 + len(blob):]
+
+
+def as_text(output):
+    """A host's output (bytes) as text=True reads it (\r\n and \r are \n); what isn't UTF-8 can't break it."""
+    return output.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def text_of(r):
+    """r, a host's CompletedProcess in bytes, as text, its answer put back in place (inflated)."""
+    if not isinstance(r.stdout, bytes):
+        return r   # (text already: a stand-in's)
+    return subprocess.CompletedProcess(r.args, r.returncode, as_text(inflated(r.stdout)), as_text(r.stderr or b""))
 
 
 def python_there(args):
@@ -590,8 +785,8 @@ def run_capped(line, stdin=None, timeout=RUN_TIMEOUT, binary=False):
             except OSError:
                 pass
     stdout, stderr = b"".join(got[proc.stdout]), b"".join(got[proc.stderr])
-    if not binary:  # (as text=True reads it: \r\n and \r are \n)
-        stdout, stderr = (b.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n") for b in (stdout, stderr))
+    if not binary:
+        stdout, stderr = as_text(stdout), as_text(stderr)
     return subprocess.CompletedProcess(line, proc.returncode, stdout, stderr)
 
 
@@ -881,7 +1076,7 @@ def host_status(host, done_hours=None, recent=None, tokens=True, usage_refresh=N
         args += ["--history-since", str(since)]
     started, p = time.time(), place(host)
     try:
-        r = ssh(host, python_there(args), packed(host_script()), STATUS_TIMEOUT)
+        r = run_script(host, args, host_script(), STATUS_TIMEOUT)
     except subprocess.TimeoutExpired:
         return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {STATUS_TIMEOUT} s."}
     except OSError as exc:
@@ -1013,14 +1208,11 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
     a host it can't reach well before, ConnectTimeout and ServerAlive*), so
     it may have done it (a queued go-on starts again once it answers:
     jump.start_queued, talpy_den.requeue_reached). Your own text in args
-    (TEXT_ARGS) goes on the stdin too, before the script, not in ssh's
-    command (with_texts)."""
+    (TEXT_ARGS) goes on the stdin too, not in ssh's command (run_script)."""
     host = check_host(host)
-    args = list(args)
-    script, args = with_texts(host_script(name, also), args)
     p = place(host)
     try:
-        r = ssh(host, python_there(["--remote", *args]), packed(script), timeout)
+        r = run_script(host, ["--remote", *args], host_script(name, also), timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "timedOut": True, "message": f"{p.label} didn't answer within {timeout} s"}
     except OSError as exc:
@@ -1042,20 +1234,70 @@ def host_answer(host, args, name="talpy_den.py", also=(), timeout=RUN_TIMEOUT):
 # length too (one argument of a command holds 128 KiB at most), and a login
 # shell there never reads it. The permission hook's code (pane.py
 # --hook-source) goes the same way: long, and no business of the process list.
-TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-source", "--history")
+# The chats a host's watcher looks at for Talpy Chat's windows (--chats)
+# go the same way: their ids are no business of the host's process list.
+TEXT_ARGS = ("--text", "--prompt", "--note", "--answers", "--message", "--hook-source", "--history", "--chats")
 
 
 def with_texts(script, args):
-    """(script, args) for PYTHON --remote on a host: with a TEXT_ARGS
-    value in args, the args without those texts, and the script after a line
-    that gives it all its args there (Python 3.7's too), in ASCII: before
-    3.10, Python reading its script from stdin misreads a long line of other
-    characters (a reply in Japanese: "SyntaxError: Non-UTF-8 code")."""
+    """(script, args) for PYTHON on a host: with a TEXT_ARGS value in args,
+    the args without those texts, and the script with a line that gives it
+    all its args there (Python 3.7's too) after PYTHON_CHECK, in ASCII:
+    before 3.10, Python reading its script from stdin misreads a long line
+    of other characters (a reply in Japanese: "SyntaxError: Non-UTF-8 code")."""
     texts = {i for i in range(1, len(args)) if args[i - 1] in TEXT_ARGS}
     if not texts:
         return script, args
     shown = [a for i, a in enumerate(args) if i not in texts and i + 1 not in texts]
-    return "import sys; sys.argv[1:] = %s\n" % ascii(["--remote", *args]) + script, shown
+    line = "import sys; sys.argv[1:] = %s\n" % ascii(args)
+    if script.startswith(PYTHON_CHECK):
+        return PYTHON_CHECK + line + script[len(PYTHON_CHECK):], shown
+    return line + script, shown
+
+
+def sent_script(script, args, xz=False):
+    """(what goes on python3's stdin on a host, the args for its command
+    line) for script (host_script's, or one of its own after PYTHON_CHECK)
+    run there with args: the texts on stdin (with_texts), and the answer
+    packed (ANSWER_PACKER) once PYTHON_CHECK has passed. xz: with xz, the
+    script (the same for every call of a version: xz_program) after this
+    call's own head, two xz streams that python3 there reads as one."""
+    script, args = with_texts(script, list(args))
+    head = PYTHON_CHECK if script.startswith(PYTHON_CHECK) else ""
+    if head:
+        line, nl, rest = script[len(head):].partition("\n")
+        if line.startswith("import sys; sys.argv[1:] = "):   # (your texts first, as the script's own args)
+            head, script = head + line + nl, rest
+        else:
+            script = script[len(head):]
+    if xz and lzma is not None:
+        return lzma.compress((head + ANSWER_PACKER).encode("utf-8"), preset=6) + xz_program(script), args
+    return packed(head + ANSWER_PACKER + script), args
+
+
+def run_script(host, args, script, timeout=RUN_TIMEOUT):
+    """Run script on host (an SSH host or a container) with args: python3
+    there gets it on its stdin (PYTHON, sent_script), so nothing is kept
+    there. Its CompletedProcess as ssh's (text), its answer as the script
+    printed it (inflated). Every script a host runs goes this way: the
+    status, Talpy Chat's reads and sends, sharing, accounts, the watcher.
+    TimeoutExpired and OSError (TooMuch) as run_on's. The code goes with xz
+    where python3 there has lzma (lzma_there); one that says it has none
+    (said_no_lzma: nothing ran) gets it again with zlib, and later calls at
+    once. Nothing else sends a call again: one that may have run never is."""
+    xz = lzma_there(host)
+    stdin, shown = sent_script(script, args, xz)
+    r = ssh(host, python_there(shown), stdin, timeout, binary=True)
+    if xz and said_no_lzma(r, stdin):
+        try:
+            td.private_dir(no_lzma_file(host).parent)
+            no_lzma_file(host).touch(mode=0o600)
+            os.utime(str(no_lzma_file(host)))
+        except OSError:
+            pass
+        stdin, shown = sent_script(script, args, False)
+        r = ssh(host, python_there(shown), stdin, timeout, binary=True)
+    return text_of(r)
 
 
 # Talpy Chat's watcher of a host or a container (--watch): live.py there
@@ -1064,39 +1306,101 @@ def with_texts(script, args):
 # Run again at once by the front end while it wants it (a Talpy Chat window
 # of a chat there shows, or a chat Talpy Chat hooked there works or waits):
 # a channel of the shared connection, a python3 waiting in inotify there.
+# It also watches the chats of the windows that show (--chats): what they
+# read of them, their transcripts and jobs' records, said in "wrote", so a
+# window reads its conversation when it changed and not every few seconds
+# in case (each read sends ~270 KB of code there: 2026-11-22). What it told
+# of each is kept here (watch_told), not there.
 WATCH_S = 50
 WATCH_NAME = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
+WATCH_CHAT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")   # (live.CHAT_ID)
+WATCH_TOLD_DIR = "watch"
+WATCH_TOLD_MAX = 200   # (other chats' stamps kept with a run's own)
 
 
-def watch(host, name, timeout=WATCH_S):
+def watch_told(host, name):
+    """Where what host's watcher name told of its chats is kept (here)."""
+    import hashlib
+    return td.cache_dir(Path.home()) / WATCH_TOLD_DIR / (hashlib.sha1(f"{host} {name}".encode()).hexdigest()[:16] + ".json")
+
+
+def watch(host, name, timeout=WATCH_S, chats=()):
     """What changed on host since what name was told last (live.py --wait
     --requests --remote there): {"ok", "host", "sessions", "requests",
-    "changed": [chat ids], "urgent", "timeout"}, or {"ok": false, "error",
+    "changed": [chat ids], "urgent", "timeout"}, with chats (the ids of
+    Talpy Chat's windows' chats there) "wrote": those whose transcript or
+    job's record changed since the last answer; or {"ok": false, "error",
     "reached": false (ssh couldn't connect, the container isn't running)}.
     name: who asks (a hash the front end makes: it shows in the host's
     process list)."""
     host = check_host(host)
     if not WATCH_NAME.match(name or ""):
         raise ValueError(f"not a watcher's name: {name!r}")
+    chats = sorted(set(c for c in chats if isinstance(c, str) and WATCH_CHAT.match(c)))   # (nothing else is a chat there)
     # (with this computer's name in it: two computers watching one host never share what they were told)
     import hashlib
     import socket
     name = hashlib.sha1(f"{socket.gethostname()} {name}".encode()).hexdigest()[:12]
     timeout = max(1, min(int(timeout), WATCH_S))
     script = PYTHON_CHECK + (HERE / "live.py").read_text(encoding="utf-8")
+    args = ["--wait", "--requests", "--remote", "--as", name, "--timeout", str(timeout)]
+    kept = watch_told(host, name)
+    if chats:
+        try:
+            told = td.read_json(kept)
+        except (OSError, ValueError):
+            told = None
+        told = told if isinstance(told, dict) else {}
+        args += ["--chats", json.dumps({c: told[c] if isinstance(told.get(c), str) else "" for c in chats})]
     p = place(host)
     try:
-        r = run_on(host, python_there(["--wait", "--requests", "--remote", "--as", name, "--timeout", str(timeout)]),
-                   packed(script), timeout + 15)
+        r = run_script(host, args, script, timeout + 15)
     except subprocess.TimeoutExpired:
         return {"ok": False, "host": host, "error": f"{p.label} didn't answer within {timeout + 15} s"}
     except OSError as exc:
         return {"ok": False, "host": host, "reached": False, "error": cant_run(p, exc)}
     answer = answer_after_mark(r.stdout)
     if answer is not None:
+        stamps = answer.pop("stamps", None)
+        if chats and isinstance(stamps, dict):
+            try:
+                # (with what an earlier run told of other chats: a run for the chats before can answer after this
+                # one started; this run's own chats first, a few hundred at most)
+                now = {c: stamps[c] for c in chats if isinstance(stamps.get(c), str)}
+                try:
+                    before = td.read_json(kept)
+                except (OSError, ValueError):
+                    before = None
+                before = {c: v for c, v in before.items() if c not in now and isinstance(v, str)} \
+                    if isinstance(before, dict) else {}
+                td.private_dir(kept.parent)
+                td.write_json_atomic(kept, dict(now, **dict(list(before.items())[:WATCH_TOLD_MAX])), private=True)
+                for old in kept.parent.iterdir():   # (each VS Code window watches under a name of its own)
+                    if old != kept and time.time() - old.stat().st_mtime > PACKED_DAYS * 86400:
+                        old.unlink()
+            except (OSError, ValueError, TypeError):
+                pass   # (then the next run tells it again: one read more)
+        if chats:
+            answer["wrote"] = [c for c in answer.get("wrote") or [] if c in chats]
         return {**answer, "ok": bool(answer.get("ok")), "host": host}
     unreached = r.returncode == 255 or (p.container and container_problem(p, r.returncode, r.stderr)[0])
     return {"ok": False, "host": host, "error": explain(host, r.returncode, r.stderr), **({"reached": False} if unreached else {})}
+
+
+def watch_options(args):
+    """(name, timeout, chats) of --watch's options, in any order: --as NAME (needed), --timeout S (not a
+    number: WATCH_S), --chats ID,ID...; None when they aren't those."""
+    got = {}
+    if len(args) % 2:
+        return None
+    for flag, value in zip(args[::2], args[1::2]):
+        if flag not in ("--as", "--timeout", "--chats") or flag in got:
+            return None
+        got[flag] = value
+    if "--as" not in got:
+        return None
+    timeout = got.get("--timeout", "")
+    return got["--as"], int(timeout) if timeout.isdigit() else WATCH_S, [c for c in got.get("--chats", "").split(",") if c]
 
 
 def run_status_script(host, args):
@@ -1197,7 +1501,7 @@ def agent_run(host, chat_id, agent_id, profile=None, open_it=True):
     import jump
     args = ["--remote", "--agent-run", agent_id, "--chat", chat_id] + (["--profile", profile] if profile else [])
     try:
-        r = ssh(host, python_there(args), packed(host_script()))
+        r = run_script(host, args, host_script())
     except subprocess.TimeoutExpired:
         return False, f"{p.label} didn't answer within {RUN_TIMEOUT} s", None
     except OSError as exc:
@@ -1711,8 +2015,8 @@ def main(argv=None):
             out = task(host, profile, folder, **kw)
         elif action == "--put-image" and len(args) == 2:
             out = put_image(*args)
-        elif action == "--watch" and len(args) in (3, 5) and args[1] == "--as" and (len(args) == 3 or args[3] == "--timeout"):
-            out = watch(args[0], args[2], int(args[4]) if len(args) == 5 and args[4].isdigit() else WATCH_S)
+        elif action == "--watch" and args and watch_options(args[1:]) is not None:
+            out = watch(args[0], *watch_options(args[1:]))
         elif action == "--login" and len(args) == 1:
             ok, message = login(args[0])
             out = {"ok": ok, "message": message}

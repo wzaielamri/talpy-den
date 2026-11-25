@@ -25,6 +25,7 @@ real one, claude_guard.py).
 import claude_guard  # noqa: F401  (first: no test runs the real claude)
 import json
 import os
+import qt_offscreen  # (Qt offscreen: no session bus of yours, nothing left running)
 import re
 import subprocess
 import tempfile
@@ -351,14 +352,14 @@ Item {
         (Path(tmp) / "bin").mkdir()
         (Path(tmp) / "bin/kscreen-doctor").write_text(kscreen_doctor(hz))
         (Path(tmp) / "bin/kscreen-doctor").chmod(0o755)
-        env = {k: v for k, v in os.environ.items() if k not in ("WAYLAND_DISPLAY", "DISPLAY", "QT_QPA_PLATFORMTHEME")}
-        env["PATH"] = os.pathsep.join([str(Path(tmp) / "bin"), env.get("PATH", "")])
-        # (no D-Bus at all: nothing to start on any bus; offscreen, drawn on a thread of its own as plasmashell
-        # draws; its frames the runner's, a vsync apart)
-        env.update(QT_QPA_PLATFORM="offscreen", QT_QUICK_BACKEND="rhi", QSG_RHI_BACKEND="null", QSG_RENDER_LOOP="threaded",
-                   QT_QPA_UPDATE_IDLE_TIME="0", DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/bus")
-        r = subprocess.run(["python3", str(Path(tmp) / "run.py"), str(Path(tmp) / "scene.qml"), str(Path(tmp) / "runs.json"),
-                            str(windows)], capture_output=True, text=True, timeout=120, env=env)
+        # (Qt offscreen with no session bus at all, no desktop's theme and no display (qt_offscreen, plain): nothing to
+        # start on any bus; drawn on Qt Quick's threaded render loop, plasmashell's, with the null graphics backend
+        # (nothing painted, nothing waited for: the runner's frames, a vsync apart, are its only clock); the
+        # platform's update requests given at once, for the runner to hold or let through; a kscreen-doctor of its own)
+        r = qt_offscreen.run_qt(["python3", str(Path(tmp) / "run.py"), str(Path(tmp) / "scene.qml"), str(Path(tmp) / "runs.json"),
+                                 str(windows)], timeout=120, plain=True, QT_QUICK_BACKEND="rhi", QSG_RHI_BACKEND="null",
+                                QSG_RENDER_LOOP="threaded", QT_QPA_UPDATE_IDLE_TIME="0",
+                                PATH=os.pathsep.join([str(Path(tmp) / "bin"), os.environ.get("PATH", "")]))
     line = next((x for x in r.stdout.splitlines() if x.startswith("RESULT ")), None)
     if not line:
         raise AssertionError(r.stdout[-2000:] + r.stderr[-3000:])

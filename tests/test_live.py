@@ -665,6 +665,83 @@ class HostWatchTests(WaitTests):
     def test_command_line(self):
         pass
 
+    CHAT = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+
+    def transcript(self):
+        path = self.home / ".claude-work/projects/-srv-x" / f"{self.CHAT}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text('{"type": "user"}\n')
+        return path
+
+    def append(self, path, line='{"type": "assistant"}\n'):
+        with open(path, "a") as f:
+            f.write(line)
+
+    def watch_chats(self, chats, timeout=5, later=None, after=0.3):
+        if later:
+            threading.Timer(after, later).start()
+        started = time.time()
+        answer = live.wait(self.home, (), "host", timeout, requests=True, remote=True, chats=chats)
+        return answer, time.time() - started
+
+    def test_the_chats_of_talpy_chat_windows_too(self):
+        # (2026-11-22) a window of a chat there read its conversation every 5 s while Claude worked, the whole
+        # program sent each time: the watcher it has anyway says when that chat's transcript or its job's record
+        # changes, so the window reads it then, and only then
+        path = self.transcript()
+        self.wait()
+        answer, took = self.watch_chats({self.CHAT: ""}, timeout=1)   # (not told yet: as it is now)
+        self.assertEqual((answer["timeout"], answer["wrote"]), (True, []))
+        told = answer["stamps"][self.CHAT]
+        self.assertTrue(told.startswith(f"{path.stat().st_size}:"), told)
+        answer, took = self.watch_chats({self.CHAT: told}, later=lambda: self.append(path))
+        self.assertEqual((answer["wrote"], answer["sessions"], answer["requests"], answer["changed"], answer["urgent"]),
+                         ([self.CHAT], False, False, [], False))
+        self.assertLess(took, 1.5)
+        self.assertNotEqual(answer["stamps"][self.CHAT], told)
+        # written between two runs: at once
+        told = answer["stamps"][self.CHAT]
+        self.append(path)
+        answer, took = self.watch_chats({self.CHAT: told})
+        self.assertEqual(answer["wrote"], [self.CHAT])
+        self.assertLess(took, 1)
+        # its job's record (what it predicts you'd reply, its options)
+        told = answer["stamps"][self.CHAT]
+        job = self.home / ".claude-work/jobs" / self.CHAT[:8] / "state.json"
+        answer, took = self.watch_chats({self.CHAT: told}, later=lambda: write(job, {"sessionId": self.CHAT}))
+        self.assertEqual(answer["wrote"], [self.CHAT])
+        self.assertLess(took, 1.5)
+        # nothing new: it waits
+        answer, took = self.watch_chats({self.CHAT: answer["stamps"][self.CHAT]}, timeout=1)
+        self.assertEqual((answer["timeout"], answer["wrote"]), (True, []))
+
+    def test_a_chat_whose_transcript_isnt_there_yet(self):
+        answer, _ = self.watch_chats({self.CHAT: ""}, timeout=1)
+        answer, took = self.watch_chats({self.CHAT: answer["stamps"][self.CHAT]}, later=self.transcript)
+        self.assertEqual(answer["wrote"], [self.CHAT])
+        self.assertLess(took, 2)
+        # (only a chat's id: nothing else is looked for)
+        self.assertEqual(live.wait(self.home, (), "host", 1, requests=True, remote=True, chats={"../x": "", "*": ""})["wrote"], [])
+
+    def test_steps_of_a_chat_come_at_most_every_gap(self):
+        path = self.transcript()
+        answer, _ = self.watch_chats({self.CHAT: ""}, timeout=1)
+        answer, _ = self.watch_chats({self.CHAT: answer["stamps"][self.CHAT]}, later=lambda: self.append(path))
+        self.append(path)   # (right after the last answer)
+        answer, took = self.watch_chats({self.CHAT: answer["stamps"][self.CHAT]})
+        self.assertEqual(answer["wrote"], [self.CHAT])
+        self.assertGreater(took, live.MIN_GAP_S * 0.5)
+
+    def test_chats_on_the_command_line(self):
+        path = self.transcript()
+        out = subprocess.run([sys.executable, "-I", str(CODE / "live.py"), "--wait", "--requests", "--remote", "--as", "x",
+                              "--timeout", "1", "--chats", json.dumps({self.CHAT: "1:2/-"})],
+                             env=dict(os.environ, HOME=str(self.home)), capture_output=True, text=True, timeout=20)
+        answer = json.loads(out.stdout.split(td.REMOTE_MARK)[1])
+        self.assertEqual(answer["wrote"], [self.CHAT])
+        self.assertTrue(answer["stamps"][self.CHAT].startswith(f"{path.stat().st_size}:"))
+
     def test_gone_with_the_connection_that_asked(self):
         # (ssh killed here: sshd closes the channel, its stdout hangs up; an orphan would wait out its 50 s)
         r, w = os.pipe()

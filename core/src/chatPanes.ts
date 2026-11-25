@@ -139,11 +139,18 @@ export class ChatPanes implements Disposable, ChatPanesPort {
     this.watchesChanged();
   }
 
-  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts
+  // Which hosts' watchers the tabs want (Dashboard: remote.py --watch): of a chat there that shows, or starts;
+  // and the chats they watch there, of the tabs that show (it says when one is written: the tab reads it then)
   watchesChanged(): void {
     const hosts = new Set<string>();
-    for (const p of this.panes.values()) if (p.wantsWatch()) hosts.add(p.host);
-    this.dash.setPaneHosts?.(hosts);
+    const chats = new Map<string, string[]>();
+    for (const p of this.panes.values())
+      if (p.wantsWatch()) {
+        hosts.add(p.host);
+        const chat = p.watchedChat();
+        if (chat) chats.set(p.host, [...(chats.get(p.host) ?? []), chat]);
+      }
+    this.dash.setPaneHosts?.(hosts, chats);
   }
 
   // A new chat in a tab of its own, for that account and folder, with nothing started yet: your first
@@ -475,6 +482,12 @@ class Pane implements Disposable {
   private limit = LIMIT;
   private loading = false;
   private loadAgain = false;
+  // (an SSH host's chat its host's watcher says was written there: read at most once per gap, 5 s or twice
+  // the last read, and the last change of a burst too; loadWritten)
+  writtenGap = 5000;
+  private lastReadMs = 0;
+  private writtenReadAt = 0;
+  private writtenTimer: NodeJS.Timeout | undefined;
   private lastState: string | undefined; // (its state when the tab last heard)
   private timer: NodeJS.Timeout | undefined;
   private disposables: Disposable[] = [];
@@ -532,12 +545,14 @@ class Pane implements Disposable {
       this.surface.onDidDispose(() => this.dispose()),
       owner.ext.dash.onState(() => void this.pushChat()),
       // an SSH host's or a container's watcher: its chat changed there (a request, its state): a check of the
-      // host (at most every 2 s) and the conversation now; a new chat starting there: the check
+      // host (at most every 2 s) and the conversation now; its transcript written (wrote): the conversation
+      // now, no check; a new chat starting there: the check
       ...(owner.ext.dash.onHostChanged ? [owner.ext.dash.onHostChanged((e) => {
         if (this.disposed || !this.host || e.host !== this.host) return;
         const mine = e.changed.includes(this.chatId) || (!!this.chat.sessionId && e.changed.includes(this.chat.sessionId));
         if ((mine || this.starting) && !e.requests) this.owner.ext.dash.pollHostSoon(this.host);
         if (mine && this.surface.visible) void this.load();
+        else if ((e.wrote ?? []).includes(this.chatId) && this.surface.visible) this.loadWritten();
       })] : []),
       // live mode: the chat did a step: what it does now, and the conversation at once
       owner.ext.dash.onLive((e) => {
@@ -682,6 +697,7 @@ class Pane implements Disposable {
     this.owner.moved(this, `${this.host}|${this.chatId}`, `${this.host}|${to}`);
     this.chatId = to;
     if ((this.chat.chatId || this.chat.sessionId) !== to) this.chat = { ...this.chat, chatId: to, sessionId: to }; // (its row may come a check later)
+    if (this.host) this.owner.watchesChanged();   // (its host's watcher watches the new id)
     this.stamp = "";
     void this.load();
   }
@@ -692,14 +708,17 @@ class Pane implements Disposable {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (this.disposed || !this.surface.visible) return; // (closed: the reading stops)
-    // (with the watcher, only for what it can't see: a moment it wasn't running; an SSH host's chat
-    // every second just after you sent it something, till that shows: chaseUntil)
-    // (an SSH host's: every minute while its watcher answers and Claude neither works nor waits there,
-    // what changes coming with the watcher's answer: dash.onHostChanged)
-    const hostBusy = () => ["working", "waiting"].includes(findPaneRow(this.owner.ext.dash.state(), this.host, this.chatId).session?.state ?? "");
-    const every = this.host ? (Date.now() < this.chaseUntil ? 1000 : this.owner.ext.dash.hostWatched?.(this.host) && !hostBusy() ? 60000 : 5000)
-      : this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
-    this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), every);
+    this.timer = setTimeout(() => void this.load().finally(() => this.schedule()), this.lookEvery());
+  }
+
+  // How often it looks: with the watcher, only for what it can't see, a moment it wasn't running. An SSH
+  // host's chat: every minute while its host's watcher says when it's written there (dash.onHostChanged; each
+  // read sends the script there, 2026-11-22), else every 5 s, and every second just after you sent it
+  // something, till that shows (chaseUntil)
+  private lookEvery(): number {
+    if (this.host)
+      return this.owner.ext.dash.hostWatched?.(this.host, this.chatId) ? 60000 : Date.now() < this.chaseUntil ? 1000 : 5000;
+    return this.watchFailures === 0 && this.watching ? 15000 : this.owner.ext.dash.liveHook ? 5000 : 1500;
   }
 
   private chaseUntil = 0;
@@ -717,6 +736,7 @@ class Pane implements Disposable {
     this.loading = true;
     const chatId = this.chatId;
     const away = this.awayNext;
+    const asked = Date.now();
     try {
       const r = await this.owner.ext.backend.pane([
         "--conversation", chatId, "--limit", String(this.limit),
@@ -739,12 +759,28 @@ class Pane implements Disposable {
       if (this.take(r) && r.ok) this.chaseUntil = 0; // (something new: your message, or what Claude writes)
     } finally {
       this.loading = false;
+      this.lastReadMs = Date.now() - asked;
       if (this.loadAgain) {
         this.loadAgain = false;
         if (!this.disposed) void this.load();
       }
     }
     void this.watch();
+  }
+
+  // An SSH host's chat its host's watcher says was written there: read at most once every writtenGap, or
+  // twice as long as the last read took, and the last change of a burst too. While Claude works it's
+  // written up to every 0.4 s, and each read sends the script there (~216 KB) and brings the chat back
+  private loadWritten(): void {
+    if (this.disposed || this.writtenTimer) return;
+    const wait = this.writtenReadAt + Math.max(this.writtenGap, 2 * this.lastReadMs) - Date.now();
+    if (wait > 0) {
+      // (hidden meanwhile: read when it shows again, as onDidChangeView does)
+      this.writtenTimer = setTimeout(() => ((this.writtenTimer = undefined), this.surface.visible && this.loadWritten()), wait);
+      return;
+    }
+    this.writtenReadAt = Date.now();
+    void this.load();
   }
 
   // A read's answer, or the watcher's (not one read before what's shown: stampFresher)
@@ -785,8 +821,9 @@ class Pane implements Disposable {
   // The watcher: a chat of this computer is read the moment its transcript
   // changes (pane.py --conversation --wait: it waits for that, up to 50 s,
   // then again), so your message and what Claude writes show at once, not at
-  // the next look. Not for an SSH host's (a look every 5 s); three failures
-  // in a row: looks only.
+  // the next look. Not for an SSH host's: its host's watcher says when it's
+  // written there (dash.onHostChanged), so the script goes there once per
+  // change, not with every look. Three failures in a row: looks only.
   private watching = false;
   private watchFailures = 0;
   private async watch(): Promise<void> {
@@ -1394,6 +1431,11 @@ class Pane implements Disposable {
     return !this.disposed && !!this.host && (this.surface.visible || !!this.starting);
   }
 
+  // The chat its host's watcher watches for it (said when it's written there): one there that shows
+  watchedChat(): string {
+    return this.wantsWatch() && this.surface.visible && !this.fresh ? this.chatId : "";
+  }
+
   dispose(): void {
     if (this.disposed) return; // (closing the panel calls this again)
     this.disposed = true;
@@ -1405,6 +1447,8 @@ class Pane implements Disposable {
     this.held.clear();
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.writtenTimer) clearTimeout(this.writtenTimer);
+    this.writtenTimer = undefined;
     for (const d of this.disposables) d.dispose();
     this.disposables = [];
     this.closed.fire(undefined);

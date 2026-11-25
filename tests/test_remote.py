@@ -15,6 +15,7 @@ import tempfile
 import textwrap
 import time
 import unittest
+import zlib
 from pathlib import Path
 from unittest import mock
 
@@ -125,6 +126,59 @@ def unwrapped(command):
     if escaped is None:
         return words[2]
     return re.sub(rb"\\([0-7]{3})", lambda m: bytes([int(m.group(1), 8)]), escaped.group(1).encode()).decode()
+
+
+PLASMA = CODE.parent / "ui"
+
+
+def qml_function(text, name):
+    """A function of a QML file, as written there (it ends at its first line "    }")."""
+    start = text.index(f"function {name}(")
+    return text[start:text.index("\n    }\n", start) + 6]
+
+
+def plasma_watch_lines(windows, instances, host="lab", chats=None):
+    """The remote.py --watch lines Plasma runs for host: main.qml's hostWatchWanted and its command, Hub.qml's
+    watchLine and both shellQuotes, as written there, run in Node (one per instance name; chats: given to Hub
+    as they are, not main's)."""
+    import shutil
+    if not shutil.which("node"):
+        raise unittest.SkipTest("node isn't installed")
+    main, hub = (PLASMA / "main.qml").read_text(), (PLASMA / "hub/Hub.qml").read_text()
+    command = re.search(r"Hub\.wantWatch\(instanceId, host, (.+?),\s*want\[host\]\)", main, re.S).group(1)
+    js = """
+const crypto = require("crypto");
+const Qt = { md5: (s) => crypto.createHash("md5").update(s).digest("hex") };
+const main = { paneWindows: %s, notifier: false, shownHosts: [], remote: {}, codeDir: %s,
+               hookedAtWork: () => false, talpyChatHere: () => true };
+with (main) {
+%s
+%s
+    main.want = hostWatchWanted();
+    main.commandFor = (host) => %s;
+}
+const lines = [];
+for (const name of %s) {
+    const hub = { watchWanted: {}, instanceName: name };
+    with (hub) {
+%s
+%s
+%s
+        hub.lineFor = watchLine;
+    }
+    const chats = %s;
+    hub.watchWanted[%s] = { copy: { command: main.commandFor(%s), chats: chats === null ? main.want[%s] : chats } };
+    lines.push(hub.lineFor(%s));
+}
+console.log(JSON.stringify({ want: main.want, lines: lines }));
+""" % (json.dumps(windows), json.dumps(str(CODE) + "/"), qml_function(main, "shellQuote"), qml_function(main, "hostWatchWanted"),
+       command, json.dumps(instances), qml_function(hub, "shellQuote"), qml_function(hub, "watchChats"),
+       qml_function(hub, "watchLine"), json.dumps(chats),
+       json.dumps(host), json.dumps(host), json.dumps(host), json.dumps(host))
+    out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=60)
+    if out.returncode:
+        raise AssertionError(out.stderr[-2000:])
+    return json.loads(out.stdout)
 
 
 class HostListTests(unittest.TestCase):
@@ -761,6 +815,250 @@ class HostNoiseTests(FakeSSH):
         with self.assertRaises(ProcessLookupError):
             os.kill(ssh_pid, 0)
 
+class PackedAnswerTests(FakeSSH):
+    """(2026-11-22) A chat on an SSH host took 9.6 s to open: its answer,
+    1.12 MB of JSON, came back as it was, at 150-300 KB/s. A host's answer
+    (from the marker on) comes back compressed, and is put back in place
+    here; what it prints before it stays as it was, and a plain answer (an
+    older copy's, python3 3.6's message) reads as it did."""
+
+    # (a big answer, made there: a chat's items)
+    BIG = ("import json, sys\n"
+           "answer = {'ok': True, 'message': '', 'items': [{'kind': 'claude', 'key': 'k%d' % i,\n"
+           "          'text': 'The parser reads line %d of the config and checks its schema. ' % i * 3} for i in range(4000)]}\n")
+
+    def script(self, answer_code, before="", after=""):
+        return (remote.PYTHON_CHECK + answer_code + "sys.stdout.write(%r)\n" % before
+                + "sys.stdout.write('\\n%s ' + json.dumps(answer) + '\\n')\n" % td.REMOTE_MARK
+                + "sys.stdout.write(%r)\n" % after)
+
+    def recorded(self):
+        """run_capped, with what went each way: [{"up", "down", "stdin", "stdout"}]."""
+        seen, real = [], remote.run_capped
+
+        def capped(line, stdin=None, timeout=remote.RUN_TIMEOUT, binary=False):
+            r = real(line, stdin, timeout, binary)
+            out = r.stdout if isinstance(r.stdout, bytes) else r.stdout.encode()
+            seen.append({"up": len(stdin or b""), "down": len(out), "stdin": stdin, "stdout": out})
+            return r
+        return seen, mock.patch.object(remote, "run_capped", side_effect=capped)
+
+    def plain(self, script):
+        """What the script prints run as it is (python3 here, no packing)."""
+        return subprocess.run([sys.executable, "-I", "-c", script], capture_output=True, text=True).stdout
+
+    def test_a_big_answer_comes_back_compressed(self):
+        script = self.script(self.BIG)
+        plain = self.plain(script)
+        seen, recording = self.recorded()
+        with recording:
+            r = remote.run_script("lab", ["--remote"], script)
+        self.assertTrue(r.stdout == plain, "put back as it was")   # (booleans: ~700 KB each)
+        answer = remote.answer_after_mark(r.stdout)
+        self.assertEqual((answer["ok"], len(answer["items"]), answer["items"][7]["key"]), (True, 4000, "k7"))
+        (call,) = seen
+        self.assertTrue(("\n" + remote.PACKED_MARK + " ").encode() in call["stdout"])
+        self.assertLess(call["down"], len(plain.encode()) // 4, "compressed")
+
+    def test_what_it_prints_besides_stays_as_it_was(self):
+        # (a login's greeting before, the script's own lines before and after the answer)
+        self.mode("noisy")
+        script = self.script(self.BIG, before="Started.\n\n@@talpy-den")
+        r = remote.run_script("lab", ["--remote"], script)
+        self.assertTrue(r.stdout == "Welcome to the cluster! Quota: 80%\n" + self.plain(script))
+        self.assertEqual(remote.answer_after_mark(r.stdout)["items"][0]["key"], "k0")
+        script = self.script(self.BIG, after="and a line after it\n")
+        self.assertTrue(remote.run_script("lab", ["--remote"], script).stdout
+                        == "Welcome to the cluster! Quota: 80%\n" + self.plain(script))
+
+    def test_a_small_answer_goes_as_it_is(self):
+        # (an "unchanged?" check's answer, 47 bytes: compressed it would grow)
+        script = self.script("import json, sys\nanswer = {'ok': True, 'unchanged': True}\n")
+        seen, recording = self.recorded()
+        with recording:
+            r = remote.run_script("lab", ["--remote"], script)
+        self.assertEqual(r.stdout, self.plain(script))   # (47 bytes)
+        self.assertNotIn(remote.PACKED_MARK.encode(), seen[0]["stdout"])
+
+    def test_a_plain_answer_still_reads(self):
+        # (an older copy's on its way, a stand-in's: as it was)
+        plain = b"Welcome\n\n" + td.REMOTE_MARK.encode() + b' {"ok": true, "message": "Hid it"}\n'
+        with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, plain, b"")):
+            self.assertEqual(remote.host_answer("lab", ["--dismiss", "abc12345"]), {"ok": True, "message": "Hid it"})
+        self.assertEqual(remote.inflated(plain), plain)
+        # python3 3.6 there: its message, before anything is packed, reads as before
+        sent = zlib.decompress(remote.sent_script(remote.host_script(), ["--remote"])[0]).decode()
+        out = subprocess.run([sys.executable, *shlex.split(remote.python_there(["--remote"]))[1:]], capture_output=True,
+                             input=remote.packed("import sys; sys.version_info = (3, 6, 8, 'final', 0)\n" + sent))
+        self.assertEqual(remote.answer_after_mark(remote.text_of(subprocess.CompletedProcess([], 0, out.stdout, out.stderr)).stdout)
+                         ["error"], "python3 there is 3.6; Talpy Den needs 3.7 or newer")
+        self.assertNotIn(remote.PACKED_MARK.encode(), out.stdout)
+
+    def test_a_packed_answer_that_isnt_whole_isnt_read(self):
+        blob = zlib.compress(td.REMOTE_MARK.encode() + b' {"ok": true}\n')
+        for cut in (blob[:-3], blob[:5]):
+            out = b"\n" + remote.PACKED_MARK.encode() + b" %d\n" % len(blob) + cut
+            with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, out, b"")):
+                self.assertEqual(remote.host_answer("lab", ["--dismiss", "abc12345"]),
+                                 {"ok": False, "message": "lab sent an answer Talpy Den can't read."})
+
+    def test_one_too_big_once_unpacked_is_too_much(self):
+        # (a few KB that unpack to more than ANSWER_MAX: read only that far)
+        blob = zlib.compress(td.REMOTE_MARK.encode() + b" " + b"x" * (3 << 20))
+        out = b"\n" + remote.PACKED_MARK.encode() + b" %d\n" % len(blob) + blob
+        with mock.patch.object(remote, "run_capped", return_value=subprocess.CompletedProcess([], 0, out, b"")), \
+                mock.patch.object(remote, "ANSWER_MAX", 1 << 20):
+            answer = remote.host_answer("lab", ["--dismiss", "abc12345"])
+        self.assertEqual(answer["message"], "lab sent too much (over 1 MB): Talpy Den stopped reading it.")
+
+    def test_every_script_a_host_runs_answers_packed(self):
+        # (the shared path: the status, Talpy Chat's reads and sends, sharing, accounts, a subagent's run, the watcher)
+        seen, recording = self.recorded()
+        with recording:
+            remote.status("lab", tokens=False)
+            remote.host_answer("lab", ["--conversation", "abc12345"], name="pane.py", also=("made.py",))
+            remote.host_answer("lab", ["--list"], name="accounts.py")
+            remote.agent_run("lab", "abc12345", "nope", open_it=False)
+            remote.watch("lab", "a1b2c3d4e5f6", 1)
+        self.assertEqual(len(seen), 5)
+        for call in seen:
+            sent = (remote.lzma.decompress if call["stdin"].startswith(remote.XZ_MAGIC) else zlib.decompress)(call["stdin"]).decode()
+            self.assertTrue(sent.startswith(remote.PYTHON_CHECK), sent[:80])   # (still first)
+            self.assertTrue(remote.ANSWER_PACKER in sent)
+
+    def test_a_forked_helper_doesnt_answer_twice(self):
+        # (talpy_den.in_background: a process of its own once the answer is out, gone with os._exit)
+        code = (self.BIG + "import os\nsys.stdout.write('\\n%s ' + json.dumps(answer) + '\\n')\n" % td.REMOTE_MARK
+                + "if os.fork() == 0:\n    os._exit(0)\nos.wait()\n")
+        r = remote.run_script("lab", ["--remote"], remote.PYTHON_CHECK + code)
+        self.assertEqual(r.stdout.count(td.REMOTE_MARK), 1)
+        self.assertEqual(len(remote.answer_after_mark(r.stdout)["items"]), 4000)
+
+
+# A python3 built without liblzma (its _lzma missing), as the host's: runs `python3 -I -c CODE ARGS...` as it would
+NO_LZMA_PYTHON = r"""#!{python} -I
+import sys
+sys.modules["_lzma"] = None
+assert sys.argv[1:3] == ["-I", "-c"], sys.argv
+code, sys.argv = sys.argv[3], ["-c"] + sys.argv[4:]
+exec(compile(code, "<string>", "exec"), {{"__name__": "__main__"}})
+"""
+
+
+class XzProgramTests(FakeSSH):
+    """(2026-11-22) The code sent with every call is most of what goes up
+    now (~270 KB to read a chat): xz makes it a fifth smaller than zlib. It
+    goes as xz when the host's python3 has lzma, packed once here (kept in
+    the cache folder by its hash, as xz takes 0.4 s); a host without it says
+    so before anything runs, and the call goes again with zlib, remembered
+    here. Nothing is kept there."""
+
+    def no_lzma_there(self):
+        shim = Path(self.tmp.name) / "no-lzma"
+        shim.mkdir()
+        (shim / "python3").write_text(NO_LZMA_PYTHON.format(python=sys.executable))
+        (shim / "python3").chmod(0o755)
+        os.environ["FAKE_PATH"] = f"{shim}:{os.environ['FAKE_PATH']}"
+
+    def recorded(self):
+        return PackedAnswerTests.recorded(self)
+
+    def test_the_code_goes_as_xz_packed_once_here(self):
+        seen, recording = self.recorded()
+        with recording, mock.patch.object(remote.lzma, "compress", wraps=remote.lzma.compress) as xz:
+            first = remote.status("lab", tokens=False)
+            again = remote.status("lab", tokens=False)
+        self.assertTrue(first["ok"] and again["ok"], first)
+        self.assertEqual([c["stdin"][:6] for c in seen], [b"\xfd7zXZ\x00"] * 2)
+        zlibbed = len(remote.packed(remote.host_script()))
+        self.assertLess(seen[1]["up"], zlibbed * 0.9, "smaller than zlib's")
+        # (the script packed once, kept here by its hash; each call packs only its own head: PYTHON_CHECK, the packer)
+        self.assertEqual([len(c.args[0]) > 100000 for c in xz.call_args_list], [False, True, False])
+        kept = list((Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed").iterdir())
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(oct(kept[0].stat().st_mode & 0o777), "0o600")
+        # (a copy kept here that isn't whole is packed again, never sent)
+        kept[0].write_bytes(kept[0].read_bytes()[:-100])
+        self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual(len(remote.lzma.decompress(kept[0].read_bytes())), len(remote.host_script().encode()) - len(remote.PYTHON_CHECK))
+
+    def test_your_text_isnt_in_what_is_kept_here(self):
+        # (it goes in each call's own head, on stdin: the copy kept here is the script alone, the same for every call)
+        answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "the secret plan", "--how", "auto", "--after-turn",
+                                            "--profile", ".claude"], name="pane.py")
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual(td.load_queue(self.fake_home / ".cache/talpy-den")[0]["prompt"], "the secret plan")
+        folder = Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed"
+        self.assertEqual(oct(folder.stat().st_mode & 0o777), "0o700")
+        for kept in folder.iterdir():
+            self.assertFalse(b"the secret plan" in remote.lzma.decompress(kept.read_bytes()), kept.name)
+        self.assertNotIn("secret", self.calls()[-1][1])
+
+    def test_a_host_without_lzma_says_so_and_gets_zlib(self):
+        self.no_lzma_there()
+        seen, recording = self.recorded()
+        with recording:
+            answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "go on", "--how", "auto", "--after-turn",
+                                                "--profile", ".claude"], name="pane.py")
+        self.assertTrue(answer["ok"], answer)
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False], "xz, then zlib")
+        self.assertEqual(len(td.load_queue(self.fake_home / ".cache/talpy-den")), 1, "sent once")
+        # (remembered here: the next call goes with zlib at once)
+        with recording:
+            self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False, False])
+
+    def test_a_call_that_may_have_run_isnt_sent_again(self):
+        # (only python3's own word that it has no lzma, said before anything ran, sends it again)
+        seen, recording = self.recorded()
+        for mode in ("unreachable", "slow"):
+            self.mode(mode)
+            with recording, mock.patch.object(remote, "RUN_TIMEOUT", 1):
+                answer = remote.host_answer("lab", ["--send", "abc12345", "--text", "go on", "--profile", ".claude"],
+                                            name="pane.py", timeout=1)
+            self.assertFalse(answer["ok"], mode)
+        self.assertEqual(len(seen), 1, "unreachable: once")   # (the slow one: TimeoutExpired, nothing recorded, once)
+        self.assertEqual(len(self.calls()), 2)
+        self.mode("")
+        failing = remote.PYTHON_CHECK + "import sys\nsys.stderr.write('%s\\n')\nsys.exit(1)\n" % remote.NO_LZMA
+        r = remote.run_script("lab", ["--remote"], failing)
+        self.assertEqual((r.returncode, len(self.calls())), (1, 3), "a script's own words aren't python3's")
+
+    def test_a_host_whose_lzma_is_there_but_broken_says_so_too(self):
+        # (review: _lzma there whose liblzma.so is missing: found, then its import fails, before anything ran)
+        shim = Path(self.tmp.name) / "broken-lzma"
+        (shim / "mods").mkdir(parents=True)
+        (shim / "mods/_lzma.py").write_text("raise ImportError('liblzma.so.5: cannot open shared object file')\n")
+        (shim / "python3").write_text(NO_LZMA_PYTHON.format(python=sys.executable).replace(
+            'sys.modules["_lzma"] = None', "sys.path.insert(0, %r)" % str(shim / "mods")))
+        (shim / "python3").chmod(0o755)
+        os.environ["FAKE_PATH"] = f"{shim}:{os.environ['FAKE_PATH']}"
+        seen, recording = self.recorded()
+        with recording:
+            self.assertTrue(remote.status("lab", tokens=False)["ok"])
+        self.assertEqual([c["stdin"][:6] == b"\xfd7zXZ\x00" for c in seen], [True, False], "xz, then zlib")
+
+    def test_a_copy_kept_here_is_never_unpacked_past_its_size(self):
+        # (review: one that unpacks to far more, a bomb, was unpacked whole to be checked)
+        body = remote.host_script()[len(remote.PYTHON_CHECK):]
+        key = __import__("hashlib").sha256(body.encode()).hexdigest()
+        folder = Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/packed"
+        folder.mkdir(parents=True)
+        (folder / (key + ".xz")).write_bytes(remote.lzma.compress(b"\0" * (64 << 20)))
+        with mock.patch.object(remote.lzma, "decompress", side_effect=AssertionError("unpacked without a bound")):
+            blob = remote.xz_program(body)
+        self.assertTrue(remote.lzma.LZMADecompressor().decompress(blob) == body.encode())
+        self.assertTrue((folder / (key + ".xz")).read_bytes() == blob, "packed again")
+
+    def test_the_command_line_takes_zlib_and_xz(self):
+        command = [sys.executable, *shlex.split(remote.python_there(["--remote", "it's"]))[1:]]
+        script = "import sys\nprint(__name__, sys.argv[1:])\n"
+        for stdin in (remote.packed(script), remote.lzma.compress(script.encode()),
+                      remote.lzma.compress(b"import sys\n") + remote.lzma.compress(b"print(__name__, sys.argv[1:])\n")):
+            r = subprocess.run(command, input=stdin, capture_output=True)
+            self.assertEqual(r.stdout.decode(), "__main__ ['--remote', \"it's\"]\n", r.stderr)
+
+
 class AccountTests(FakeSSH):
     """The host's Claude accounts: accounts.py runs there, sent with
     talpy_den.py like sharing.py; a login opens a terminal here (ssh -t)."""
@@ -1256,6 +1554,102 @@ class HostWatchTests(FakeSSH):
             remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1"])
         self.assertTrue(json.loads(out.getvalue())["timeout"])
 
+    def test_the_transcripts_of_talpy_chat_windows_there(self):
+        # (2026-11-22) a window of a chat there read it every 5 s while Claude worked, ~270 KB of code sent each
+        # time: the watcher says when that chat's transcript changes; what it last said of each is kept here
+        chat = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+        path = self.fake_home / ".claude/projects/-srv-x" / f"{chat}.jsonl"
+        path.parent.mkdir(parents=True)
+        path.write_text('{"type": "user"}\n')
+        remote.watch("lab", "a1b2c3d4e5f6", 5)   # (everything is new to it the first time)
+        first = remote.watch("lab", "a1b2c3d4e5f6", 1, chats=[chat])
+        self.assertEqual((first["timeout"], first["wrote"]), (True, []), first)
+        self.assertNotIn("stamps", first)
+        self.assertNotIn(chat, self.calls()[-1][1])   # (on stdin: not in the process list there)
+        def append():
+            with open(path, "a") as f:
+                f.write('{"type": "assistant"}\n')
+        append()   # (between two runs: told the next time)
+        started = time.time()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5, chats=[chat])
+        self.assertEqual((answer["wrote"], answer["sessions"], answer["requests"]), ([chat], False, False), answer)
+        self.assertLess(time.time() - started, 3)
+        import threading
+        threading.Timer(0.6, append).start()
+        answer = remote.watch("lab", "a1b2c3d4e5f6", 5, chats=[chat])
+        self.assertEqual(answer["wrote"], [chat])
+        # (what it was told is kept here, nothing of it there)
+        kept = list((Path(self.env["XDG_CACHE_HOME"]) / "talpy-den/watch").iterdir())
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(oct(kept[0].stat().st_mode & 0o777), "0o600")
+        self.assertEqual(sorted(p.name for p in (self.fake_home / ".cache/talpy-den").iterdir()), ["live"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            remote.main(["--watch", "lab", "--as", "a1b2c3d4e5f6", "--timeout", "1", "--chats", chat])
+        self.assertEqual(json.loads(out.getvalue())["wrote"], [])
+        # (only chat ids: anything else can't be one there)
+        self.assertNotIn("wrote", remote.watch("lab", "a1b2c3d4e5f6", 1, chats=["../../x", "-o", "a b"]))
+        # (each VS Code window watches under a name of its own: what one told, unused for a week, goes)
+        stale, fresh = kept[0].parent / "0000000000000000.json", kept[0].parent / "1111111111111111.json"
+        for other in (stale, fresh):
+            other.write_text("{}")
+        os.utime(stale, (time.time() - 8 * 86400, time.time() - 8 * 86400))
+        remote.watch("lab", "a1b2c3d4e5f6", 1, chats=[chat])
+        self.assertEqual((stale.exists(), fresh.exists(), kept[0].exists()), (False, True, True))
+
+    CHAT = "0a1b2c3d-4e5f-4061-8a7b-9c0d1e2f3a4b"
+
+    def test_the_line_plasma_builds_runs(self):
+        # (review, 2026-11-22) Hub put --chats before --as, which remote.py refused (its usage): every run of a
+        # window's host's watcher failed. The line as Plasma's own code builds it, run as Plasma runs it (a shell)
+        marker = Path(self.tmp.name) / "PWNED"
+        hostile = "a;touch %s;b" % marker
+        windows = [{"host": "lab", "chat": {"chatId": self.CHAT}, "chatId": self.CHAT, "shown": True, "starting": False,
+                    "fresh": False},
+                   {"host": "lab", "chat": {"chatId": hostile}, "chatId": hostile, "shown": True, "starting": False,
+                    "fresh": False},   # (an id a host's answer gave: not a chat's)
+                   {"host": "lab", "chat": {"chatId": "new-1700000000000-1"}, "chatId": "new-1700000000000-1",
+                    "shown": True, "starting": False, "fresh": True},   # (a new chat not started yet: nothing there)
+                   {"host": "lab", "chat": {"chatId": "9a8b7c6d-0000-4000-8000-000000000002"},
+                    "chatId": "9a8b7c6d-0000-4000-8000-000000000002", "shown": False, "starting": False, "fresh": False}]
+        built = plasma_watch_lines(windows, ["plasma-one"])
+        self.assertEqual(built["want"], {"lab": [self.CHAT]})
+        (line,) = built["lines"]
+        r = subprocess.run(["bash", "-c", line], capture_output=True, text=True, timeout=60)
+        answer = json.loads(r.stdout)
+        self.assertEqual((answer["ok"], answer["wrote"], answer["host"]), (True, [], "lab"), r.stdout + r.stderr)
+        self.assertNotIn(self.CHAT, self.calls()[-1][1])   # (its chats on stdin there)
+        # Hub quotes what it's given: a hostile id reaches remote.py as a word, which drops it
+        (line,) = plasma_watch_lines(windows, ["plasma-two"], chats=[self.CHAT, hostile])["lines"]
+        r = subprocess.run(["bash", "-c", line], capture_output=True, text=True, timeout=60)
+        self.assertTrue(json.loads(r.stdout)["ok"], r.stdout + r.stderr)
+        self.assertFalse(marker.exists(), "nothing of an id runs here")
+
+    def test_its_options_in_any_order(self):
+        seen = []
+        with mock.patch.object(remote, "watch", side_effect=lambda *a: seen.append(a) or {"ok": True}):
+            for args in (["--as", "a1b2c3d4e5f6"], ["--chats", "c1,c2", "--as", "a1b2c3d4e5f6", "--timeout", "5"],
+                         ["--timeout", "soon", "--as", "a1b2c3d4e5f6"]):   # (not a number: its 50 s, as before)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    remote.main(["--watch", "lab", *args])
+        self.assertEqual(seen, [("lab", "a1b2c3d4e5f6", 50, []), ("lab", "a1b2c3d4e5f6", 5, ["c1", "c2"]),
+                                ("lab", "a1b2c3d4e5f6", 50, [])])
+        for args in ([], ["--chats", "c1"], ["--as"]):   # (who asks is needed)
+            with self.assertRaises(SystemExit), contextlib.redirect_stdout(io.StringIO()):
+                remote.main(["--watch", "lab", *args])
+
+    def test_what_a_run_told_of_other_chats_stays(self):
+        # (review: a run for the chats before answered after the run for the chats now, and its stamps replaced
+        # theirs: the next run took a window's chat as new)
+        kept = remote.watch_told("lab", "x")
+        kept.parent.mkdir(parents=True)
+        kept.write_text(json.dumps({"c1": "1:1/-", "c2": "2:2/-"}))
+        reply = "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true, "wrote": [], "stamps": {"c1": "3:3/-"}}\n'
+        with mock.patch.object(remote, "run_script", return_value=subprocess.CompletedProcess([], 0, reply, "")), \
+                mock.patch.object(remote, "watch_told", return_value=kept):
+            remote.watch("lab", "a1b2c3d4e5f6", 1, chats=["c1"])
+        self.assertEqual(json.loads(kept.read_text()), {"c1": "3:3/-", "c2": "2:2/-"})
+
     def test_a_host_it_cant_reach(self):
         self.mode("unreachable")
         answer = remote.watch("lab", "a1b2c3d4e5f6")
@@ -1272,7 +1666,8 @@ class HostWatchTests(FakeSSH):
         lines = []
         def capped(line, stdin=None, timeout=None, binary=False):
             lines.append(line)
-            return subprocess.CompletedProcess(line, 0, "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true}\n', "")
+            out = "\n" + td.REMOTE_MARK + ' {"ok": true, "timeout": true}\n'
+            return subprocess.CompletedProcess(line, 0, out.encode() if binary else out, b"" if binary else "")
         with mock.patch.object(remote, "run_capped", side_effect=capped), \
                 mock.patch.object(remote, "exec_user", return_value=("vscode", True)):
             self.assertTrue(remote.watch("docker:web", "a1b2c3d4e5f6", 50)["ok"])

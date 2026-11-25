@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 from test_pets import NEEDS_PLASMA_QML
 
@@ -151,7 +152,7 @@ class KeyedRowsTests(unittest.TestCase):
             qml = Path(tmp) / "list.qml"
             qml.write_text(LIST % UI.as_uri())
             out = subprocess.run(["python3", "-c", LIST_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(steps[:10], [
             ["three", 3, 0, 3, [["a", 0], ["b", 10], ["c", 20]]],
@@ -181,7 +182,7 @@ class KeyedRowsTests(unittest.TestCase):
             qml = Path(tmp) / "button.qml"
             qml.write_text(BUTTON % UI.as_uri())
             out = subprocess.run(["python3", "-c", BUTTON_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(steps, [
             "false false false 0 false Edit",   # nothing made for its frames

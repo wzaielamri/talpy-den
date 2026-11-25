@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from qt_offscreen import qt_env  # noqa: E402  (Qt offscreen: no session bus of yours, nothing left running)
 
 from test_pets import NEEDS_PLASMA_QML
 
@@ -153,7 +154,7 @@ class AgentTreeTests(unittest.TestCase):
             qml = Path(tmp) / "agents.qml"
             qml.write_text(AGENTS_PAGE % UI.as_uri())
             out = subprocess.run(["python3", "-c", AGENTS_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen", QT_FORCE_STDERR_LOGGING="1"))
+                                 env=qt_env(QT_FORCE_STDERR_LOGGING="1"))
         self.assertEqual(out.returncode, 0, out.stderr[-2000:])
         self.assertEqual([line for line in out.stderr.splitlines() if "AgentTree.qml" in line], [])
 
@@ -165,7 +166,7 @@ class RowButtonsTests(unittest.TestCase):
             qml = Path(tmp) / "line.qml"
             qml.write_text(LINE % UI.as_uri())
             out = subprocess.run(["python3", "-c", SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(steps, [
             "made 0",         # (none made before they show)
@@ -498,7 +499,7 @@ class StarMarkTests(unittest.TestCase):
             qml = Path(tmp) / "star.qml"
             qml.write_text(STAR % UI.as_uri())
             out = subprocess.run(["python3", "-c", STAR_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(steps, ["16 16 true true",      # starred: shown; not: as wide, nothing made
                                  "16 16 false true"],    # the buttons show: hidden, its room kept
@@ -624,7 +625,7 @@ class HoverButtonTests(unittest.TestCase):
             qml = Path(tmp) / "buttons.qml"
             qml.write_text(BUTTONS % UI.as_uri())
             out = subprocess.run(["python3", "-c", BUTTONS_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(steps, ["20 22 16 16 1 0.4 true false 16 16 2 1 0"], out.stderr[-2000:])
 
@@ -729,7 +730,7 @@ class HoverShadeTests(unittest.TestCase):
             qml = Path(tmp) / "shade.qml"
             qml.write_text(SHADE % UI.as_uri())
             out = subprocess.run(["python3", "-c", SHADE_SCRIPT, str(qml)], capture_output=True, text=True, timeout=60,
-                                 env=dict(os.environ, QT_QPA_PLATFORM="offscreen"))
+                                 env=qt_env())
         steps = [eval(line) for line in out.stdout.split("\n") if line]
         self.assertEqual(len(steps), 6, out.stderr[-2000:])
         geo = json.loads(steps[0])

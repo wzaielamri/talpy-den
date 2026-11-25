@@ -182,3 +182,110 @@ test("Open on a file Claude made: a picture or a plan in the host's viewer, anot
     panes.dispose();
   }
 });
+
+// (2026-11-22) A tab of a chat on an SSH host read it every 5 s while Claude worked or waited (every second after a
+// send), each read sending ~270 KB of code over a slow link: its host's watcher is told its chat, the tab reads it
+// when the watcher says it was written there, and otherwise looks only every minute, no chase, while that watcher
+// answers for it
+test("a host's tab: its watcher is told its chat, and it reads it when that was written there", async () => {
+  const fake = new FakeHost();
+  useSettingsHost(fake);
+  const surfaces = new FakeSurfaces();
+  const reads: string[][] = [];
+  const backend = {
+    pane: async (args: string[]) => (reads.push(args), { ok: true, items: [], more: false, stamp: `s${reads.length}` }),
+  } as unknown as Backend;
+  const changed = new Emitter<{ host: string; changed: string[]; requests: boolean; wrote: string[] }>();
+  const told: [string[], [string, string[]][]][] = [];
+  let polls = 0;
+  let watched = true;
+  const state = demoState(NOW);
+  const dash = {
+    opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, pollHostSoon: () => void polls++,
+    setActionError() {}, setActionInfo() {}, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false,
+    onHostChanged: changed.event, hostWatched: (_h: string, chat?: string) => watched && chat === "h-1",
+    setPaneHosts: (hosts: Iterable<string>, chats: Map<string, string[]>) => void told.push([[...hosts], [...chats]]),
+  } as unknown as Dashboard;
+  const actions = { canMoveToClaudeCode: () => false } as unknown as Actions;
+  const terminals = { find: async () => undefined } as unknown as TerminalPort;
+  const panes = new ChatPanes(fake, backend, dash, surfaces, actions, terminals, {} as EditorPort);
+  try {
+    panes.open({ key: "h-1", chatId: "h-1", sessionId: "h-1", profileDir: ".claude", name: "on lab", host: "lab" } as ChatRef);
+    assert.deepEqual(told.at(-1), [["lab"], [["lab", ["h-1"]]]], "its host's watcher watches its chat");
+    const surface = surfaces.opened[0];
+    surface.say({ type: "ready" });
+    await tick();
+    const first = reads.length;
+    assert.ok(first >= 1);
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "written there: read now");
+    assert.equal(polls, 0, "and that's no reason to check the host");
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["another"] });
+    changed.fire({ host: "box", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "another chat's, another host's: nothing");
+    // (its looks: every minute while the watcher answers for it, even just after a send; else 5 s, a second after a send)
+    const pane = [...(panes as unknown as { panes: Map<string, { lookEvery(): number; chaseUntil: number }> }).panes.values()][0];
+    pane.chaseUntil = Date.now() + 30000;
+    assert.equal(pane.lookEvery(), 60000);
+    watched = false;
+    assert.equal(pane.lookEvery(), 1000);
+    pane.chaseUntil = 0;
+    assert.equal(pane.lookEvery(), 5000);
+  } finally {
+    panes.dispose();
+  }
+});
+
+// (review, 2026-11-22) live.py says a chat was written up to every 0.4 s while Claude works, and each read of a
+// host's chat sends ~216 KB there: a tab reads for "wrote" at most once per gap (5 s, or twice its last read),
+// the last change of a burst too; its state changing there still reads at once
+test("a host's tab reads for what was written at most once per gap, and the last change too", async () => {
+  const fake = new FakeHost();
+  useSettingsHost(fake);
+  const surfaces = new FakeSurfaces();
+  const reads: number[] = [];
+  const backend = {
+    pane: async () => (reads.push(Date.now()), { ok: true, items: [], more: false, stamp: `s${reads.length}` }),
+  } as unknown as Backend;
+  const changed = new Emitter<{ host: string; changed: string[]; requests: boolean; wrote: string[] }>();
+  const state = demoState(NOW);
+  const dash = {
+    opened() {}, state: () => state, refresh: async () => undefined, pollHost: async () => undefined, pollHostSoon() {},
+    setActionError() {}, setActionInfo() {}, onState: () => ({ dispose() {} }), onLive: () => ({ dispose() {} }), liveHook: false,
+    onHostChanged: changed.event, hostWatched: () => true, setPaneHosts() {},
+  } as unknown as Dashboard;
+  const panes = new ChatPanes(fake, backend, dash, surfaces, { canMoveToClaudeCode: () => false } as unknown as Actions,
+                              { find: async () => undefined } as unknown as TerminalPort, {} as EditorPort);
+  try {
+    panes.open({ key: "h-1", chatId: "h-1", sessionId: "h-1", profileDir: ".claude", name: "on lab", host: "lab" } as ChatRef);
+    const pane = [...(panes as unknown as { panes: Map<string, { writtenGap: number }> }).panes.values()][0];
+    pane.writtenGap = 80;
+    surfaces.opened[0].say({ type: "ready" });
+    await tick();
+    const first = reads.length;
+    for (let i = 0; i < 3; i++) changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "the first at once");
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    assert.equal(reads.length, first + 1, "within the gap: held");
+    await new Promise((r) => setTimeout(r, 120));
+    assert.equal(reads.length, first + 2, "then the last change of the burst");
+    assert.ok(reads[first + 1] - reads[first] >= 75, "a gap apart");
+    changed.fire({ host: "lab", changed: ["h-1"], requests: false, wrote: [] });
+    await tick();
+    assert.equal(reads.length, first + 3, "its state changed there: at once");
+    // (hidden meanwhile: no read when the gap is over; shown again, it reads then, as it does)
+    await new Promise((r) => setTimeout(r, 100));
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    await tick();
+    changed.fire({ host: "lab", changed: [], requests: false, wrote: ["h-1"] });
+    surfaces.opened[0].visible = false;
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(reads.length, first + 4, "hidden: the burst's last change isn't read");
+  } finally {
+    panes.dispose();
+  }
+});

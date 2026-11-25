@@ -2,6 +2,7 @@
 """What changed in your chats, the moment it changes: the widget's watcher.
 
     python3 -I live.py --wait [--as NAME] [--timeout S] [--config-dir DIR]... [--requests] [--remote] [--opens]
+                          [--chats JSON]
     python3 -I live.py --take-open NAME
 
 Waits until a chat changes, prints what changed and exits (the widget runs
@@ -14,7 +15,8 @@ it again at once). It watches two things:
     live/<session id>.json), with what each chat does now, step by step.
 
     {"ok": true, "at": ms, "sessions": bool, "urgent": bool, "live": [...],
-     "timeout": bool[, "requests": bool, "changed": [session ids]][, "open": jobs file id, "request": NAME]}
+     "timeout": bool[, "requests": bool, "changed": [session ids]][, "open": jobs file id, "request": NAME]
+     [, "wrote": [chat ids], "stamps": {chat id: stamp}]}
 
 sessions: a session file changed (the status is worth checking now);
 urgent: that, or a live file says a turn started or ended, a chat asks for
@@ -31,6 +33,14 @@ container, sent there on python3's stdin by remote.py --watch): the answer
 comes after the marker line, as every host answer does, the live files
 aren't looked at (nothing there uses them), and it ends as soon as the
 connection that asked is gone (its stdout hangs up), not only at its timeout.
+
+--chats {"CHAT ID": STAMP, ...} (remote.py --watch, for Talpy Chat's
+windows of chats there): those chats' transcripts and their background
+job's record too, what a window reads of them (pane.py --conversation).
+One whose stamp isn't the one given ("" not known: as it is when it
+starts) is in "wrote" (steps alone: at most every MIN_GAP_S, not urgent),
+and "stamps" says each one's now, for the next run. Nothing of them is
+kept there: the caller keeps the stamps.
 
 --opens (the Plasma widget's): also another program's request that a chat be
 brought up as a click on its row does (jump.py --job: Talpy Den Display's
@@ -69,6 +79,10 @@ URGENT_EVENTS = {"UserPromptSubmit", "Stop", "StopFailure", "PermissionRequest",
                  "SessionEnd", "PreCompact", "SubagentStart", "SubagentStop"}
 # inotify: IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE
 WATCH_MASK = 0x8 | 0x40 | 0x80 | 0x200
+# a chat's transcript (--chats): IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE_SELF | IN_MOVE_SELF (a line
+# added while Claude keeps it open, the file replaced or moved; pane.WAIT_MASK)
+FILE_MASK = 0x2 | 0x4 | 0x8 | 0x400 | 0x800
+CHAT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")   # (a chat's id, nothing a glob or a path reads otherwise)
 REMOTE_MARK = "@@talpy-den@@"  # (talpy_den.REMOTE_MARK: the line before a host's answer)
 PERMISSIONS = "permissions"
 
@@ -286,6 +300,43 @@ def session_dirs(home, extra=()):
     return out
 
 
+def profile_dirs(home, extra=()):
+    """Each Claude profile's folder (~/.claude, ~/.claude-*, the extra config dirs), once per real folder."""
+    try:
+        names = sorted(n for n in os.listdir(home) if n == ".claude" or n.startswith(".claude-"))
+    except OSError:
+        names = []
+    seen, out = set(), []
+    for folder in [os.path.join(home, n) for n in names] + [os.path.expanduser(d) for d in extra]:
+        real = os.path.realpath(folder)
+        if real not in seen and os.path.isdir(real):
+            seen.add(real)
+            out.append(real)
+    return out
+
+
+def chat_files(profiles, chat_id):
+    """(transcript, its job's record) of a chat: where they are, or (None, None)."""
+    import glob
+    for folder in profiles:
+        found = sorted(glob.glob(os.path.join(glob.escape(folder), "projects", "*", chat_id + ".jsonl")))
+        if found:
+            return found[0], os.path.join(folder, "jobs", chat_id[:8], "state.json")
+    return None, None
+
+
+def chat_stamp(files):
+    """What a chat's files are now ("size:mtime/size:mtime", "-" for one that isn't there)."""
+    out = []
+    for path in files:
+        try:
+            st = os.stat(path)
+            out.append("%d:%d" % (st.st_size, st.st_mtime_ns))
+        except (OSError, TypeError):
+            out.append("-")
+    return "/".join(out)
+
+
 def listing(folder):
     """{name: mtime ns} of the .json files in a folder."""
     out = {}
@@ -424,9 +475,10 @@ class Gone(Exception):
 
 
 class Watch:
-    """inotify on the folders, or files (None: not on this system: look every half second)."""
+    """inotify on the folders, or files (None: not on this system: look every
+    half second); files: more, with FILE_MASK."""
 
-    def __init__(self, folders, mask=WATCH_MASK):
+    def __init__(self, folders, mask=WATCH_MASK, files=()):
         self.fd = None
         try:
             import ctypes   # (here: a Python without it, a slim image's, still looks every half second)
@@ -437,6 +489,7 @@ class Watch:
         if fd < 0:
             return
         added = [libc.inotify_add_watch(fd, f.encode(), mask) for f in folders]
+        added += [libc.inotify_add_watch(fd, f.encode(), FILE_MASK) for f in files]
         if not any(w >= 0 for w in added):
             os.close(fd)
             return
@@ -476,11 +529,11 @@ class Watch:
 
 
 def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, requests=False, remote=False, hangup=None,
-         opens=False):
+         opens=False, chats=None):
     """The answer of --wait (see the top). requests: the permission hook's
     requests too; remote: no live files; hangup: stdout, whose other end
     going away ends it (Gone); opens: open requests too (taken, answered as
-    "open")."""
+    "open"); chats: {chat id: stamp told} (--chats)."""
     live = None if remote else live_dir(home)
     try:
         os.makedirs(live_dir(home), mode=0o700, exist_ok=True)   # (also where what NAME was told is kept)
@@ -490,8 +543,14 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
     asks = request_dirs(home) if requests else None
     opening = open_dir() if opens and not remote else None
     offers = offered_path(home, name)
-    # (watching first: nothing between the look and the wait is missed)
-    watch = Watch(([live] if live else []) + sessions + (asks or []) + ([opening] if opening else []))
+    profiles = profile_dirs(home, extra) if chats else []
+    told = {c: s for c, s in (chats or {}).items() if CHAT_ID.match(c) and isinstance(s, str)}
+    files = {c: chat_files(profiles, c) for c in told}
+    # (watching first: nothing between the look and the wait is missed; a job's record is written anew)
+    watch = Watch(([live] if live else []) + sessions + (asks or []) + ([opening] if opening else [])
+                  + [os.path.dirname(j) for _, j in files.values() if j and os.path.isdir(os.path.dirname(j))],
+                  files=[t for t, _ in files.values() if t])
+    told = {c: s or chat_stamp(files[c]) for c, s in told.items()}   # (not known: as it is now)
     path = seen_path(home, name)
     seen = load_seen(path)
     parent = os.getppid()
@@ -515,9 +574,14 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
                 return answer
         snap = snapshot(live, sessions, asks)
         moved, views, asked = changes(seen, snap, live, now)
+        for c, found in files.items():   # (a transcript that wasn't there, or moved: looked for again)
+            if found[0] is None or not os.path.exists(found[0]):
+                files[c] = chat_files(profiles, c)
+        stamps = {c: chat_stamp(found) for c, found in files.items()}
+        wrote = sorted(c for c in told if stamps[c] != told[c])
         urgent = moved or asked or any(v.get("event") in URGENT_EVENTS for v in views)
         since = now - (seen.get("at") or 0) if seen is not None else MIN_GAP_S
-        if views and not urgent and 0 <= since < MIN_GAP_S:
+        if (views or wrote) and not urgent and 0 <= since < MIN_GAP_S:
             # (steps alone, just after the last answer: a moment later, with
             # what comes meanwhile; a last answer later than now is one from
             # before the clock was set back)
@@ -525,15 +589,18 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
                 time.sleep(GATHER_S)
                 watch.drain()
             continue
-        if moved or views or asked:
+        if moved or views or asked or wrote:
             answer = {"ok": True, "at": int(now * 1000), "sessions": moved, "urgent": urgent, "live": views,
                       "timeout": False}
             if requests:
                 answer.update(requests=asked, changed=changed_chats(seen, snap))
+            if chats is not None:
+                answer.update(wrote=wrote, stamps=stamps)
             if not save_seen(path, snap, now) and seen is None and remote:
                 # (what it was told can't be kept there: every run would answer at once, and the caller run
                 # again at once, for good. It waits for a change from now on instead)
                 seen = dict(snap, at=now)
+                told = dict(told, **{c: stamps[c] for c in wrote})
                 continue
             return answer
         left = timeout - abs(now - start)  # (the clock set back meanwhile: time's up)
@@ -541,6 +608,8 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
             answer = {"ok": True, "at": int(now * 1000), "sessions": False, "urgent": False, "live": [], "timeout": True}
             if requests:
                 answer.update(requests=False, changed=[])
+            if chats is not None:
+                answer.update(wrote=[], stamps=stamps)
             return answer
         if watch.wait(min(left, 1.0), hangup):
             time.sleep(GATHER_S)
@@ -550,6 +619,7 @@ def wait(home, extra=(), name="default", timeout=TIMEOUT_S, clock=time.time, req
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
     name, timeout, extra, waiting, requests, remote, opens = "default", TIMEOUT_S, [], False, False, False, False
+    chats = None
     if args[:1] == ["--take-open"]:   # --take-open NAME, alone: the widget takes the request it was offered
         if len(args) != 2:
             sys.exit(__doc__)
@@ -576,6 +646,13 @@ def main(argv=None):
                 sys.exit(__doc__)
         elif arg == "--config-dir" and args:
             extra.append(args.pop(0))
+        elif arg == "--chats" and args:
+            try:
+                chats = json.loads(args.pop(0))
+            except ValueError:
+                sys.exit(__doc__)
+            if not isinstance(chats, dict):
+                sys.exit(__doc__)
         else:
             sys.exit(__doc__)
     if not waiting:
@@ -583,7 +660,7 @@ def main(argv=None):
     os.umask(0o077)
     try:
         answer = wait(os.path.expanduser("~"), extra, name, timeout, requests=requests, remote=remote,
-                      hangup=sys.stdout.fileno() if remote else None, opens=opens)
+                      hangup=sys.stdout.fileno() if remote else None, opens=opens, chats=chats)
     except Gone:
         return  # (nobody reads it: the connection that asked is gone)
     except Exception as exc:  # the widget must always get parseable output
