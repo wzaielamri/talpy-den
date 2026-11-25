@@ -93,6 +93,12 @@ def home_for(work):
 
 # (your session's D-Bus and your display: never handed to anything the bench starts)
 YOURS = ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "WAYLAND_DISPLAY")
+
+
+def yours(k):
+    """Whether a variable is yours, not to be handed on: your bus and display (YOURS), and Claude's own (CLAUDECODE,
+    CLAUDE_CONFIG_DIR: your real ~/.claude when the bench runs in a Claude Code shell, and the rest of CLAUDE_*)."""
+    return k in YOURS or k.startswith("CLAUDE")
 # (the session bus's address it's given instead: one that isn't there. With none, libdbus and GDBus (a
 # browser's, Qt's) look for the session bus at $XDG_RUNTIME_DIR/bus, which is yours)
 NO_BUS = "unix:path=/nonexistent/bus"
@@ -130,11 +136,11 @@ def own_bin():
 
 
 def env_for(home):
-    """This environment with the made-up home, none of your own XDG folders (render_popup.sh sets its own),
-    no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen), a runtime
+    """This environment with the made-up home, none of your own XDG folders (render_popup.sh sets its own) nor
+    Claude's variables (yours()), no session bus or display of yours (render_popup.sh runs on a bus of its own, offscreen), a runtime
     folder of its own, and a kscreen-doctor of its own first on PATH (own_bin)."""
     env = {k: v for k, v in os.environ.items()
-           if (not k.startswith("XDG_") or k in ("XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and k not in YOURS}
+           if (not k.startswith("XDG_") or k in ("XDG_CONFIG_DIRS", "XDG_DATA_DIRS")) and not yours(k)}
     env.update(HOME=str(home), DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime(),
                PATH=os.pathsep.join([own_bin(), os.environ.get("PATH", "")]))
     return env
@@ -142,8 +148,8 @@ def env_for(home):
 
 def browser_env(home=None):
     """A headless browser's: this environment with no session bus or display of yours, none of your XDG
-    folders, a runtime folder of its own, and a made-up home when given."""
-    env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_") and k not in YOURS}
+    folders nor Claude's variables, a runtime folder of its own, and a made-up home when given."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("XDG_") and not yours(k)}
     env.update(DBUS_SESSION_BUS_ADDRESS=NO_BUS, XDG_RUNTIME_DIR=own_runtime())
     if home is not None:
         env["HOME"] = str(home)

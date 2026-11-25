@@ -134,6 +134,15 @@ class TheBenchsEnvironmentTests(unittest.TestCase):
         self.assertNotIn("DISPLAY", env)
         self.assertNotIn("WAYLAND_DISPLAY", env)
 
+    def test_no_claude_variable_of_yours_reaches_a_render_or_a_browser(self):
+        # (in a Claude Code shell CLAUDE_CONFIG_DIR is your real ~/.claude: a render's widget would read your chats)
+        claude = {"CLAUDE_CONFIG_DIR": "/nonexistent/yours/.claude", "CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "yours",
+                  "CLAUDE_CODE_ENTRYPOINT": "cli"}
+        with mock.patch.dict(os.environ, claude):
+            for env in (bench.env_for(Path("/nonexistent/home")), bench.browser_env(), bench.browser_env(Path("/nonexistent/home"))):
+                self.assertEqual([k for k in env if k.startswith("CLAUDE")], [])
+                self.assertNotIn("/nonexistent/yours/.claude", env.values())
+
     def test_a_renders_widget_asks_a_kscreen_doctor_of_the_benchs(self):
         # (Talpy Chat's scroller asks for its screen's refresh rate, code/screen_rate.py: never your desktop)
         env = bench.env_for(Path("/nonexistent/home"))
@@ -221,6 +230,31 @@ class RenderPopupOnABusOfItsOwnTests(unittest.TestCase):
             if alive:   # (not left running by the test either)
                 os.kill(left, 15)
             self.assertFalse(alive, "what it started on its bus was left running")
+
+    def test_its_widget_asks_a_kscreen_doctor_of_its_own_never_yours(self):
+        # (run by hand with your PATH, its Talpy Chat window's scroller would ask your desktop's kscreen-doctor for the
+        # screen's refresh rate, code/screen_rate.py: the render's own comes first)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            bin_dir = tmp / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "kpackagetool6").write_text("#!/bin/sh\nexit 0\n")
+            (bin_dir / "kscreen-doctor").write_text('#!/bin/sh\ntouch "$SEEN.yours"\nexit 1\n')   # (yours: never run)
+            (bin_dir / "plasmawindowed").write_text('#!/bin/sh\nkscreen-doctor -j > "$SEEN.screens"\n'
+                                                    'python3 -I "$SCREEN_RATE" "" > "$SEEN.rate"\necho "RENDER: saved 1x1"\n')
+            for f in bin_dir.iterdir():
+                f.chmod(0o755)
+            home = tmp / "home"
+            (home / ".config").mkdir(parents=True)
+            env = {k: v for k, v in os.environ.items() if k not in YOURS and not k.startswith("XDG_")}
+            env.update(PATH=f"{bin_dir}:{os.environ['PATH']}", HOME=str(home), SEEN=str(tmp / "seen"),
+                       SCREEN_RATE=str(ROOT / "package/contents/code/screen_rate.py"))
+            r = subprocess.run([str(ROOT / "tools/render_popup.sh"), str(tmp / "out.png"), "1"], env=env,
+                               capture_output=True, text=True, timeout=120)
+            self.assertTrue((tmp / "seen.screens").exists(), r.stdout + r.stderr)
+            self.assertFalse((tmp / "seen.yours").exists())
+            self.assertEqual(json.loads((tmp / "seen.screens").read_text())["outputs"][0]["name"], "eDP-1")
+            self.assertEqual(json.loads((tmp / "seen.rate").read_text()), {"ok": True, "name": "eDP-1", "hz": 60.033, "rates": [60.033]})
 
 
 if __name__ == "__main__":

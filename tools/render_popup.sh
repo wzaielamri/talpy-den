@@ -30,7 +30,10 @@
 # there (with none, D-Bus's clients look for your bus in your runtime folder);
 # the widget runs on a D-Bus of its own (dbus-run-session), started once its
 # folders are set, so what D-Bus starts on it (a portal, the activity manager…)
-# has the render's folders too, and is ended by its pid when it's done.
+# has the render's folders too, and is ended by its pid when it's done. Nor
+# your desktop's screens: Talpy Chat's scroller asks kscreen-doctor for its
+# screen's refresh rate (code/screen_rate.py), and the render's is its own,
+# first on PATH (the owner's screen, eDP-1 at 60.03 a second, as bench.py's).
 set -euo pipefail
 export DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/bus QT_QPA_PLATFORM=offscreen
 unset DISPLAY WAYLAND_DISPLAY
@@ -52,6 +55,14 @@ leftovers() {
   done
 }
 trap 'leftovers; rm -rf "$work"' EXIT
+mkdir "$work/bin"
+cat > "$work/bin/kscreen-doctor" <<'SCREENS'
+#!/bin/sh
+[ "$1" = "-j" ] || exit 2
+echo '{"outputs": [{"name": "eDP-1", "enabled": true, "connected": true, "currentModeId": "1", "modes": [{"id": "1", "name": "1920x1080@60", "refreshRate": 60.033}]}]}'
+SCREENS
+chmod 755 "$work/bin/kscreen-doctor"
+export PATH="$work/bin:$PATH"
 cp -a "$repo/package" "$work/pkg"
 python3 -I - "$work/pkg" "$out" "$secs" <<'PY'
 import json, os, sys
